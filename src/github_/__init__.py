@@ -8,6 +8,7 @@ from github_.client import (
     GitHubAuthError,
     GitHubClient,
 )
+from github_.diff import DiffLine, Hunk, LineKind, parse_patch
 from github_.models import (
     Branch,
     BranchCommit,
@@ -26,6 +27,7 @@ from github_.models import (
     ReviewEvent,
     User,
 )
+from github_.pr import ParsedFile, PullRequestParser, PullRequestPayload
 from github_.repository import RepositoryHandle
 
 __all__ = [
@@ -34,13 +36,19 @@ __all__ = [
     "BranchCommit",
     "CommitAuthor",
     "CommitInfo",
+    "DiffLine",
     "GitHubAPIError",
     "GitHubAuthError",
     "GitHubClient",
+    "Hunk",
     "Label",
+    "LineKind",
+    "ParsedFile",
     "PullRequest",
     "PullRequestCommit",
     "PullRequestFile",
+    "PullRequestParser",
+    "PullRequestPayload",
     "PullRequestRef",
     "PullRequestState",
     "PullRequestSummary",
@@ -50,4 +58,5 @@ __all__ = [
     "ReviewComment",
     "ReviewEvent",
     "User",
+    "parse_patch",
 ]
