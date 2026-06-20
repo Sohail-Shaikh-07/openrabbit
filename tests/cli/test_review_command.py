@@ -1,0 +1,98 @@
+"""Tests for ``cli.commands.review``."""
+
+from __future__ import annotations
+
+import io
+from pathlib import Path
+
+import httpx
+import respx
+
+from cli.commands.review import render_summary, run_review
+from configs import load_settings
+
+_BASE = "https://api.github.com"
+
+
+def _pr_json() -> dict[str, object]:
+    return {
+        "number": 42,
+        "title": "Big PR",
+        "state": "open",
+        "draft": False,
+        "user": {"login": "alice", "id": 1},
+        "head": {"ref": "feat", "sha": "abcdef0123456789" + "0" * 24, "label": "alice:feat"},
+        "base": {"ref": "main", "sha": "b" * 40, "label": "o:main"},
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-02T00:00:00Z",
+        "labels": [],
+        "body": "Body",
+        "merged": False,
+    }
+
+
+@respx.mock
+async def test_run_review_returns_summary(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "filename": "src/a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "changes": 1,
+                    "patch": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                },
+                {
+                    "filename": "logo.png",
+                    "status": "added",
+                    "additions": 0,
+                    "deletions": 0,
+                    "changes": 0,
+                },
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(settings, number=42, repo="o/r", env={"GITHUB_TOKEN": "tkn"})
+
+    assert summary["repo"] == "o/r"
+    assert summary["number"] == 42
+    assert summary["title"] == "Big PR"
+    assert summary["state"] == "open"
+    assert summary["files_changed"] == 2
+    assert summary["binary_files"] == 1
+    assert summary["hunks"] == 1
+    assert summary["commits"] == 1
+    assert summary["head_sha"] == "abcdef012345"
+
+
+def test_render_summary_prints_every_field() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 7,
+        "title": "Hello",
+        "state": "open",
+        "head_sha": "abcdef012345",
+        "files_changed": 3,
+        "binary_files": 1,
+        "hunks": 5,
+        "commits": 2,
+    }
+    out = io.StringIO()
+    render_summary(summary, out)
+    text = out.getvalue()
+    assert "PR #7 on o/r" in text
+    assert "Hello" in text
+    assert "abcdef012345" in text
+    assert "3 (1 binary)" in text
+    assert "Hunks:" in text
+    assert "Commits:" in text

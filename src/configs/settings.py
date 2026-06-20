@@ -21,6 +21,7 @@ from configs.schema import (
     GithubSettings,
     ModelSettings,
     PollingSettings,
+    RepositorySettings,
     ReviewSettings,
 )
 
@@ -43,6 +44,7 @@ class Settings(BaseModel):
     model: ModelSettings = ModelSettings()
     polling: PollingSettings = PollingSettings()
     github: GithubSettings = GithubSettings()
+    repository: RepositorySettings = RepositorySettings()
 
     def resolved_github_token(self, env: dict[str, str] | None = None) -> str | None:
         """Return the GitHub token using the documented precedence rules.
@@ -108,7 +110,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     loaded = yaml.safe_load(text) or {}
     if not isinstance(loaded, dict):
         raise ValueError(f"{path} must contain a YAML mapping at the top level")
-    return loaded
+    return {key: ({} if value is None else value) for key, value in loaded.items()}
 
 
 def _env_overrides(env: dict[str, str]) -> dict[str, Any]:

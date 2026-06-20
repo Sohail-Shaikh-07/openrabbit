@@ -36,6 +36,10 @@ github:
   # GITHUB_TOKEN can also come from the environment. The token never leaves
   # this machine.
   token_env: GITHUB_TOKEN
+
+repository:
+  # Default repository OpenRabbit watches when --repo is not passed.
+  # target: owner/repo
 """
 
 ARCHITECTURE_MD: Final[str] = """\
