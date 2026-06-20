@@ -44,6 +44,7 @@ tree-sitter-language-pack = ">=0.13,<1.0"
 fastembed = ">=0.4"
 numpy = ">=1.26"
 qdrant-client = ">=1.9"
+langgraph = ">=0.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2"
