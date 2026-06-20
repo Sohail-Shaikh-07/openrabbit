@@ -1,8 +1,11 @@
 """Embedding pipeline for the OpenRabbit RAG system.
 
 Converts :class:`~rag.chunker.Chunk` objects into dense float vectors using
-``BAAI/bge-small-en-v1.5`` via sentence-transformers. The model runs fully
-locally -- no remote API is called at encode time.
+``BAAI/bge-small-en-v1.5`` via fastembed (ONNX runtime). The model runs fully
+locally -- no remote API is called at encode time and no GPU is required.
+
+fastembed is preferred over sentence-transformers because it uses ONNX rather
+than PyTorch, making the installed footprint roughly 100 MB instead of ~1.7 GB.
 
 Usage::
 
@@ -50,14 +53,14 @@ class EmbeddedChunk:
 class EmbeddingEngine:
     """Encodes :class:`~rag.chunker.Chunk` objects into dense vectors.
 
-    The underlying sentence-transformers model is loaded lazily on the first
-    call to :meth:`encode`, so the constructor is instant even if the model
-    weights are not yet cached on disk.
+    The underlying fastembed model is loaded lazily on the first call to
+    :meth:`encode`, so the constructor is instant even if the model weights
+    are not yet cached on disk.
 
     Parameters
     ----------
     model_name:
-        HuggingFace model identifier. Defaults to ``BAAI/bge-small-en-v1.5``.
+        fastembed model identifier. Defaults to ``BAAI/bge-small-en-v1.5``.
     batch_size:
         Number of chunk texts sent to the model in one forward pass. Tune
         downward on machines with limited memory.
@@ -85,8 +88,7 @@ class EmbeddingEngine:
         Raises
         ------
         RuntimeError
-            If the model fails to initialise (propagates from
-            sentence-transformers).
+            If the model fails to initialise (propagates from fastembed).
         """
         if not chunks:
             return []
@@ -113,11 +115,14 @@ class EmbeddingEngine:
     # ------------------------------------------------------------------
 
     def _load_model(self) -> Any:
-        """Load (or return cached) the sentence-transformers model."""
+        """Load (or return cached) the fastembed TextEmbedding model."""
         if self._model is None:
-            st = importlib.import_module("sentence_transformers")
+            fe = importlib.import_module("fastembed")
             logger.info("loading embedding model %s", self._model_name)
-            self._model = st.SentenceTransformer(self._model_name)
+            self._model = fe.TextEmbedding(
+                model_name=self._model_name,
+                max_length=512,
+            )
         return self._model
 
     def _encode_batched(self, model: Any, texts: list[str]) -> list[np.ndarray]:
@@ -125,12 +130,8 @@ class EmbeddingEngine:
         vectors: list[np.ndarray] = []
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]
-            batch_vecs = model.encode(
-                batch,
-                batch_size=len(batch),
-                show_progress_bar=False,
-                convert_to_numpy=True,
-            )
+            # fastembed.TextEmbedding.embed() returns a generator of ndarrays.
+            batch_vecs = list(model.embed(batch, batch_size=len(batch)))
             arr = np.array(batch_vecs, dtype="float32")
             norms = np.linalg.norm(arr, axis=1, keepdims=True)
             norms = np.where(norms == 0, 1.0, norms)

@@ -31,15 +31,15 @@ def _make_chunk(name: str = "foo", text: str = "def foo(): pass") -> Chunk:
 
 
 def _mock_model(dim: int = 384) -> MagicMock:
-    """Return a mock SentenceTransformer that yields constant-value embeddings."""
+    """Return a mock fastembed TextEmbedding that yields constant-value embeddings."""
     import numpy as np
 
     model = MagicMock()
 
-    def encode_fn(texts: list[str], **kwargs: object) -> object:
-        return np.ones((len(texts), dim), dtype="float32")
+    def embed_fn(texts: list[str], **kwargs: object) -> object:
+        return iter([np.ones(dim, dtype="float32") for _ in texts])
 
-    model.encode.side_effect = encode_fn
+    model.embed.side_effect = embed_fn
     return model
 
 
@@ -126,11 +126,11 @@ def test_encode_batches_correctly() -> None:
 
     model = MagicMock()
 
-    def encode_fn(texts: list[str], **kwargs: object) -> object:
+    def embed_fn(texts: list[str], **kwargs: object) -> object:
         call_sizes.append(len(texts))
-        return np.ones((len(texts), 384), dtype="float32")
+        return iter([np.ones(384, dtype="float32") for _ in texts])
 
-    model.encode.side_effect = encode_fn
+    model.embed.side_effect = embed_fn
 
     with patch.object(engine, "_model", model):
         results = engine.encode(chunks)
@@ -149,11 +149,11 @@ def test_encode_passes_text_to_model() -> None:
 
     model = MagicMock()
 
-    def encode_fn(texts: list[str], **kwargs: object) -> object:
+    def embed_fn(texts: list[str], **kwargs: object) -> object:
         captured.append(list(texts))
-        return np.ones((len(texts), 384), dtype="float32")
+        return iter([np.ones(384, dtype="float32") for _ in texts])
 
-    model.encode.side_effect = encode_fn
+    model.embed.side_effect = embed_fn
 
     with patch.object(engine, "_model", model):
         engine.encode([chunk])
@@ -189,7 +189,7 @@ def test_model_loads_lazily_on_first_encode() -> None:
     assert engine._model is None
 
     fake_model = _mock_model()
-    with patch("sentence_transformers.SentenceTransformer", return_value=fake_model) as mock_cls:
+    with patch("fastembed.TextEmbedding", return_value=fake_model) as mock_cls:
         engine.encode([_make_chunk()])
         mock_cls.assert_called_once()
         assert engine._model is fake_model
@@ -199,7 +199,7 @@ def test_model_is_not_reloaded_on_second_call() -> None:
     engine = EmbeddingEngine()
 
     fake_model = _mock_model()
-    with patch("sentence_transformers.SentenceTransformer", return_value=fake_model) as mock_cls:
+    with patch("fastembed.TextEmbedding", return_value=fake_model) as mock_cls:
         engine.encode([_make_chunk()])
         engine.encode([_make_chunk()])
         mock_cls.assert_called_once()
@@ -208,7 +208,7 @@ def test_model_is_not_reloaded_on_second_call() -> None:
 def test_model_load_failure_raises_runtime_error() -> None:
     engine = EmbeddingEngine()
     with (
-        patch("sentence_transformers.SentenceTransformer", side_effect=RuntimeError("no model")),
+        patch("fastembed.TextEmbedding", side_effect=RuntimeError("no model")),
         pytest.raises(RuntimeError, match="no model"),
     ):
         engine.encode([_make_chunk()])
