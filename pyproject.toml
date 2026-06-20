@@ -28,6 +28,8 @@ packages = [
     { include = "ranking", from = "src" },
 ]
 
+# rag is included in coverage as it lands across Phase 3.
+
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
 typer = ">=0.12"
@@ -105,7 +107,7 @@ disallow_untyped_defs = false
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov-fail-under=70"
+addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov=rag --cov-fail-under=70"
 asyncio_mode = "auto"
 filterwarnings = ["error::DeprecationWarning"]
 
