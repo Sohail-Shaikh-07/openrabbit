@@ -44,3 +44,8 @@ models/cache/
 
 # Notion mirror artifacts (kept local only)
 .agent/.notion-cache/
+
+# Private planning + agent docs — must NEVER ship to the public repo.
+/.agent/
+/claude.md
+/CLAUDE.md

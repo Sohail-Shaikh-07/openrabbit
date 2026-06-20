@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from openrabbit.configs.schema import (
+from configs.schema import (
     GithubSettings,
     ModelSettings,
     PollingSettings,
     ReviewSettings,
 )
-from openrabbit.configs.settings import (
+from configs.settings import (
     CONFIG_FILENAME,
     CONFIG_SUBDIR,
     ConfigNotFoundError,

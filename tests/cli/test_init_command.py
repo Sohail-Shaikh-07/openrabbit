@@ -1,4 +1,4 @@
-"""Tests for ``openrabbit.cli.commands.init`` and the wired ``init`` CLI."""
+"""Tests for ``cli.commands.init`` and the wired ``init`` CLI."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from openrabbit.cli.commands.init import InitConflict, run_init
-from openrabbit.cli.exit_codes import NOT_IMPLEMENTED, OK, USER_ERROR
-from openrabbit.cli.main import app
-from openrabbit.cli.templates import TEMPLATES
+from cli.commands.init import InitConflict, run_init
+from cli.exit_codes import NOT_IMPLEMENTED, OK, USER_ERROR
+from cli.main import app
+from cli.templates import TEMPLATES
 
 _RUNNER = CliRunner()
 

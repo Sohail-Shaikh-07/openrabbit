@@ -1,4 +1,4 @@
-"""Smoke tests for the top-level package and CLI wiring."""
+"""Smoke tests for the package and CLI wiring."""
 
 from __future__ import annotations
 
@@ -6,14 +6,13 @@ import re
 
 from typer.testing import CliRunner
 
-import openrabbit
-from openrabbit.cli.main import app
+from cli.main import __version__, app
 
 _RUNNER = CliRunner()
 
 
 def test_version_is_semver() -> None:
-    assert re.fullmatch(r"\d+\.\d+\.\d+", openrabbit.__version__)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
 
 
 def test_cli_help_lists_known_commands() -> None:
@@ -26,4 +25,4 @@ def test_cli_help_lists_known_commands() -> None:
 def test_cli_version_flag_prints_version() -> None:
     result = _RUNNER.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert openrabbit.__version__ in result.stdout
+    assert __version__ in result.stdout

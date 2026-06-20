@@ -1,4 +1,4 @@
-"""Tests for ``openrabbit.configs``."""
+"""Tests for ``configs`` loader and schema."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from openrabbit.cli.commands.init import run_init
-from openrabbit.cli.templates import CONFIG_YML
-from openrabbit.configs import (
+from cli.commands.init import run_init
+from cli.templates import CONFIG_YML
+from configs import (
     ConfigNotFoundError,
     Settings,
     find_config_file,

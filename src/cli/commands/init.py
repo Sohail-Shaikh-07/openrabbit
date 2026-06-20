@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from openrabbit.cli.logging import get_logger
-from openrabbit.cli.templates import TEMPLATES
+from cli.logging import get_logger
+from cli.templates import TEMPLATES
 
 _log = get_logger(__name__)
 
