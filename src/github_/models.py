@@ -40,6 +40,20 @@ class Repository(_APIObject):
     private: bool
 
 
+class BranchCommit(_APIObject):
+    """The commit at the tip of a branch."""
+
+    sha: str
+
+
+class Branch(_APIObject):
+    """A repository branch."""
+
+    name: str
+    commit: BranchCommit
+    protected: bool = False
+
+
 class PullRequestRef(_APIObject):
     """The ``head`` or ``base`` ref on a pull request."""
 
