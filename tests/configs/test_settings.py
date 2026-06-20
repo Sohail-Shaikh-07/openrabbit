@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from cli.commands.init import run_init
 from cli.templates import CONFIG_YML
 from configs import (
     ConfigNotFoundError,
@@ -24,10 +23,8 @@ def _write_config(tmp_path: Path, body: str) -> Path:
     return config
 
 
-def test_defaults_match_init_template(tmp_path: Path) -> None:
-    run_init(tmp_path)
-
-    settings = load_settings(tmp_path, env={})
+def test_defaults_match_init_template(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
 
     assert settings == Settings()
 
