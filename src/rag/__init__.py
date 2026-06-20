@@ -11,9 +11,26 @@ from rag.scanner import (
     IgnoreMatcher,
     RepositoryScanner,
 )
+from rag.vector_store import (
+    ALL_COLLECTIONS,
+    COLLECTION_CLASSES,
+    COLLECTION_DOCS,
+    COLLECTION_FUNCTIONS,
+    COLLECTION_REVIEWS,
+    COLLECTION_RULES,
+    VECTOR_SIZE,
+    VectorStore,
+)
 
 __all__ = [
+    "ALL_COLLECTIONS",
     "CODEREVIEWER_DIR",
+    "COLLECTION_CLASSES",
+    "COLLECTION_DOCS",
+    "COLLECTION_FUNCTIONS",
+    "COLLECTION_REVIEWS",
+    "COLLECTION_RULES",
+    "VECTOR_SIZE",
     "Chunk",
     "ChunkKind",
     "Chunker",
@@ -23,4 +40,5 @@ __all__ = [
     "FileRecord",
     "IgnoreMatcher",
     "RepositoryScanner",
+    "VectorStore",
 ]

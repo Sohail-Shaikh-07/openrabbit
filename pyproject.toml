@@ -43,6 +43,7 @@ tenacity = "^9.1.4"
 tree-sitter-language-pack = ">=0.13,<1.0"
 fastembed = ">=0.4"
 numpy = ">=1.26"
+qdrant-client = ">=1.9"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2"
@@ -107,7 +108,7 @@ module = ["tests.*"]
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["tree_sitter", "tree_sitter_language_pack", "fastembed"]
+module = ["tree_sitter", "tree_sitter_language_pack", "fastembed", "qdrant_client", "qdrant_client.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
@@ -117,7 +118,13 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov=rag --cov-fail-under=70"
 asyncio_mode = "auto"
-filterwarnings = ["error::DeprecationWarning"]
+filterwarnings = [
+    "ignore::DeprecationWarning:google.*",
+    "ignore::DeprecationWarning:grpc.*",
+    "ignore::DeprecationWarning:qdrant_client.*",
+    "ignore:.*uses PyType_Spec.*:DeprecationWarning",
+    "error::DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true
