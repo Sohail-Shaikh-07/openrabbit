@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rag.chunker import Chunk, Chunker, ChunkKind
 from rag.scanner import (
     CODEREVIEWER_DIR,
     FileKind,
@@ -12,6 +13,9 @@ from rag.scanner import (
 
 __all__ = [
     "CODEREVIEWER_DIR",
+    "Chunk",
+    "ChunkKind",
+    "Chunker",
     "FileKind",
     "FileRecord",
     "IgnoreMatcher",
