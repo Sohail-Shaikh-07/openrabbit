@@ -1,22 +1,27 @@
 """OpenRabbit CLI entry point.
 
-The Typer app is wired here; concrete command bodies live under
-``openrabbit.cli.commands`` so they remain unit-testable without going through
-the CLI runner.
+The Typer app is wired here. Concrete command bodies live under
+``cli.commands`` so they remain unit-testable without going through the
+CLI runner.
 """
 
 from __future__ import annotations
 
 import logging
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
-from openrabbit import __version__
-from openrabbit.cli import exit_codes
-from openrabbit.cli import logging as orlog
-from openrabbit.cli.commands.init import InitConflict, run_init
+from cli import exit_codes
+from cli import logging as orlog
+from cli.commands.init import InitConflict, run_init
+
+try:
+    __version__ = version("openrabbit")
+except PackageNotFoundError:  # pragma: no cover - editable install fallback
+    __version__ = "0.0.0+local"
 
 app = typer.Typer(
     name="openrabbit",

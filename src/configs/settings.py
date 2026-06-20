@@ -17,7 +17,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from openrabbit.configs.schema import (
+from configs.schema import (
     GithubSettings,
     ModelSettings,
     PollingSettings,

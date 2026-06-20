@@ -1,8 +1,8 @@
 """Structured logging setup for the CLI.
 
 We pin a single ``structlog`` configuration that the rest of the codebase
-imports from ``openrabbit.cli.logging``. CLI flags decide the level; modules
-just call ``get_logger(__name__)``.
+imports from ``cli.logging``. CLI flags decide the level; modules just call
+``get_logger(__name__)``.
 """
 
 from __future__ import annotations
