@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from tree_sitter import Node, Parser
+
 from rag.scanner import FileKind, FileRecord
 
 logger = logging.getLogger(__name__)
@@ -176,21 +178,21 @@ _VARIABLE_DECLARATOR_TYPE = "variable_declarator"
 _LEXICAL_DECLARATION_TYPE = "lexical_declaration"
 
 
-def _get_parser(language: str) -> object:  # type: ignore[return]
+def _get_parser(language: str) -> Parser:
     """Return a Tree-sitter parser for *language*."""
-    from tree_sitter_language_pack import get_parser  # type: ignore[import-untyped]
+    from tree_sitter_language_pack import get_parser
 
-    return get_parser(language)
+    return get_parser(language)  # type: ignore[arg-type]
 
 
-def _node_name(node: object, source_bytes: bytes) -> str:  # type: ignore[return]
+def _node_name(node: Node, source_bytes: bytes) -> str:
     """Extract a human-readable name from a Tree-sitter node."""
     # Python uses ``identifier``, JS uses ``identifier`` or ``property_identifier``,
     # TypeScript uses ``type_identifier`` for class names.
     _NAME_TYPES = ("identifier", "property_identifier", "type_identifier")
-    for child in node.children:  # type: ignore[attr-defined]
+    for child in node.children:
         if child.type in _NAME_TYPES:
-            return source_bytes[child.start_byte : child.end_byte].decode(  # type: ignore[index]
+            return source_bytes[child.start_byte : child.end_byte].decode(
                 "utf-8", errors="replace"
             )
     return "<anonymous>"
@@ -206,8 +208,8 @@ def _ast_chunks(text: str, record: FileRecord) -> list[Chunk]:
         return []
 
     source_bytes = text.encode("utf-8")
-    tree = parser.parse(source_bytes)  # type: ignore[attr-defined]
-    root = tree.root_node  # type: ignore[attr-defined]
+    tree = parser.parse(source_bytes)
+    root = tree.root_node
 
     chunks: list[Chunk] = []
     _walk_top_level(root, source_bytes, record, chunks)
@@ -215,11 +217,11 @@ def _ast_chunks(text: str, record: FileRecord) -> list[Chunk]:
 
 
 def _walk_top_level(
-    node: object, source_bytes: bytes, record: FileRecord, out: list[Chunk]
+    node: Node, source_bytes: bytes, record: FileRecord, out: list[Chunk]
 ) -> None:
     """Walk direct children of *node* and collect function/class chunks."""
-    for child in node.children:  # type: ignore[attr-defined]
-        node_type: str = child.type  # type: ignore[attr-defined]
+    for child in node.children:
+        node_type: str = child.type
 
         if node_type in _FUNCTION_NODE_TYPES:
             name = _node_name(child, source_bytes)
@@ -242,13 +244,13 @@ def _walk_top_level(
 
 
 def _handle_lexical_declaration(
-    node: object, source_bytes: bytes, record: FileRecord, out: list[Chunk]
+    node: Node, source_bytes: bytes, record: FileRecord, out: list[Chunk]
 ) -> None:
     """Extract arrow functions from ``const/let/var name = () => ...``."""
-    for child in node.children:  # type: ignore[attr-defined]
+    for child in node.children:
         if child.type == _VARIABLE_DECLARATOR_TYPE:
             name = _node_name(child, source_bytes)
-            for sub in child.children:  # type: ignore[attr-defined]
+            for sub in child.children:
                 if sub.type == _ARROW_FUNCTION_TYPE:
                     out.append(
                         _make_code_chunk(node, name, ChunkKind.function, source_bytes, record)
@@ -257,34 +259,34 @@ def _handle_lexical_declaration(
 
 
 def _handle_expression_statement(
-    node: object, source_bytes: bytes, record: FileRecord, out: list[Chunk]
+    node: Node, source_bytes: bytes, record: FileRecord, out: list[Chunk]
 ) -> None:
     """Extract arrow functions from expression statements."""
-    for child in node.children:  # type: ignore[attr-defined]
+    for child in node.children:
         if child.type == "assignment_expression":
-            name_node = None
+            name_node: Node | None = None
             has_arrow = False
-            for sub in child.children:  # type: ignore[attr-defined]
+            for sub in child.children:
                 if sub.type == "identifier" and name_node is None:
                     name_node = sub
                 if sub.type == _ARROW_FUNCTION_TYPE:
                     has_arrow = True
             if has_arrow and name_node is not None:
-                name = source_bytes[
-                    name_node.start_byte : name_node.end_byte  # type: ignore[attr-defined]
-                ].decode("utf-8", errors="replace")
+                name = source_bytes[name_node.start_byte : name_node.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
                 out.append(_make_code_chunk(node, name, ChunkKind.function, source_bytes, record))
 
 
 def _make_code_chunk(
-    node: object,
+    node: Node,
     name: str,
     kind: ChunkKind,
     source_bytes: bytes,
     record: FileRecord,
 ) -> Chunk:
-    start: int = node.start_byte  # type: ignore[attr-defined]
-    end: int = node.end_byte  # type: ignore[attr-defined]
+    start: int = node.start_byte
+    end: int = node.end_byte
     text = source_bytes[start:end].decode("utf-8", errors="replace")
     return Chunk(
         source_path=record.path,
