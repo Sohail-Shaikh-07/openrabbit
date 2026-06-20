@@ -33,7 +33,22 @@ This is early. Phase 1 (the foundation) is landing now. Each phase ships behind 
 
 ## Quick start
 
-You will need Python 3.12+, Poetry, Docker for running Qdrant, and a GitHub personal access token with `repo` scope.
+You will need a GitHub personal access token with `repo` scope. From there pick one of two ways to run.
+
+### With Docker (recommended)
+
+```bash
+cp .env.example .env
+# put your GITHUB_TOKEN inside .env, then:
+docker compose up -d
+docker compose exec openrabbit openrabbit --help
+```
+
+This brings up the OpenRabbit daemon and Qdrant together. Your repo is mounted read-only at `/workspace` inside the container.
+
+### From source
+
+You will need Python 3.12+ and Poetry.
 
 ```bash
 poetry install
