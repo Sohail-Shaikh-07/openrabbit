@@ -1,0 +1,129 @@
+"""Tests for ``openrabbit.configs``."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from openrabbit.cli.commands.init import run_init
+from openrabbit.cli.templates import CONFIG_YML
+from openrabbit.configs import (
+    ConfigNotFoundError,
+    Settings,
+    find_config_file,
+    load_settings,
+)
+
+
+def _write_config(tmp_path: Path, body: str) -> Path:
+    scaffold = tmp_path / ".codereviewer"
+    scaffold.mkdir()
+    config = scaffold / "config.yml"
+    config.write_text(body, encoding="utf-8")
+    return config
+
+
+def test_defaults_match_init_template(tmp_path: Path) -> None:
+    run_init(tmp_path)
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings == Settings()
+
+
+def test_load_settings_walks_up_from_subdir(tmp_path: Path) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    nested = tmp_path / "deep" / "nested"
+    nested.mkdir(parents=True)
+
+    settings = load_settings(nested, env={})
+
+    assert settings.polling.interval_seconds == 60
+
+
+def test_env_overrides_typed_values(tmp_path: Path) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    env = {
+        "OPENRABBIT_POLLING__INTERVAL_SECONDS": "30",
+        "OPENRABBIT_REVIEW__STYLE": "true",
+    }
+
+    settings = load_settings(tmp_path, env=env)
+
+    assert settings.polling.interval_seconds == 30
+    assert settings.review.style is True
+
+
+def test_github_token_resolution_prefers_explicit_override(tmp_path: Path) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    env = {
+        "OPENRABBIT_GITHUB__TOKEN": "explicit-token",
+        "GITHUB_TOKEN": "ambient-token",
+    }
+
+    settings = load_settings(tmp_path, env=env)
+
+    assert settings.resolved_github_token(env=env) == "explicit-token"
+
+
+def test_github_token_resolution_falls_back_to_named_env(tmp_path: Path) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    env = {"GITHUB_TOKEN": "ambient-token"}
+
+    settings = load_settings(tmp_path, env=env)
+
+    assert settings.resolved_github_token(env=env) == "ambient-token"
+
+
+def test_github_token_resolution_returns_none_when_unset(tmp_path: Path) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.resolved_github_token(env={}) is None
+
+
+def test_missing_scaffold_raises_helpful_error(tmp_path: Path) -> None:
+    with pytest.raises(ConfigNotFoundError) as exc:
+        load_settings(tmp_path, env={})
+
+    assert "openrabbit init" in str(exc.value)
+
+
+def test_extra_top_level_keys_are_rejected(tmp_path: Path) -> None:
+    _write_config(tmp_path, "unknown: 1\n")
+
+    with pytest.raises(ValueError) as exc:
+        load_settings(tmp_path, env={})
+
+    assert "unknown" in str(exc.value)
+
+
+def test_invalid_provider_rejected(tmp_path: Path) -> None:
+    _write_config(tmp_path, "model:\n  provider: ftp\n")
+
+    with pytest.raises(ValueError):
+        load_settings(tmp_path, env={})
+
+
+def test_find_config_file_returns_first_hit(tmp_path: Path) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+
+    found = find_config_file(tmp_path)
+
+    assert found == tmp_path / ".codereviewer" / "config.yml"
+
+
+def test_polling_interval_lower_bound_enforced(tmp_path: Path) -> None:
+    _write_config(tmp_path, "polling:\n  interval_seconds: 1\n")
+
+    with pytest.raises(ValueError):
+        load_settings(tmp_path, env={})
+
+
+def test_non_mapping_yaml_is_rejected(tmp_path: Path) -> None:
+    _write_config(tmp_path, "- just\n- a\n- list\n")
+
+    with pytest.raises(ValueError):
+        load_settings(tmp_path, env={})
