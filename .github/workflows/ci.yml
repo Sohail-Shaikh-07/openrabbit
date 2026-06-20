@@ -52,7 +52,7 @@ jobs:
         run: poetry run mypy
 
       - name: Pytest (unit + integration)
-        run: poetry run pytest --cov=cli --cov=configs --cov=github_ --cov-report=term-missing --cov-report=xml
+        run: poetry run pytest --cov=cli --cov=configs --cov=github_ --cov=rag --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage artifact
         if: always()

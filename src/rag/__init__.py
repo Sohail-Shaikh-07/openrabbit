@@ -2,4 +2,18 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from rag.scanner import (
+    CODEREVIEWER_DIR,
+    FileKind,
+    FileRecord,
+    IgnoreMatcher,
+    RepositoryScanner,
+)
+
+__all__ = [
+    "CODEREVIEWER_DIR",
+    "FileKind",
+    "FileRecord",
+    "IgnoreMatcher",
+    "RepositoryScanner",
+]
