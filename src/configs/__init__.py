@@ -6,6 +6,7 @@ from configs.schema import (
     GithubSettings,
     ModelSettings,
     PollingSettings,
+    RepositorySettings,
     ReviewSettings,
 )
 from configs.settings import (
@@ -24,6 +25,7 @@ __all__ = [
     "GithubSettings",
     "ModelSettings",
     "PollingSettings",
+    "RepositorySettings",
     "ReviewSettings",
     "Settings",
     "find_config_file",

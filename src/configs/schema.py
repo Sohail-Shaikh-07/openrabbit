@@ -39,6 +39,21 @@ class PollingSettings(BaseModel):
     interval_seconds: int = Field(default=60, ge=5, le=3600)
 
 
+class RepositorySettings(BaseModel):
+    """Which repository OpenRabbit watches when no ``--repo`` flag is given."""
+
+    target: str | None = None
+
+    @field_validator("target")
+    @classmethod
+    def _validate_owner_repo(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if value.count("/") != 1 or not all(part.strip() for part in value.split("/")):
+            raise ValueError("repository.target must be in 'owner/repo' form")
+        return value
+
+
 class GithubSettings(BaseModel):
     """GitHub credentials and behavior knobs.
 

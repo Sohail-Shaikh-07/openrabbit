@@ -17,6 +17,10 @@ from rich.console import Console
 from cli import exit_codes
 from cli import logging as orlog
 from cli.commands.init import InitConflict, run_init
+from cli.commands.review import render_summary, run_review_blocking
+from cli.commands.start import StartError, run_start_blocking
+from configs import ConfigNotFoundError, load_settings
+from github_ import GitHubAPIError, GitHubAuthError
 
 try:
     __version__ = version("openrabbit")
@@ -109,10 +113,41 @@ def _not_implemented(command: str, phase: str) -> None:
     raise typer.Exit(code=exit_codes.NOT_IMPLEMENTED)
 
 
+def _load_settings_or_exit(workspace: Path) -> object:
+    """Load settings rooted at ``workspace`` or exit with a clear message."""
+    try:
+        return load_settings(workspace)
+    except ConfigNotFoundError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+
+
 @app.command()
-def start() -> None:
-    """Start the OpenRabbit daemon (polling + agents)."""
-    _not_implemented("start", "Phase 2")
+def start(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .codereviewer/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to watch, in owner/repo form. Overrides repository.target.",
+    ),
+) -> None:
+    """Run the polling service in the foreground."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        run_start_blocking(settings, workspace=workspace, repo=repo)  # type: ignore[arg-type]
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except GitHubAuthError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
 
 
 @app.command()
@@ -130,10 +165,33 @@ def index() -> None:
 @app.command()
 def review(
     pr: int = typer.Option(..., "--pr", help="Pull request number to review."),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .codereviewer/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to review, in owner/repo form. Overrides repository.target.",
+    ),
 ) -> None:
-    """Run a one-off review against a specific pull request."""
-    _ = pr
-    _not_implemented("review", "Phase 2 + 4")
+    """Run a one-off parse of a specific pull request and print a summary."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        summary = run_review_blocking(settings, number=pr, repo=repo)  # type: ignore[arg-type]
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except (GitHubAuthError, GitHubAPIError) as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    render_summary(summary, sys.stdout)
 
 
 if __name__ == "__main__":  # pragma: no cover

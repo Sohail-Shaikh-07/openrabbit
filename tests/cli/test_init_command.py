@@ -93,12 +93,20 @@ def test_cli_quiet_and_verbose_mutually_exclusive() -> None:
     assert result.exit_code == USER_ERROR
 
 
-@pytest.mark.parametrize("command", ["start", "stop", "index"])
+@pytest.mark.parametrize("command", ["stop", "index"])
 def test_unimplemented_commands_exit_with_not_implemented(command: str) -> None:
+    """`stop` and `index` still belong to later phases."""
     result = _RUNNER.invoke(app, [command])
     assert result.exit_code == NOT_IMPLEMENTED
 
 
-def test_review_command_requires_pr_flag() -> None:
-    result = _RUNNER.invoke(app, ["review", "--pr", "42"])
-    assert result.exit_code == NOT_IMPLEMENTED
+def test_start_without_config_exits_user_error(tmp_path: Path) -> None:
+    """`start` should fail loudly if no scaffold exists at the workspace."""
+    result = _RUNNER.invoke(app, ["start", "--workspace", str(tmp_path)])
+    assert result.exit_code == USER_ERROR
+
+
+def test_review_without_config_exits_user_error(tmp_path: Path) -> None:
+    """`review` requires a scaffold too."""
+    result = _RUNNER.invoke(app, ["review", "--pr", "42", "--workspace", str(tmp_path)])
+    assert result.exit_code == USER_ERROR
