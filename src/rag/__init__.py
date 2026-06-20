@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rag.chunker import Chunk, Chunker, ChunkKind
 from rag.embeddings import EmbeddedChunk, EmbeddingEngine
+from rag.retriever import AgentDimension, ContextRetriever, RetrievalResult
 from rag.scanner import (
     CODEREVIEWER_DIR,
     FileKind,
@@ -31,14 +32,17 @@ __all__ = [
     "COLLECTION_REVIEWS",
     "COLLECTION_RULES",
     "VECTOR_SIZE",
+    "AgentDimension",
     "Chunk",
     "ChunkKind",
     "Chunker",
+    "ContextRetriever",
     "EmbeddedChunk",
     "EmbeddingEngine",
     "FileKind",
     "FileRecord",
     "IgnoreMatcher",
     "RepositoryScanner",
+    "RetrievalResult",
     "VectorStore",
 ]
