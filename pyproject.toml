@@ -104,6 +104,10 @@ mypy_path = "src"
 module = ["tests.*"]
 disallow_untyped_defs = false
 
+[[tool.mypy.overrides]]
+module = ["tree_sitter", "tree_sitter_language_pack"]
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

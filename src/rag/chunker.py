@@ -26,8 +26,10 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from tree_sitter import Node, Parser
+if TYPE_CHECKING:
+    from tree_sitter import Node
 
 from rag.scanner import FileKind, FileRecord
 
@@ -178,11 +180,11 @@ _VARIABLE_DECLARATOR_TYPE = "variable_declarator"
 _LEXICAL_DECLARATION_TYPE = "lexical_declaration"
 
 
-def _get_parser(language: str) -> Parser:
+def _get_parser(language: str) -> Any:
     """Return a Tree-sitter parser for *language*."""
     from tree_sitter_language_pack import get_parser
 
-    return get_parser(language)  # type: ignore[arg-type]
+    return get_parser(language)
 
 
 def _node_name(node: Node, source_bytes: bytes) -> str:
