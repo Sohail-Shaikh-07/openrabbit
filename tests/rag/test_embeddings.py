@@ -189,7 +189,7 @@ def test_model_loads_lazily_on_first_encode() -> None:
     assert engine._model is None
 
     fake_model = _mock_model()
-    with patch("rag.embeddings.SentenceTransformer", return_value=fake_model) as mock_cls:
+    with patch("sentence_transformers.SentenceTransformer", return_value=fake_model) as mock_cls:
         engine.encode([_make_chunk()])
         mock_cls.assert_called_once()
         assert engine._model is fake_model
@@ -199,7 +199,7 @@ def test_model_is_not_reloaded_on_second_call() -> None:
     engine = EmbeddingEngine()
 
     fake_model = _mock_model()
-    with patch("rag.embeddings.SentenceTransformer", return_value=fake_model) as mock_cls:
+    with patch("sentence_transformers.SentenceTransformer", return_value=fake_model) as mock_cls:
         engine.encode([_make_chunk()])
         engine.encode([_make_chunk()])
         mock_cls.assert_called_once()
@@ -208,7 +208,7 @@ def test_model_is_not_reloaded_on_second_call() -> None:
 def test_model_load_failure_raises_runtime_error() -> None:
     engine = EmbeddingEngine()
     with (
-        patch("rag.embeddings.SentenceTransformer", side_effect=RuntimeError("no model")),
+        patch("sentence_transformers.SentenceTransformer", side_effect=RuntimeError("no model")),
         pytest.raises(RuntimeError, match="no model"),
     ):
         engine.encode([_make_chunk()])

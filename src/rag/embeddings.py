@@ -16,17 +16,14 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 from rag.chunker import Chunk
-
-if TYPE_CHECKING:
-    pass  # forward-reference guard
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +70,7 @@ class EmbeddingEngine:
     ) -> None:
         self._model_name = model_name
         self._batch_size = batch_size
-        self._model: SentenceTransformer | None = None
+        self._model: Any = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -115,22 +112,24 @@ class EmbeddingEngine:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _load_model(self) -> SentenceTransformer:
+    def _load_model(self) -> Any:
         """Load (or return cached) the sentence-transformers model."""
         if self._model is None:
+            st = importlib.import_module("sentence_transformers")
             logger.info("loading embedding model %s", self._model_name)
-            self._model = SentenceTransformer(self._model_name)
+            self._model = st.SentenceTransformer(self._model_name)
         return self._model
 
-    def _encode_batched(self, model: SentenceTransformer, texts: list[str]) -> list[np.ndarray]:
+    def _encode_batched(self, model: Any, texts: list[str]) -> list[np.ndarray]:
         """Encode *texts* in batches and return L2-normalised float32 vectors."""
         vectors: list[np.ndarray] = []
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]
-            batch_vecs: np.ndarray = model.encode(
+            batch_vecs = model.encode(
                 batch,
                 batch_size=len(batch),
                 show_progress_bar=False,
+                convert_to_numpy=True,
             )
             arr = np.array(batch_vecs, dtype="float32")
             norms = np.linalg.norm(arr, axis=1, keepdims=True)

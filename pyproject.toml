@@ -107,7 +107,7 @@ module = ["tests.*"]
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["tree_sitter", "tree_sitter_language_pack"]
+module = ["tree_sitter", "tree_sitter_language_pack", "sentence_transformers"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
