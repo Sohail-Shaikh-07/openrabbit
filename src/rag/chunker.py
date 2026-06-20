@@ -192,9 +192,7 @@ def _node_name(node: Node, source_bytes: bytes) -> str:
     _NAME_TYPES = ("identifier", "property_identifier", "type_identifier")
     for child in node.children:
         if child.type in _NAME_TYPES:
-            return source_bytes[child.start_byte : child.end_byte].decode(
-                "utf-8", errors="replace"
-            )
+            return source_bytes[child.start_byte : child.end_byte].decode("utf-8", errors="replace")
     return "<anonymous>"
 
 
@@ -216,9 +214,7 @@ def _ast_chunks(text: str, record: FileRecord) -> list[Chunk]:
     return chunks
 
 
-def _walk_top_level(
-    node: Node, source_bytes: bytes, record: FileRecord, out: list[Chunk]
-) -> None:
+def _walk_top_level(node: Node, source_bytes: bytes, record: FileRecord, out: list[Chunk]) -> None:
     """Walk direct children of *node* and collect function/class chunks."""
     for child in node.children:
         node_type: str = child.type
