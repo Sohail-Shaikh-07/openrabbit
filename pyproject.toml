@@ -106,6 +106,7 @@ disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
 module = ["tree_sitter", "tree_sitter_language_pack"]
+ignore_missing_imports = true
 follow_imports = "skip"
 
 [tool.pytest.ini_options]
