@@ -24,6 +24,7 @@ from tenacity import (
 from cli.logging import get_logger
 from configs.settings import Settings
 from github_.models import (
+    Branch,
     PullRequest,
     PullRequestCommit,
     PullRequestFile,
@@ -66,6 +67,7 @@ class _RetryableStatus(Exception):
 _PR_SUMMARIES = TypeAdapter(list[PullRequestSummary])
 _PR_FILES = TypeAdapter(list[PullRequestFile])
 _PR_COMMITS = TypeAdapter(list[PullRequestCommit])
+_BRANCHES = TypeAdapter(list[Branch])
 
 
 class GitHubClient:
@@ -145,6 +147,19 @@ class GitHubClient:
     async def get_repository(self, owner: str, repo: str) -> Repository:
         data = await self._get(f"/repos/{owner}/{repo}")
         return Repository.model_validate(data)
+
+    async def list_branches(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        per_page: int = 100,
+    ) -> list[Branch]:
+        pages = await self._get_paginated(
+            f"/repos/{owner}/{repo}/branches",
+            params={"per_page": per_page},
+        )
+        return _BRANCHES.validate_python(pages)
 
     async def list_pull_requests(
         self,

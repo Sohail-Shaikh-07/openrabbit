@@ -9,6 +9,8 @@ from github_.client import (
     GitHubClient,
 )
 from github_.models import (
+    Branch,
+    BranchCommit,
     CommitAuthor,
     CommitInfo,
     Label,
@@ -24,9 +26,12 @@ from github_.models import (
     ReviewEvent,
     User,
 )
+from github_.repository import RepositoryHandle
 
 __all__ = [
     "DEFAULT_BASE_URL",
+    "Branch",
+    "BranchCommit",
     "CommitAuthor",
     "CommitInfo",
     "GitHubAPIError",
@@ -40,6 +45,7 @@ __all__ = [
     "PullRequestState",
     "PullRequestSummary",
     "Repository",
+    "RepositoryHandle",
     "Review",
     "ReviewComment",
     "ReviewEvent",
