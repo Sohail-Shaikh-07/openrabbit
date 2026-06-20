@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rag.chunker import Chunk, ChunkKind, Chunker
+from rag.chunker import Chunk, Chunker, ChunkKind
 from rag.scanner import (
     CODEREVIEWER_DIR,
     FileKind,
