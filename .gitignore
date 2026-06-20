@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.env
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OpenRabbit runtime
+.openrabbit/
+data/
+*.db
+*.sqlite
+logs/
+qdrant_storage/
+
+# Models / datasets
+models/cache/
+.cache/
+.huggingface/
+
+# Notion mirror artifacts (kept local only)
+.agent/.notion-cache/
