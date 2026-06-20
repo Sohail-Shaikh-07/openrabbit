@@ -1,0 +1,159 @@
+"""Root ``Settings`` class and YAML loader.
+
+Two entry points:
+
+- :func:`load_settings` reads ``<repo>/.codereviewer/config.yml`` and merges
+  environment variables.
+- :class:`Settings` is the Pydantic root model; instantiate it directly with
+  a dict (mostly for testing).
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, ConfigDict
+
+from openrabbit.configs.schema import (
+    GithubSettings,
+    ModelSettings,
+    PollingSettings,
+    ReviewSettings,
+)
+
+CONFIG_SUBDIR = ".codereviewer"
+CONFIG_FILENAME = "config.yml"
+ENV_PREFIX = "OPENRABBIT_"
+ENV_DELIMITER = "__"
+
+
+class ConfigNotFoundError(FileNotFoundError):
+    """Raised when ``.codereviewer/config.yml`` cannot be located."""
+
+
+class Settings(BaseModel):
+    """Root OpenRabbit configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    review: ReviewSettings = ReviewSettings()
+    model: ModelSettings = ModelSettings()
+    polling: PollingSettings = PollingSettings()
+    github: GithubSettings = GithubSettings()
+
+    def resolved_github_token(self, env: dict[str, str] | None = None) -> str | None:
+        """Return the GitHub token using the documented precedence rules.
+
+        Order:
+
+        1. ``OPENRABBIT_GITHUB__TOKEN`` env override (already merged into
+           ``self.github.token`` by :func:`load_settings`).
+        2. The env variable named by ``github.token_env`` (default ``GITHUB_TOKEN``).
+        """
+        if self.github.token:
+            return self.github.token
+        source = env if env is not None else os.environ
+        return source.get(self.github.token_env)
+
+
+def find_config_file(start: Path) -> Path:
+    """Locate the config file by walking up from ``start``.
+
+    Raises:
+        ConfigNotFoundError: If no ``.codereviewer/config.yml`` is found in
+            ``start`` or any of its parents.
+    """
+    start = start.resolve()
+    for directory in (start, *start.parents):
+        candidate = directory / CONFIG_SUBDIR / CONFIG_FILENAME
+        if candidate.is_file():
+            return candidate
+    raise ConfigNotFoundError(
+        f"No {CONFIG_SUBDIR}/{CONFIG_FILENAME} found in {start} or any parent. "
+        "Run `openrabbit init` first."
+    )
+
+
+def load_settings(
+    start: Path | None = None,
+    *,
+    env: dict[str, str] | None = None,
+) -> Settings:
+    """Load and validate settings from disk and the environment.
+
+    Args:
+        start: Directory to begin the upward search from. Defaults to the
+            current working directory.
+        env: Environment mapping. Defaults to :data:`os.environ`. Passed in
+            during tests to avoid global state.
+
+    Returns:
+        A validated :class:`Settings` instance.
+    """
+    env_map = env if env is not None else dict(os.environ)
+    start = start or Path.cwd()
+
+    config_path = find_config_file(start)
+    raw = _read_yaml(config_path)
+    overrides = _env_overrides(env_map)
+    merged = _deep_merge(raw, overrides)
+    return Settings.model_validate(merged)
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    loaded = yaml.safe_load(text) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{path} must contain a YAML mapping at the top level")
+    return loaded
+
+
+def _env_overrides(env: dict[str, str]) -> dict[str, Any]:
+    """Translate ``OPENRABBIT_SECTION__FIELD=value`` env vars into nested dicts."""
+    out: dict[str, Any] = {}
+    for key, value in env.items():
+        if not key.startswith(ENV_PREFIX):
+            continue
+        path = key[len(ENV_PREFIX) :].lower().split(ENV_DELIMITER)
+        if not all(part for part in path):
+            continue
+        cursor = out
+        for segment in path[:-1]:
+            cursor = cursor.setdefault(segment, {})
+            if not isinstance(cursor, dict):
+                # A leaf value was set earlier by a more specific override.
+                # Skip this conflicting entry rather than corrupting the tree.
+                cursor = {}
+                break
+        cursor[path[-1]] = _coerce_scalar(value)
+    return out
+
+
+def _coerce_scalar(value: str) -> bool | int | float | str:
+    lowered = value.strip().lower()
+    if lowered in {"true", "yes", "on"}:
+        return True
+    if lowered in {"false", "no", "off"}:
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    return value
+
+
+def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = dict(base)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
