@@ -16,6 +16,7 @@ from rich.console import Console
 
 from cli import exit_codes
 from cli import logging as orlog
+from cli.commands.index import run_index_blocking
 from cli.commands.init import InitConflict, run_init
 from cli.commands.review import render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
@@ -157,9 +158,34 @@ def stop() -> None:
 
 
 @app.command()
-def index() -> None:
+def index(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .codereviewer/.",
+    ),
+    qdrant_host: str = typer.Option(
+        "localhost",
+        "--qdrant-host",
+        help="Qdrant server host.",
+    ),
+    qdrant_port: int = typer.Option(
+        6333,
+        "--qdrant-port",
+        help="Qdrant server port.",
+    ),
+) -> None:
     """Scan the current repository and rebuild the RAG index."""
-    _not_implemented("index", "Phase 3")
+    workspace = workspace.resolve()
+    try:
+        result = run_index_blocking(workspace, qdrant_host=qdrant_host, qdrant_port=qdrant_port)
+    except Exception as exc:
+        _err.print(f"[red]Indexing failed: {exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    _console.print(
+        f"[green]Indexed {result.chunks_indexed} chunks from {result.files_scanned} files.[/green]"
+    )
 
 
 @app.command()
