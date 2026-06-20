@@ -41,6 +41,8 @@ rich = ">=13.7"
 structlog = ">=24.1"
 tenacity = "^9.1.4"
 tree-sitter-language-pack = ">=0.13,<1.0"
+sentence-transformers = ">=3.0"
+numpy = ">=1.26"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2"

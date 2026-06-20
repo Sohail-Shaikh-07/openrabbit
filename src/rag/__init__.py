@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rag.chunker import Chunk, Chunker, ChunkKind
+from rag.embeddings import EmbeddedChunk, EmbeddingEngine
 from rag.scanner import (
     CODEREVIEWER_DIR,
     FileKind,
@@ -16,6 +17,8 @@ __all__ = [
     "Chunk",
     "ChunkKind",
     "Chunker",
+    "EmbeddedChunk",
+    "EmbeddingEngine",
     "FileKind",
     "FileRecord",
     "IgnoreMatcher",
