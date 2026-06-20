@@ -27,8 +27,16 @@ from github_.models import (
     ReviewEvent,
     User,
 )
+from github_.polling import EventKind, Handler, PollEvent, PollingService
 from github_.pr import ParsedFile, PullRequestParser, PullRequestPayload
 from github_.repository import RepositoryHandle
+from github_.state import (
+    FileStateStore,
+    InMemoryStateStore,
+    PollState,
+    SeenPullRequest,
+    StateStore,
+)
 
 __all__ = [
     "DEFAULT_BASE_URL",
@@ -37,13 +45,20 @@ __all__ = [
     "CommitAuthor",
     "CommitInfo",
     "DiffLine",
+    "EventKind",
+    "FileStateStore",
     "GitHubAPIError",
     "GitHubAuthError",
     "GitHubClient",
+    "Handler",
     "Hunk",
+    "InMemoryStateStore",
     "Label",
     "LineKind",
     "ParsedFile",
+    "PollEvent",
+    "PollState",
+    "PollingService",
     "PullRequest",
     "PullRequestCommit",
     "PullRequestFile",
@@ -57,6 +72,8 @@ __all__ = [
     "Review",
     "ReviewComment",
     "ReviewEvent",
+    "SeenPullRequest",
+    "StateStore",
     "User",
     "parse_patch",
 ]
