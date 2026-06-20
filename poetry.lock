@@ -1270,6 +1270,23 @@ doc = ["reno", "sphinx"]
 test = ["pytest", "tornado (>=4.5)", "typeguard"]
 
 [[package]]
+name = "tree-sitter-language-pack"
+version = "1.9.1"
+description = "Pre-compiled tree-sitter grammars for 306 programming languages"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "tree_sitter_language_pack-1.9.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:d5fc82a04784e7adff00253a64cd4a6ba9682068429adea3dbe6e00ff061bbe7"},
+    {file = "tree_sitter_language_pack-1.9.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:a5d658cc878cacab48c804dc03a6c0dd8ad7eb6831a4e7ba13581e34fac1be7d"},
+    {file = "tree_sitter_language_pack-1.9.1-cp310-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:be4596abaf3aae9f6d2e7513384c3401747de8b74d1c598fbab55fbe6914ee74"},
+    {file = "tree_sitter_language_pack-1.9.1-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:0ba69d3ca575618479a6c7d4a817d09cbc7815f31e44933756e5ff7a4bcd340b"},
+    {file = "tree_sitter_language_pack-1.9.1-cp310-abi3-win_amd64.whl", hash = "sha256:9217afa41481e7ca89c3fff4085c5057aa3d8dec5587ff7a75c5c3e4f46f630a"},
+    {file = "tree_sitter_language_pack-1.9.1-cp310-abi3-win_arm64.whl", hash = "sha256:0abc8bca24cc1fd8361b98b7e13111409c18d3a5184c085b2ee613e37c3cd267"},
+    {file = "tree_sitter_language_pack-1.9.1.tar.gz", hash = "sha256:dcabe14de9e35e338943112fb1f4cb58d620086d08c19bcf2fd611a6014e4c89"},
+]
+
+[[package]]
 name = "typer"
 version = "0.26.7"
 description = "Typer, build great CLIs. Easy to code. Based on Python type hints."
@@ -1347,4 +1364,4 @@ python-discovery = ">=1.4.2"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.14"
-content-hash = "2ef9bd3cba379a3f27706b3705be1a3675af8445ed824ba768145b2dc0dbe290"
+content-hash = "6fbf03cd64f889cc95f2ebb80065f271db8aec90ee5350fb7f04b5a029e11357"
