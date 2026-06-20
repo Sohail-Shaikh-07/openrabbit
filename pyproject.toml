@@ -37,6 +37,7 @@ pyyaml = ">=6.0"
 httpx = ">=0.27"
 rich = ">=13.7"
 structlog = ">=24.1"
+tenacity = "^9.1.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2"
@@ -47,6 +48,7 @@ black = ">=24.4"
 mypy = ">=1.10"
 types-pyyaml = ">=6.0"
 pre-commit = ">=3.7"
+respx = "^0.23.1"
 
 [tool.poetry.scripts]
 openrabbit = "cli.main:app"
@@ -103,7 +105,7 @@ disallow_untyped_defs = false
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov-fail-under=70"
+addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov-fail-under=70"
 asyncio_mode = "auto"
 filterwarnings = ["error::DeprecationWarning"]
 
