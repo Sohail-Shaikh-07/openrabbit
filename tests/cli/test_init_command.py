@@ -108,7 +108,5 @@ def test_start_without_config_exits_user_error(tmp_path: Path) -> None:
 
 def test_review_without_config_exits_user_error(tmp_path: Path) -> None:
     """`review` requires a scaffold too."""
-    result = _RUNNER.invoke(
-        app, ["review", "--pr", "42", "--workspace", str(tmp_path)]
-    )
+    result = _RUNNER.invoke(app, ["review", "--pr", "42", "--workspace", str(tmp_path)])
     assert result.exit_code == USER_ERROR
