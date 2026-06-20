@@ -93,9 +93,9 @@ def test_cli_quiet_and_verbose_mutually_exclusive() -> None:
     assert result.exit_code == USER_ERROR
 
 
-@pytest.mark.parametrize("command", ["stop", "index"])
+@pytest.mark.parametrize("command", ["stop"])
 def test_unimplemented_commands_exit_with_not_implemented(command: str) -> None:
-    """`stop` and `index` still belong to later phases."""
+    """`stop` still belongs to a later phase; `index` is now implemented."""
     result = _RUNNER.invoke(app, [command])
     assert result.exit_code == NOT_IMPLEMENTED
 
