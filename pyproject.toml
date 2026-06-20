@@ -103,7 +103,7 @@ disallow_untyped_defs = false
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov-fail-under=70"
 asyncio_mode = "auto"
 filterwarnings = ["error::DeprecationWarning"]
 
