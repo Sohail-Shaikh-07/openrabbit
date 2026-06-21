@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from ranking.ranker import CommentRanker, RankedFinding
+
+__all__ = ["CommentRanker", "RankedFinding"]
