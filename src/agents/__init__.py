@@ -9,13 +9,17 @@ from __future__ import annotations
 
 from agents.base import BaseReviewAgent
 from agents.coordinator import CoordinatorGraph
+from agents.llm import OllamaClient
 from agents.models import AgentResult, Finding, ReviewState, Severity
+from agents.security import SecurityAgent
 
 __all__ = [
     "AgentResult",
     "BaseReviewAgent",
     "CoordinatorGraph",
     "Finding",
+    "OllamaClient",
     "ReviewState",
+    "SecurityAgent",
     "Severity",
 ]
