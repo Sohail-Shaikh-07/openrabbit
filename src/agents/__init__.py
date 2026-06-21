@@ -15,6 +15,7 @@ from agents.llm import OllamaClient
 from agents.models import AgentResult, Finding, ReviewState, Severity
 from agents.performance import PerformanceAgent
 from agents.security import SecurityAgent
+from agents.test_coverage import TestCoverageAgent
 
 __all__ = [
     "AgentResult",
@@ -28,4 +29,5 @@ __all__ = [
     "ReviewState",
     "SecurityAgent",
     "Severity",
+    "TestCoverageAgent",
 ]
