@@ -11,6 +11,7 @@ from agents.base import BaseReviewAgent
 from agents.coordinator import CoordinatorGraph
 from agents.llm import OllamaClient
 from agents.models import AgentResult, Finding, ReviewState, Severity
+from agents.performance import PerformanceAgent
 from agents.security import SecurityAgent
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "CoordinatorGraph",
     "Finding",
     "OllamaClient",
+    "PerformanceAgent",
     "ReviewState",
     "SecurityAgent",
     "Severity",
