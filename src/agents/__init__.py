@@ -7,6 +7,7 @@ parallel and merges their findings before ranking.
 
 from __future__ import annotations
 
+from agents.architecture import ArchitectureAgent
 from agents.base import BaseReviewAgent
 from agents.bugs import BugDetectionAgent
 from agents.coordinator import CoordinatorGraph
@@ -17,6 +18,7 @@ from agents.security import SecurityAgent
 
 __all__ = [
     "AgentResult",
+    "ArchitectureAgent",
     "BaseReviewAgent",
     "BugDetectionAgent",
     "CoordinatorGraph",
