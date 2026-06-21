@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from finetuning.dataset import DatasetLoader, DatasetStats, RawExample
+
+__all__ = ["DatasetLoader", "DatasetStats", "RawExample"]

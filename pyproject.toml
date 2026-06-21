@@ -118,7 +118,7 @@ follow_imports = "skip"
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov=rag --cov-fail-under=70"
+addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov=rag --cov=finetuning --cov-fail-under=70"
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning:google.*",
