@@ -57,6 +57,21 @@ types-pyyaml = ">=6.0"
 pre-commit = ">=3.7"
 respx = "^0.23.1"
 
+# Heavy ML stack for QLoRA fine-tuning (Phase 5). Optional and NOT installed in
+# CI: bitsandbytes needs CUDA and torch is multi-GB. Install on the GPU machine
+# with `poetry install --with finetuning` before running scripts/train.py.
+[tool.poetry.group.finetuning]
+optional = true
+
+[tool.poetry.group.finetuning.dependencies]
+torch = ">=2.2"
+transformers = ">=4.44"
+peft = ">=0.12"
+trl = ">=0.9"
+accelerate = ">=0.30"
+bitsandbytes = ">=0.43"
+datasets = ">=2.20"
+
 [tool.poetry.scripts]
 openrabbit = "cli.main:app"
 
@@ -111,6 +126,13 @@ disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
 module = ["tree_sitter", "tree_sitter_language_pack", "fastembed", "qdrant_client", "qdrant_client.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# Phase 5 fine-tuning ML stack. Optional deps, not installed in CI, imported
+# lazily inside trainer.py methods that only run on a GPU.
+[[tool.mypy.overrides]]
+module = ["torch", "transformers", "transformers.*", "peft", "trl", "datasets"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
