@@ -138,8 +138,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.mock:
         dataset = _build_mock_dataset(2)
         logger.info("[mock] Config loaded: model=%s", config.model_name)
-        logger.info("[mock] LoRA: rank=%d  alpha=%d  dropout=%.2f", config.lora_r, config.lora_alpha, config.lora_dropout)
-        logger.info("[mock] Training: epochs=%d  lr=%s  batch=%d", config.num_train_epochs, config.learning_rate, config.effective_batch_size)
+        logger.info(
+            "[mock] LoRA: rank=%d  alpha=%d  dropout=%.2f",
+            config.lora_r,
+            config.lora_alpha,
+            config.lora_dropout,
+        )
+        logger.info(
+            "[mock] Training: epochs=%d  lr=%s  batch=%d",
+            config.num_train_epochs,
+            config.learning_rate,
+            config.effective_batch_size,
+        )
         logger.info("[mock] Output dir: %s", config.output_dir)
         logger.info("[mock] Dataset: %d synthetic rows", len(dataset))
         logger.info("[mock] Skipping prepare() and train() -- no GPU required")
