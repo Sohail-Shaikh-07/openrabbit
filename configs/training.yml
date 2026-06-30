@@ -1,0 +1,54 @@
+# OpenRabbit-Reviewer-v1 QLoRA training config
+# All values match TrainingConfig defaults. Override individual fields as needed.
+# Load with: python scripts/train.py --config configs/training.yml
+
+# Base model
+model_name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+
+# LoRA adapter
+# Rank 16 / alpha 32 = 2:1 scaling (modern best practice).
+# Adapter size: ~80-150 MB. Targets all seven linear projections in Qwen.
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_bias: "none"
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# 4-bit quantization (QLoRA)
+# NF4 + double quantization = lowest VRAM footprint without quality loss.
+load_in_4bit: true
+bnb_4bit_quant_type: "nf4"
+bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_use_double_quant: true
+
+# Training schedule
+# Effective batch = per_device_train_batch_size * gradient_accumulation_steps = 16.
+num_train_epochs: 2
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-4
+warmup_ratio: 0.03
+lr_scheduler_type: "cosine"
+weight_decay: 0.01
+optim: "paged_adamw_8bit"
+max_seq_length: 2048
+
+# Precision
+# bf16 is preferred on RTX 4090 and A100; switch to fp16 on T4 if needed.
+bf16: true
+fp16: false
+gradient_checkpointing: true
+
+# IO and reproducibility
+output_dir: "outputs/openrabbit-reviewer-v1"
+logging_steps: 10
+save_steps: 200
+save_total_limit: 3
+seed: 42
