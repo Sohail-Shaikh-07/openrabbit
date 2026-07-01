@@ -56,6 +56,8 @@ mypy = ">=1.10"
 types-pyyaml = ">=6.0"
 pre-commit = ">=3.7"
 respx = "^0.23.1"
+sacrebleu = ">=2.3"
+rouge-score = ">=0.1"
 
 # Heavy ML stack for QLoRA fine-tuning (Phase 5). Optional and NOT installed in
 # CI: bitsandbytes needs CUDA and torch is multi-GB. Install on the GPU machine
@@ -133,6 +135,12 @@ follow_imports = "skip"
 # lazily inside trainer.py methods that only run on a GPU.
 [[tool.mypy.overrides]]
 module = ["torch", "transformers", "transformers.*", "peft", "trl", "datasets"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# Phase 5 evaluation deps. sacrebleu and rouge_score ship no type stubs.
+[[tool.mypy.overrides]]
+module = ["sacrebleu", "sacrebleu.*", "rouge_score", "rouge_score.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
