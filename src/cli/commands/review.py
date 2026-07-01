@@ -25,6 +25,7 @@ async def run_review(
     number: int,
     repo: str | None = None,
     env: dict[str, str] | None = None,
+    dry_run: bool = False,
 ) -> dict[str, object]:
     """Fetch and parse one pull request, returning a summary dict.
 
@@ -52,11 +53,14 @@ async def run_review(
         "binary_files": binary_count,
         "hunks": hunk_total,
         "commits": len(payload.commits),
+        "dry_run": dry_run,
     }
 
 
 def render_summary(summary: dict[str, object], out: TextIO) -> None:
     """Pretty-print the dict returned by :func:`run_review`."""
+    if summary.get("dry_run"):
+        print("[DRY RUN] No comments will be posted.", file=out)
     print(f"PR #{summary['number']} on {summary['repo']}", file=out)
     print(f"  Title:        {summary['title']}", file=out)
     print(f"  State:        {summary['state']}", file=out)
@@ -74,9 +78,10 @@ def run_review_blocking(
     number: int,
     repo: str | None = None,
     env: dict[str, str] | None = None,
+    dry_run: bool = False,
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
-    return asyncio.run(run_review(settings, number=number, repo=repo, env=env))
+    return asyncio.run(run_review(settings, number=number, repo=repo, env=env, dry_run=dry_run))
 
 
 # Keep an unused-import suppression so Path is available for type hints in

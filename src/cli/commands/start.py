@@ -31,6 +31,11 @@ class StartError(RuntimeError):
     """Raised when the start command cannot be wired up from settings."""
 
 
+def format_start_banner(repo: str, interval: int, ver: str) -> str:
+    """Return a one-line startup banner string for ``openrabbit start``."""
+    return f"OpenRabbit {ver} | watching {repo} | polling every {interval}s"
+
+
 def resolve_target_repo(settings: Settings, flag: str | None) -> str:
     """Pick the target repo. CLI flag wins over the setting; raise if neither set."""
     if flag:

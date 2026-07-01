@@ -204,12 +204,22 @@ def review(
         "-r",
         help="Repository to review, in owner/repo form. Overrides repository.target.",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print the review summary without posting comments to GitHub.",
+    ),
 ) -> None:
     """Run a one-off parse of a specific pull request and print a summary."""
     workspace = workspace.resolve()
     settings = _load_settings_or_exit(workspace)
     try:
-        summary = run_review_blocking(settings, number=pr, repo=repo)  # type: ignore[arg-type]
+        summary = run_review_blocking(
+            settings,  # type: ignore[arg-type]
+            number=pr,
+            repo=repo,
+            dry_run=dry_run,
+        )
     except StartError as exc:
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
