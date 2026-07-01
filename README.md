@@ -106,7 +106,7 @@ poetry run openrabbit start --workspace . --repo owner/repo
 
 ### `openrabbit review`
 
-Runs a one-off review of a specific PR and prints a summary. Useful for testing your configuration or previewing what OpenRabbit would say.
+Runs a one-off review of a specific PR, executes the configured local model agents, and prints ranked findings. Useful for testing your configuration or previewing what OpenRabbit would say.
 
 ```bash
 poetry run openrabbit review --pr 42
@@ -184,6 +184,12 @@ scorer = BenchmarkScorer()
 scored = scorer.score(report, cases)
 print(f"macro F1: {scored.macro_f1:.3f}")
 ```
+
+## Fine-tuning and local models
+
+OpenRabbit trains `OpenRabbit-Reviewer-v1` as a QLoRA adapter on top of `Qwen/Qwen2.5-Coder-7B-Instruct`. The runtime uses a local Ollama model name from `.codereviewer/config.yml`.
+
+See [docs/model-finetuning.md](docs/model-finetuning.md) for the Google Colab free-tier training flow, adapter packaging, Ollama import, and local OpenRabbit configuration.
 
 ## Development
 

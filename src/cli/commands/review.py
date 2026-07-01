@@ -1,22 +1,27 @@
 """Implementation of ``openrabbit review --pr N``.
 
-Pulls a single PR through OP-8's parser and prints a short summary. No agents
-yet, that is Phase 4. The intent is to give a maintainer a way to confirm
-the GitHub integration is working end to end before any model is wired in.
+Pulls a single PR through the parser, runs the configured local review agents,
+ranks their findings, and prints a dry-run friendly summary.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TextIO
 
+from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
 from github_ import GitHubClient, PullRequestParser, RepositoryHandle
+from ranking.ranker import RankedFinding
 
 _log = get_logger(__name__)
+
+
+AgentRunner = Callable[..., Awaitable[ReviewPipelineResult]]
 
 
 async def run_review(
@@ -26,6 +31,8 @@ async def run_review(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     dry_run: bool = False,
+    run_agents: bool = True,
+    agent_runner: AgentRunner | None = None,
 ) -> dict[str, object]:
     """Fetch and parse one pull request, returning a summary dict.
 
@@ -42,6 +49,12 @@ async def run_review(
 
     hunk_total = sum(len(f.hunks) for f in payload.files)
     binary_count = sum(1 for f in payload.files if f.is_binary)
+    ranked: list[RankedFinding] = []
+
+    if run_agents:
+        runner = agent_runner or run_agent_review
+        pipeline_result = await runner(payload, settings=settings)
+        ranked = pipeline_result.ranked_findings
 
     return {
         "repo": handle.full_name,
@@ -54,6 +67,9 @@ async def run_review(
         "hunks": hunk_total,
         "commits": len(payload.commits),
         "dry_run": dry_run,
+        "findings_count": len(ranked),
+        "findings": [_serialize_ranked_finding(rf) for rf in ranked],
+        "comments_posted": False,
     }
 
 
@@ -70,6 +86,17 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     )
     print(f"  Hunks:        {summary['hunks']}", file=out)
     print(f"  Commits:      {summary['commits']}", file=out)
+    raw_findings = summary.get("findings")
+    findings = raw_findings if isinstance(raw_findings, list) else []
+    print(f"  Findings:     {len(findings)}", file=out)
+    if findings:
+        print("", file=out)
+        print("Model findings:", file=out)
+    for item in findings:
+        location = f"{item['file']}:{item['line']}" if item.get("line") else str(item["file"])
+        print(f"  - [{str(item['severity']).upper()}] {item['title']} ({location})", file=out)
+        print(f"    {item['reason']}", file=out)
+        print(f"    Suggestion: {item['suggestion']}", file=out)
 
 
 def run_review_blocking(
@@ -82,6 +109,12 @@ def run_review_blocking(
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
     return asyncio.run(run_review(settings, number=number, repo=repo, env=env, dry_run=dry_run))
+
+
+def _serialize_ranked_finding(ranked: RankedFinding) -> dict[str, object]:
+    finding = ranked.finding.as_dict()
+    finding["score"] = ranked.score
+    return finding
 
 
 # Keep an unused-import suppression so Path is available for type hints in

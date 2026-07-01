@@ -11,6 +11,7 @@ from agents.architecture import ArchitectureAgent
 from agents.base import BaseReviewAgent
 from agents.bugs import BugDetectionAgent
 from agents.coordinator import CoordinatorGraph
+from agents.factory import build_review_agents
 from agents.llm import OllamaClient
 from agents.models import AgentResult, Finding, ReviewState, Severity
 from agents.performance import PerformanceAgent
@@ -30,4 +31,5 @@ __all__ = [
     "SecurityAgent",
     "Severity",
     "TestCoverageAgent",
+    "build_review_agents",
 ]

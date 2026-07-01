@@ -41,7 +41,9 @@ parsing and prints what a real run would do. Expected output:
 ```bash
 git clone https://github.com/Sohail-Shaikh-07/openrabbit
 cd openrabbit
-pip install -e ".[train]"
+pip install "poetry==2.4.1"
+poetry config virtualenvs.create false
+poetry install --with finetuning --no-interaction --no-ansi
 ```
 
 ### 3. Download the dataset
@@ -91,7 +93,9 @@ Runtime > Change runtime type > T4 GPU
 ```python
 !git clone https://github.com/Sohail-Shaikh-07/openrabbit
 %cd openrabbit
-!pip install -e ".[train]"
+!pip install "poetry==2.4.1"
+!poetry config virtualenvs.create false
+!poetry install --with finetuning --no-interaction --no-ansi
 ```
 
 ### 3. Upload the dataset
