@@ -87,7 +87,11 @@ def test_render_summary_dry_run_false_no_banner() -> None:
 
 def test_review_command_accepts_dry_run_flag() -> None:
     result = runner.invoke(app, ["review", "--help"])
-    assert "--dry-run" in result.output
+    # Strip ANSI escape codes before checking (CI terminal adds colour).
+    import re
+
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "dry-run" in plain
 
 
 # ---------------------------------------------------------------------------
