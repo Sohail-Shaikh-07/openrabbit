@@ -13,6 +13,12 @@ poetry install
 pre-commit install
 ```
 
+The optional fine-tuning stack (PyTorch, PEFT, bitsandbytes) is not installed by default because it requires a CUDA GPU. If you are working on the fine-tuning pipeline:
+
+```bash
+poetry install --with finetuning
+```
+
 ## Running the checks
 
 The same gates that run in CI run locally:
@@ -25,6 +31,29 @@ poetry run pytest
 ```
 
 If any of these are red on your branch, fix them before opening a PR.
+
+To verify the package installs and the CLI works on your machine:
+
+```bash
+poetry run python scripts/smoke_test.py
+```
+
+## Package layout
+
+| Package | Purpose |
+| ------- | ------- |
+| `cli` | Typer entry point and CLI subcommands |
+| `configs` | YAML and env-var configuration loading |
+| `github_` | GitHub REST client, PR parser, polling service |
+| `rag` | Repository scanner, chunker, embeddings, Qdrant retriever |
+| `agents` | LangGraph multi-agent review pipeline |
+| `ranking` | Finding deduplication and confidence ranking |
+| `models` | Model serving adapters (Ollama, vLLM, transformers) |
+| `finetuning` | QLoRA trainer, dataset formatting, evaluation metrics |
+| `benchmarks` | Evaluation harness: runner, scorer, latency profiler |
+| `api` | Local FastAPI surface (Phase 6+) |
+
+All packages live directly under `src/`. Tests mirror the layout under `tests/`.
 
 ## Task IDs
 
@@ -54,6 +83,11 @@ A maintainer self-reviews their own PRs before merging.
 - Tests live under `tests/` mirroring the `src/` package structure
 - No commented-out code, no TODO placeholders, no half-finished implementations
 - README, commit messages, and PR descriptions read as plain prose, not as auto-generated changelogs
+- No em dashes in any written text
+
+## Writing benchmarks
+
+The `benchmarks` package contains a harness for measuring review quality against known-issue cases. If you are adding or modifying review agents, add a corresponding `BenchmarkCase` in `tests/benchmarks/` to verify recall does not regress.
 
 ## Reporting bugs
 
