@@ -71,6 +71,8 @@ trl = ">=0.9"
 accelerate = ">=0.30"
 bitsandbytes = ">=0.43"
 datasets = ">=2.20"
+sacrebleu = ">=2.3"
+rouge-score = ">=0.1"
 
 [tool.poetry.scripts]
 openrabbit = "cli.main:app"
