@@ -56,6 +56,8 @@ mypy = ">=1.10"
 types-pyyaml = ">=6.0"
 pre-commit = ">=3.7"
 respx = "^0.23.1"
+sacrebleu = ">=2.3"
+rouge-score = ">=0.1"
 
 # Heavy ML stack for QLoRA fine-tuning (Phase 5). Optional and NOT installed in
 # CI: bitsandbytes needs CUDA and torch is multi-GB. Install on the GPU machine
@@ -71,8 +73,6 @@ trl = ">=0.9"
 accelerate = ">=0.30"
 bitsandbytes = ">=0.43"
 datasets = ">=2.20"
-sacrebleu = ">=2.3"
-rouge-score = ">=0.1"
 
 [tool.poetry.scripts]
 openrabbit = "cli.main:app"
