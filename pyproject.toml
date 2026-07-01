@@ -138,6 +138,12 @@ module = ["torch", "transformers", "transformers.*", "peft", "trl", "datasets"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
+# Phase 5 evaluation deps. sacrebleu and rouge_score ship no type stubs.
+[[tool.mypy.overrides]]
+module = ["sacrebleu", "sacrebleu.*", "rouge_score", "rouge_score.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
