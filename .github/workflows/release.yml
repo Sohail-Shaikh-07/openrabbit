@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  POETRY_VERSION: "2.4.1"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  publish:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        run: pipx install "poetry==${POETRY_VERSION}"
+
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --no-interaction --no-ansi
+
+      - name: Validate package version matches tag
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(poetry version --short)"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${PACKAGE_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "Package version ${PACKAGE_VERSION} does not match tag ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+      - name: Run release checks
+        run: |
+          poetry run ruff check .
+          poetry run black --check .
+          poetry run mypy
+          poetry run pytest
+
+      - name: Build wheel and source distribution
+        run: poetry build
+
+      - name: Check PyPI token
+        id: pypi-token
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "${PYPI_TOKEN}" ]]; then
+            echo "configured=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "configured=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Publish to PyPI
+        if: steps.pypi-token.outputs.configured == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+
+      - name: Skip PyPI publish
+        if: steps.pypi-token.outputs.configured != 'true'
+        run: echo "PYPI_TOKEN is not configured. Skipping PyPI publish."
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          files: dist/*
