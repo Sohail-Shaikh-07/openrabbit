@@ -111,6 +111,7 @@ known-first-party = ["agents", "api", "cli", "configs", "finetuning", "github_",
 [tool.black]
 line-length = 100
 target-version = ["py312"]
+extend-exclude = "dataset/"
 
 [tool.mypy]
 python_version = "3.12"

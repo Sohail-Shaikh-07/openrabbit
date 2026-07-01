@@ -18,6 +18,7 @@ from cli import exit_codes
 from cli import logging as orlog
 from cli.commands.index import run_index_blocking
 from cli.commands.init import InitConflict, run_init
+from cli.commands.install_model import InstallResult, run_install_model
 from cli.commands.review import render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
@@ -218,6 +219,42 @@ def review(
     import sys
 
     render_summary(summary, sys.stdout)
+
+
+@app.command("install-model")
+def install_model(
+    model_id: str = typer.Option(
+        "openrabbit/openrabbit-reviewer-v1",
+        "--model-id",
+        "-m",
+        help="HuggingFace Hub repo ID to install.",
+    ),
+    install_dir: Path | None = typer.Option(
+        None,
+        "--install-dir",
+        help="Directory to install the adapter into. Defaults to ~/.openrabbit/models/.",
+    ),
+    token: str | None = typer.Option(
+        None,
+        "--token",
+        "-t",
+        help="HuggingFace Hub token for private repos.",
+        envvar="HF_TOKEN",
+    ),
+) -> None:
+    """Download and install the OpenRabbit-Reviewer-v1 LoRA adapter."""
+    try:
+        result: InstallResult = run_install_model(
+            model_id=model_id,
+            install_dir=install_dir,
+            token=token,
+        )
+    except (FileNotFoundError, RuntimeError, ImportError) as exc:
+        _err.print(f"[red]install-model failed: {exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+
+    _console.print(f"[green]Installed {result.model_id}[/green]")
+    _console.print(f"  Adapter path: {result.install_dir}")
 
 
 if __name__ == "__main__":  # pragma: no cover

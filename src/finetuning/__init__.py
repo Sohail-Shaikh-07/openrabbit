@@ -7,9 +7,12 @@ from finetuning.config import TrainingConfig
 from finetuning.dataset import DatasetLoader, DatasetStats, RawExample
 from finetuning.evaluator import EvalReport, Evaluator
 from finetuning.formatter import InstructionFormatter, Split, TrainingExample
+from finetuning.packager import AdapterInfo, AdapterPackager
 from finetuning.trainer import QLoRATrainer
 
 __all__ = [
+    "AdapterInfo",
+    "AdapterPackager",
     "CleanExample",
     "CleaningStats",
     "DataCleaner",
