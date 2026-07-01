@@ -1,0 +1,51 @@
+# Changelog
+
+All notable changes to OpenRabbit are documented in this file.
+
+## v1.0.0 - 2026-07-01
+
+OpenRabbit v1.0.0 is the first complete release of the self-hosted AI pull request reviewer. It ships the full local-first review loop: GitHub polling, repository-aware retrieval, multi-agent analysis, comment ranking, fine-tuning utilities, benchmark tooling, and release-ready documentation.
+
+### Foundation
+
+- Added the Python package layout, Typer CLI, configuration loader, Dockerfile, Docker Compose setup, and test infrastructure.
+- Added Ruff, Black, mypy, pytest, coverage, and CI validation.
+- Added repository initialization templates for `.codereviewer/` configuration files.
+
+### GitHub Integration
+
+- Added GitHub REST client models, pull request parsing, diff extraction, repository discovery, polling state, and comment publishing support.
+- Added manual review command support for targeted PR review and dry-run workflows.
+- Added polling state persistence so updated PRs and commits can be detected across runs.
+
+### Repository-Aware RAG
+
+- Added repository scanning, language-aware chunking, embedding generation, Qdrant indexing, and retrieval.
+- Added support for indexing source files, tests, docs, architecture notes, coding rules, security rules, and review examples.
+- Added focused tests for scanner, chunker, embeddings, vector store, indexer, and retriever behavior.
+
+### Multi-Agent Review
+
+- Added security, performance, bug detection, architecture, and test coverage agents with typed finding contracts.
+- Added a coordinator for parallel agent execution and result aggregation.
+- Added ranking logic for deduplication, severity weighting, and low-signal filtering.
+
+### Fine-Tuning Pipeline
+
+- Added dataset loading, cleaning, instruction formatting, evaluation, QLoRA trainer configuration, training entry point, and adapter packaging.
+- Added optional fine-tuning dependencies so normal installs stay lightweight.
+- Added `openrabbit install-model` for installing the OpenRabbit reviewer adapter.
+
+### Evaluation And Release
+
+- Added benchmark schemas, runners, scorers, precision and recall reporting, and per-agent timing instrumentation.
+- Added cross-platform smoke tests for Linux, macOS, and Windows.
+- Updated README and CONTRIBUTING for the v1.0.0 workflow, commands, configuration, benchmarks, and contributor checks.
+- Added CI validation for linting, formatting, type checking, tests, coverage, Docker build, Docker Compose config, and install smoke checks.
+
+### Release Notes
+
+- Package version is `1.0.0`.
+- Python support is `>=3.12,<3.14`.
+- The fine-tuning dependency group remains optional and is intended for GPU environments.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.

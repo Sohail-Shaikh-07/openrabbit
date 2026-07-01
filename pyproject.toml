@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "openrabbit"
-version = "0.1.0"
+version = "1.0.0"
 description = "Open-source, self-hosted AI Pull Request Review platform."
 authors = ["Sohail Shaikh <sohailshaikharifshaikh07@gmail.com>"]
 license = "Apache-2.0"
@@ -9,7 +9,7 @@ homepage = "https://github.com/Sohail-Shaikh-07/openrabbit"
 repository = "https://github.com/Sohail-Shaikh-07/openrabbit"
 keywords = ["code-review", "llm", "ai", "github", "rag", "multi-agent", "self-hosted"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
