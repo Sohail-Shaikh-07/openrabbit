@@ -8,8 +8,11 @@ from pathlib import Path
 import httpx
 import respx
 
+from agents.models import Finding, Severity
 from cli.commands.review import render_summary, run_review
+from cli.commands.review_pipeline import ReviewPipelineResult
 from configs import load_settings
+from ranking.ranker import RankedFinding
 
 _BASE = "https://api.github.com"
 
@@ -62,7 +65,13 @@ async def test_run_review_returns_summary(scaffold_repo: Path) -> None:
 
     settings = load_settings(scaffold_repo, env={})
 
-    summary = await run_review(settings, number=42, repo="o/r", env={"GITHUB_TOKEN": "tkn"})
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        run_agents=False,
+    )
 
     assert summary["repo"] == "o/r"
     assert summary["number"] == 42
@@ -73,6 +82,60 @@ async def test_run_review_returns_summary(scaffold_repo: Path) -> None:
     assert summary["hunks"] == 1
     assert summary["commits"] == 1
     assert summary["head_sha"] == "abcdef012345"
+
+
+@respx.mock
+async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "filename": "src/a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "changes": 1,
+                    "patch": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+    finding = Finding(
+        severity=Severity.high,
+        category="bug",
+        file="src/a.py",
+        line=2,
+        confidence=0.9,
+        title="Missing guard",
+        reason="value can be None",
+        suggestion="Add a guard",
+        fix="",
+    )
+
+    async def fake_runner(*_args: object, **_kwargs: object) -> ReviewPipelineResult:
+        return ReviewPipelineResult(
+            agent_results=[],
+            ranked_findings=[RankedFinding(finding=finding, score=2.7)],
+        )
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+    )
+
+    assert summary["findings_count"] == 1
+    assert summary["findings"][0]["title"] == "Missing guard"
+    assert summary["findings"][0]["score"] == 2.7
 
 
 def test_render_summary_prints_every_field() -> None:
@@ -86,6 +149,8 @@ def test_render_summary_prints_every_field() -> None:
         "binary_files": 1,
         "hunks": 5,
         "commits": 2,
+        "findings_count": 0,
+        "findings": [],
     }
     out = io.StringIO()
     render_summary(summary, out)
@@ -96,3 +161,39 @@ def test_render_summary_prints_every_field() -> None:
     assert "3 (1 binary)" in text
     assert "Hunks:" in text
     assert "Commits:" in text
+
+
+def test_render_summary_prints_findings() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 7,
+        "title": "Hello",
+        "state": "open",
+        "head_sha": "abcdef012345",
+        "files_changed": 1,
+        "binary_files": 0,
+        "hunks": 1,
+        "commits": 1,
+        "findings_count": 1,
+        "findings": [
+            {
+                "severity": "high",
+                "category": "bug",
+                "file": "src/a.py",
+                "line": 2,
+                "confidence": 0.9,
+                "title": "Missing guard",
+                "reason": "value can be None",
+                "suggestion": "Add a guard",
+                "fix": "",
+                "score": 2.7,
+            }
+        ],
+    }
+    out = io.StringIO()
+    render_summary(summary, out)
+
+    text = out.getvalue()
+    assert "Findings:     1" in text
+    assert "[HIGH] Missing guard" in text
+    assert "src/a.py:2" in text
