@@ -24,6 +24,7 @@ import time
 from typing import Any
 
 from agents.models import AgentResult
+from benchmarks.profiler import LatencyProfiler
 from benchmarks.schema import BenchmarkCase, BenchmarkPayload, BenchmarkReport, BenchmarkResult
 from ranking.ranker import CommentRanker
 
@@ -67,12 +68,16 @@ class BenchmarkRunner:
         state: dict[str, Any] = {"pr_payload": payload, "agent_results": []}
 
         agent_results: list[AgentResult] = []
+        agent_latencies: dict[str, float] = {}
         last_error: str | None = None
+        profiler = LatencyProfiler()
 
         for agent in self._agents:
             try:
-                result = await agent.run(state)
+                result = await profiler.measure(agent.name, agent.run(state))
                 agent_results.append(result)
+                timing = profiler.timings[-1]
+                agent_latencies[agent.name] = timing.duration_ms
             except Exception as exc:
                 logger.warning("Agent %s failed on case %s: %s", agent.name, case.case_id, exc)
                 last_error = str(exc)
@@ -86,6 +91,7 @@ class BenchmarkRunner:
                 agent_results=[],
                 latency_ms=elapsed_ms,
                 error=last_error,
+                agent_latencies=agent_latencies,
             )
 
         findings = self._ranker.rank(agent_results)
@@ -94,6 +100,7 @@ class BenchmarkRunner:
             findings=findings,
             agent_results=agent_results,
             latency_ms=elapsed_ms,
+            agent_latencies=agent_latencies,
         )
 
     async def run(self, cases: list[BenchmarkCase]) -> BenchmarkReport:

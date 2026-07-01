@@ -115,12 +115,14 @@ class BenchmarkResult:
     agent_results: list[Any]
     latency_ms: float
     error: str | None = None
+    agent_latencies: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "case_id": self.case_id,
             "latency_ms": round(self.latency_ms, 2),
             "error": self.error,
+            "agent_latencies": {k: round(v, 3) for k, v in self.agent_latencies.items()},
             "findings_count": len(self.findings),
             "findings": [
                 {
