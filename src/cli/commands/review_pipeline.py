@@ -10,6 +10,7 @@ from agents.coordinator import CoordinatorGraph
 from agents.factory import build_review_agents
 from agents.models import AgentResult, ReviewState
 from configs.settings import Settings
+from ranking.grounding import filter_grounded_findings
 from ranking.ranker import CommentRanker, RankedFinding
 
 
@@ -19,6 +20,7 @@ class ReviewPipelineResult:
 
     agent_results: list[AgentResult]
     ranked_findings: list[RankedFinding]
+    dropped_findings_count: int = 0
 
 
 async def run_agent_review(
@@ -44,5 +46,17 @@ async def run_agent_review(
     compiled = CoordinatorGraph(agents=agents).compile()
     result = await compiled.ainvoke(state)
     agent_results = list(result.get("agent_results") or [])
-    ranked = (ranker or CommentRanker()).rank(agent_results)
-    return ReviewPipelineResult(agent_results=agent_results, ranked_findings=ranked)
+    all_findings = [finding for agent_result in agent_results for finding in agent_result.findings]
+    grounding = filter_grounded_findings(all_findings, pr_payload)
+    grounded_result = AgentResult(
+        agent="grounded",
+        findings=grounding.kept,
+        confidence=0.0,
+        execution_time=0.0,
+    )
+    ranked = (ranker or CommentRanker()).rank([grounded_result])
+    return ReviewPipelineResult(
+        agent_results=agent_results,
+        ranked_findings=ranked,
+        dropped_findings_count=len(grounding.dropped),
+    )

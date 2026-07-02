@@ -50,11 +50,13 @@ async def run_review(
     hunk_total = sum(len(f.hunks) for f in payload.files)
     binary_count = sum(1 for f in payload.files if f.is_binary)
     ranked: list[RankedFinding] = []
+    dropped_findings_count = 0
 
     if run_agents:
         runner = agent_runner or run_agent_review
         pipeline_result = await runner(payload, settings=settings)
         ranked = pipeline_result.ranked_findings
+        dropped_findings_count = pipeline_result.dropped_findings_count
 
     return {
         "repo": handle.full_name,
@@ -68,6 +70,7 @@ async def run_review(
         "commits": len(payload.commits),
         "dry_run": dry_run,
         "findings_count": len(ranked),
+        "dropped_findings_count": dropped_findings_count,
         "findings": [_serialize_ranked_finding(rf) for rf in ranked],
         "comments_posted": False,
     }
@@ -89,6 +92,9 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     raw_findings = summary.get("findings")
     findings = raw_findings if isinstance(raw_findings, list) else []
     print(f"  Findings:     {len(findings)}", file=out)
+    dropped = summary.get("dropped_findings_count")
+    if isinstance(dropped, int) and dropped > 0:
+        print(f"  Dropped:      {dropped} ungrounded", file=out)
     if findings:
         print("", file=out)
         print("Model findings:", file=out)
