@@ -10,6 +10,7 @@ import pytest
 from agents.llm import OllamaClient, parse_findings
 from agents.models import ReviewState, Severity
 from agents.security import CONFIDENCE_THRESHOLD, SecurityAgent
+from github_.diff import DiffLine, Hunk
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,6 +36,15 @@ def _make_state(
 
 def _llm_response(findings: list[dict]) -> str:
     return json.dumps({"findings": findings})
+
+
+def _parsed_file(path: str, hunks: list[Hunk]) -> MagicMock:
+    parsed = MagicMock()
+    parsed.path = path
+    parsed.status = "modified"
+    parsed.is_binary = False
+    parsed.hunks = hunks
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +115,19 @@ Done."""
 
     assert len(findings) == 1
     assert findings[0].category == "bug"
+
+
+def test_ollama_client_default_timeout_is_generous_for_local_models() -> None:
+    client = OllamaClient()
+
+    assert client.timeout >= 300.0
+
+
+def test_ollama_client_timeout_can_come_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENRABBIT_OLLAMA_TIMEOUT_SECONDS", "240")
+    client = OllamaClient()
+
+    assert client.timeout == 240.0
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +212,227 @@ async def test_security_agent_returns_empty_on_no_findings() -> None:
 
     assert result.findings == []
     assert result.agent == "security"
+
+
+@pytest.mark.asyncio
+async def test_security_agent_flags_raw_sql_f_string_even_when_llm_is_silent() -> None:
+    agent = SecurityAgent()
+    state = _make_state()
+    pr = state["pr_payload"]
+    pr.files = [
+        _parsed_file(
+            "app/repositories/task_repository.py",
+            [
+                Hunk(
+                    old_start=67,
+                    old_lines=1,
+                    new_start=67,
+                    new_lines=2,
+                    lines=[
+                        DiffLine(
+                            kind="addition",
+                            text='count_sql = text(f"SELECT COUNT(*) FROM tasks WHERE {where_clause}")',
+                        ),
+                    ],
+                )
+            ],
+        )
+    ]
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(return_value=_llm_response([]))
+        result = await agent.run(state)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].title == "Raw SQL construction from changed input"
+    assert result.findings[0].file == "app/repositories/task_repository.py"
+    assert result.findings[0].line == 67
+
+
+@pytest.mark.asyncio
+async def test_security_agent_deduplicates_preflight_when_model_finds_same_sql_issue() -> None:
+    agent = SecurityAgent()
+    state = _make_state()
+    pr = state["pr_payload"]
+    pr.files = [
+        _parsed_file(
+            "app/repositories/task_repository.py",
+            [
+                Hunk(
+                    old_start=74,
+                    old_lines=1,
+                    new_start=74,
+                    new_lines=8,
+                    lines=[
+                        DiffLine(
+                            kind="addition",
+                            text="where_clause = f\"title LIKE '%{query}%'\"",
+                        ),
+                        DiffLine(kind="context", text="count_sql = text(...)"),
+                        DiffLine(kind="context", text="total = self.session.execute(count_sql)"),
+                        DiffLine(kind="context", text="tasks = []"),
+                        DiffLine(kind="context", text="if total:"),
+                        DiffLine(kind="context", text="    pass"),
+                        DiffLine(kind="context", text="rows_sql = text("),
+                        DiffLine(
+                            kind="addition",
+                            text='rows_sql = text(f"SELECT * FROM tasks WHERE {where_clause}")',
+                        ),
+                    ],
+                )
+            ],
+        )
+    ]
+    model_response = _llm_response(
+        [
+            {
+                "severity": "high",
+                "file": "app/repositories/task_repository.py",
+                "line": 74,
+                "confidence": 0.90,
+                "title": "SQL Injection via String Formatting",
+                "reason": "The changed string formatting can alter the query.",
+                "suggestion": "Use parameterized queries.",
+                "fix": "",
+            }
+        ]
+    )
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(return_value=model_response)
+        result = await agent.run(state)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].title == "SQL Injection via String Formatting"
+
+
+@pytest.mark.asyncio
+async def test_security_agent_deduplicates_nearby_model_findings_for_same_sql_issue() -> None:
+    agent = SecurityAgent()
+    state = _make_state()
+    pr = state["pr_payload"]
+    pr.files = [
+        _parsed_file(
+            "app/repositories/task_repository.py",
+            [
+                Hunk(
+                    old_start=71,
+                    old_lines=1,
+                    new_start=71,
+                    new_lines=13,
+                    lines=[
+                        DiffLine(
+                            kind="addition",
+                            text='count_sql = text(f"SELECT COUNT(*) FROM tasks WHERE {where_clause}")',
+                        ),
+                    ],
+                )
+            ],
+        )
+    ]
+    model_response = _llm_response(
+        [
+            {
+                "severity": "high",
+                "file": "app/repositories/task_repository.py",
+                "line": line,
+                "confidence": 0.90,
+                "title": "SQL Injection Vulnerability in Advanced Search",
+                "reason": "The query string is built with f-strings.",
+                "suggestion": "Use parameterized queries.",
+                "fix": "",
+            }
+            for line in (71, 80, 82, 83)
+        ]
+    )
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(return_value=model_response)
+        result = await agent.run(state)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].line == 71
+
+
+@pytest.mark.asyncio
+async def test_security_agent_drops_model_sql_finding_without_changed_raw_sql_sink() -> None:
+    agent = SecurityAgent()
+    state = _make_state()
+    pr = state["pr_payload"]
+    pr.files = [
+        _parsed_file(
+            "app/api/routes/tasks.py",
+            [
+                Hunk(
+                    old_start=80,
+                    old_lines=1,
+                    new_start=80,
+                    new_lines=2,
+                    lines=[
+                        DiffLine(kind="addition", text="task.owner = payload.owner"),
+                        DiffLine(kind="addition", text="session.commit()"),
+                    ],
+                )
+            ],
+        )
+    ]
+    model_response = _llm_response(
+        [
+            {
+                "severity": "medium",
+                "file": "app/api/routes/tasks.py",
+                "line": 80,
+                "confidence": 0.88,
+                "title": "Potential SQL Injection",
+                "reason": "The owner field is assigned from user input.",
+                "suggestion": "Sanitize owner before assignment.",
+                "fix": "",
+            }
+        ]
+    )
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(return_value=model_response)
+        result = await agent.run(state)
+
+    assert result.findings == []
+
+
+@pytest.mark.asyncio
+async def test_security_agent_flags_admin_route_without_authorization_when_llm_is_silent() -> None:
+    agent = SecurityAgent()
+    state = _make_state()
+    pr = state["pr_payload"]
+    pr.files = [
+        _parsed_file(
+            "app/api/routes/tasks.py",
+            [
+                Hunk(
+                    old_start=66,
+                    old_lines=1,
+                    new_start=66,
+                    new_lines=6,
+                    lines=[
+                        DiffLine(kind="addition", text='@router.post("/admin/{task_id}/reassign")'),
+                        DiffLine(kind="addition", text="def admin_reassign_task("),
+                        DiffLine(
+                            kind="addition", text="_: Annotated[str, Depends(require_subject)],"
+                        ),
+                        DiffLine(kind="addition", text="task.owner = payload.owner"),
+                    ],
+                )
+            ],
+        )
+    ]
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(return_value=_llm_response([]))
+        result = await agent.run(state)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].title == "Admin route lacks an authorization check"
+    assert result.findings[0].file == "app/api/routes/tasks.py"
+    assert result.findings[0].line == 66
 
 
 @pytest.mark.asyncio
@@ -280,6 +524,48 @@ async def test_security_agent_includes_project_rules_and_review_discipline() -> 
     assert "Never allow disabled TLS verification" in captured[0]
     assert "Do not invent" in captured[0]
     assert "changed lines" in captured[0]
+    assert "Authentication-only checks do not prove authorization" in captured[0]
+    assert "Do not label plain assignment as SQL injection" in captured[0]
+
+
+@pytest.mark.asyncio
+async def test_security_agent_includes_changed_line_evidence() -> None:
+    agent = SecurityAgent()
+    state = _make_state()
+    pr = state["pr_payload"]
+    pr.files = [
+        _parsed_file(
+            "app/repositories/task_repository.py",
+            [
+                Hunk(
+                    old_start=67,
+                    old_lines=2,
+                    new_start=67,
+                    new_lines=4,
+                    lines=[
+                        DiffLine(kind="context", text="def advanced_search(...):"),
+                        DiffLine(
+                            kind="addition",
+                            text='count_sql = text(f"SELECT COUNT(*) FROM tasks WHERE {where_clause}")',
+                        ),
+                    ],
+                )
+            ],
+        )
+    ]
+    captured: list[str] = []
+
+    async def fake_generate(prompt: str) -> str:
+        captured.append(prompt)
+        return _llm_response([])
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(side_effect=fake_generate)
+        await agent.run(state)
+
+    assert "Changed-line evidence:" in captured[0]
+    assert "app/repositories/task_repository.py (modified)" in captured[0]
+    assert '+68 count_sql = text(f"SELECT COUNT(*) FROM tasks WHERE {where_clause}")' in captured[0]
 
 
 @pytest.mark.asyncio

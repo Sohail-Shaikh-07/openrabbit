@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 
 import httpx
@@ -22,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen2.5-coder:7b"
-_TIMEOUT = 120.0
+_TIMEOUT = 300.0
+_TIMEOUT_ENV = "OPENRABBIT_OLLAMA_TIMEOUT_SECONDS"
 
 CONFIDENCE_THRESHOLD = 0.70
 
@@ -47,18 +49,24 @@ class OllamaClient:
         Model name to use (default ``qwen2.5-coder:7b``).
     timeout:
         Request timeout in seconds. Code review prompts can be long so the
-        default is generous at 120 s.
+        default is generous at 300 s and can be overridden with
+        ``OPENRABBIT_OLLAMA_TIMEOUT_SECONDS``.
     """
 
     def __init__(
         self,
         base_url: str = _DEFAULT_BASE_URL,
         model: str = _DEFAULT_MODEL,
-        timeout: float = _TIMEOUT,
+        timeout: float | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
-        self._timeout = timeout
+        self._timeout = _resolve_timeout(timeout)
+
+    @property
+    def timeout(self) -> float:
+        """Request timeout in seconds."""
+        return self._timeout
 
     async def generate(self, prompt: str) -> str:
         """Send *prompt* to Ollama and return the raw response text.
@@ -194,3 +202,19 @@ def mean_confidence(findings: list[Finding]) -> float:
     if not findings:
         return 0.0
     return sum(f.confidence for f in findings) / len(findings)
+
+
+def _resolve_timeout(explicit: float | None) -> float:
+    if explicit is not None:
+        return explicit
+
+    raw = os.getenv(_TIMEOUT_ENV)
+    if raw is None:
+        return _TIMEOUT
+
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid %s=%r", _TIMEOUT_ENV, raw)
+        return _TIMEOUT
+    return value if value > 0 else _TIMEOUT
