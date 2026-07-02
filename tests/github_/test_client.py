@@ -27,10 +27,15 @@ async def test_constructor_rejects_empty_token() -> None:
         GitHubClient(token="")
 
 
-async def test_from_settings_raises_when_no_token_resolvable() -> None:
+async def test_from_settings_raises_when_no_token_resolvable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("configs.settings._persistent_windows_env", lambda name: None)
     settings = Settings()
-    with pytest.raises(GitHubAuthError):
+    with pytest.raises(GitHubAuthError) as exc:
         GitHubClient.from_settings(settings, env={})
+
+    assert "persistent User/Machine environment" in str(exc.value)
 
 
 async def test_from_settings_uses_resolved_token() -> None:
