@@ -1,7 +1,7 @@
 """Template content written by ``openrabbit init``.
 
 Each constant is the *initial* content for the matching file under
-``.codereviewer/`` in a target repository. Templates are intentionally short
+``.openrabbit/`` in a target repository. Templates are intentionally short
 prose plus headings so a maintainer can edit them right away. Their actual
 semantics (which agent reads what) are nailed down in Phases 3 and 4.
 """

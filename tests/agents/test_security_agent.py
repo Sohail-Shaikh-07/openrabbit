@@ -16,13 +16,18 @@ from agents.security import CONFIDENCE_THRESHOLD, SecurityAgent
 # ---------------------------------------------------------------------------
 
 
-def _make_state(diff: str = "diff --git a/auth.py\n+password = 'secret'") -> ReviewState:
+def _make_state(
+    diff: str = "diff --git a/auth.py\n+password = 'secret'",
+    security_context: list[object] | None = None,
+) -> ReviewState:
     pr = MagicMock()
     pr.diff = diff
     pr.files = []
+    retrieval = MagicMock()
+    retrieval.security = security_context or []
     return {
         "pr_payload": pr,
-        "retrieval_result": MagicMock(),
+        "retrieval_result": retrieval,
         "agent_results": [],
         "error": None,
     }
@@ -224,6 +229,34 @@ async def test_security_agent_severity_mapping() -> None:
     severities = {f.title: f.severity for f in result.findings}
     assert severities["SQL injection"] == Severity.critical
     assert severities["Minor issue"] == Severity.low
+
+
+@pytest.mark.asyncio
+async def test_security_agent_includes_project_rules_and_review_discipline() -> None:
+    agent = SecurityAgent()
+    state = _make_state(
+        security_context=[
+            {
+                "payload": {
+                    "source_path": ".openrabbit/security_rules.md",
+                    "text": "Never allow disabled TLS verification in production code.",
+                }
+            }
+        ]
+    )
+    captured: list[str] = []
+
+    async def fake_generate(prompt: str) -> str:
+        captured.append(prompt)
+        return _llm_response([])
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(side_effect=fake_generate)
+        await agent.run(state)
+
+    assert "Never allow disabled TLS verification" in captured[0]
+    assert "Do not invent" in captured[0]
+    assert "changed lines" in captured[0]
 
 
 @pytest.mark.asyncio

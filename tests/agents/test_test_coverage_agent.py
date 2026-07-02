@@ -81,6 +81,8 @@ async def test_test_coverage_agent_includes_test_context_in_prompt() -> None:
         await agent.run(state)
 
     assert "tests/test_payments.py" in captured[0]
+    assert "Do not invent" in captured[0]
+    assert "changed lines" in captured[0]
 
 
 @pytest.mark.asyncio

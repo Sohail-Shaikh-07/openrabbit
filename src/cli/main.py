@@ -81,10 +81,10 @@ def init(
         False,
         "--force",
         "-f",
-        help="Overwrite existing files in .codereviewer/.",
+        help="Overwrite existing files in .openrabbit/.",
     ),
 ) -> None:
-    """Create the ``.codereviewer/`` configuration scaffold."""
+    """Create the ``.openrabbit/`` configuration scaffold."""
     target = path.resolve()
     try:
         result = run_init(target, force=force)
@@ -130,7 +130,7 @@ def start(
         Path("."),
         "--workspace",
         "-w",
-        help="Path to the repo that contains .codereviewer/.",
+        help="Path to the repo that contains .openrabbit/.",
     ),
     repo: str | None = typer.Option(
         None,
@@ -164,7 +164,7 @@ def index(
         Path("."),
         "--workspace",
         "-w",
-        help="Path to the repo that contains .codereviewer/.",
+        help="Path to the repo that contains .openrabbit/.",
     ),
     qdrant_host: str = typer.Option(
         "localhost",
@@ -196,7 +196,7 @@ def review(
         Path("."),
         "--workspace",
         "-w",
-        help="Path to the repo that contains .codereviewer/.",
+        help="Path to the repo that contains .openrabbit/.",
     ),
     repo: str | None = typer.Option(
         None,

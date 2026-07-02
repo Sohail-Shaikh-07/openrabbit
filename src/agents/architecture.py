@@ -14,43 +14,37 @@ import time
 from agents.base import BaseReviewAgent
 from agents.llm import OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
+from agents.prompting import JSON_RESPONSE_CONTRACT, REVIEW_DISCIPLINE, collect_context
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """You are an architecture code reviewer. Analyze the following pull request diff against the project's architecture rules and identify violations.
+_PROMPT_TEMPLATE = """You are OpenRabbit's architecture review agent. Review the pull request like a technical lead preserving system boundaries, maintainability, and long-term design clarity.
 
-Architecture context (project-specific rules and design decisions):
+Mission:
+- Identify architecture violations introduced or exposed by the changed lines.
+- Treat project-specific architecture context as the source of truth.
+- Distinguish real design breakage from harmless local implementation detail.
+- Prefer findings that protect ownership boundaries, dependency direction, deployment isolation, or module contracts.
+
+Architecture classes to consider:
+- Layer violations: API, service, domain, data, infrastructure, or UI layers bypassing their intended boundary.
+- Dependency violations: imports or calls against modules that should not know about each other.
+- Service boundary violations: direct use of another service's internals instead of its public contract.
+- Circular dependencies, hidden coupling, global state, or cross-cutting shortcuts.
+- Changes that make future testing, migration, or local-first operation materially harder.
+
+Architecture context:
 {architecture_context}
 
 Diff:
 {diff}
 
-Check specifically for:
-- Layer violations (e.g. API layer importing from database layer directly)
-- Dependency violations (importing modules that should not depend on each other)
-- Service boundary violations (one service calling another service's internals)
-- Circular dependencies introduced by this change
+{review_discipline}
 
-Reply with ONLY a JSON object in this exact format, no prose:
-{{
-  "findings": [
-    {{
-      "severity": "critical|high|medium|low",
-      "file": "path/to/file.py",
-      "line": 42,
-      "confidence": 0.85,
-      "title": "Short title",
-      "reason": "Why this violates the architecture.",
-      "suggestion": "How to fix it.",
-      "fix": "Optional corrected import or code snippet"
-    }}
-  ]
-}}
+{json_contract}
 
-If no architecture violations are found, return {{"findings": []}}
+If no architecture violations are found, return {{"findings": []}}.
 """
-
-_NO_CONTEXT = "(No architecture context retrieved for this review.)"
 
 
 class ArchitectureAgent(BaseReviewAgent):
@@ -68,10 +62,12 @@ class ArchitectureAgent(BaseReviewAgent):
         try:
             pr = state.get("pr_payload")
             diff: str = getattr(pr, "diff", "") or "" if pr else ""
-            arch_context = _extract_architecture_context(state)
+            arch_context = collect_context(state, "architecture")
             prompt = _PROMPT_TEMPLATE.format(
                 architecture_context=arch_context,
                 diff=diff,
+                review_discipline=REVIEW_DISCIPLINE,
+                json_contract=JSON_RESPONSE_CONTRACT,
             )
             raw = await self._client.generate(prompt)
             findings = parse_findings(raw, "architecture")
@@ -84,13 +80,3 @@ class ArchitectureAgent(BaseReviewAgent):
             confidence=mean_confidence(findings),
             execution_time=time.monotonic() - started,
         )
-
-
-def _extract_architecture_context(state: ReviewState) -> str:
-    retrieval = state.get("retrieval_result")
-    if retrieval is None:
-        return _NO_CONTEXT
-    docs: list[str] = getattr(retrieval, "architecture", []) or []
-    if not docs:
-        return _NO_CONTEXT
-    return "\n\n".join(docs)

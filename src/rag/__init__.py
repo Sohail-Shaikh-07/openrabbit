@@ -7,6 +7,7 @@ from rag.embeddings import EmbeddedChunk, EmbeddingEngine
 from rag.retriever import AgentDimension, ContextRetriever, RetrievalResult
 from rag.scanner import (
     CODEREVIEWER_DIR,
+    OPENRABBIT_DIR,
     FileKind,
     FileRecord,
     IgnoreMatcher,
@@ -31,6 +32,7 @@ __all__ = [
     "COLLECTION_FUNCTIONS",
     "COLLECTION_REVIEWS",
     "COLLECTION_RULES",
+    "OPENRABBIT_DIR",
     "VECTOR_SIZE",
     "AgentDimension",
     "Chunk",

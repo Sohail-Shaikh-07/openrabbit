@@ -218,7 +218,7 @@ def test_markdown_source_path_is_set(tmp_path: Path) -> None:
 def test_chunker_returns_empty_for_rules_file(tmp_path: Path) -> None:
     record = _record(
         tmp_path,
-        ".codereviewer/coding_rules.md",
+        ".openrabbit/coding_rules.md",
         "# Rules\n\nUse type hints.",
         kind=FileKind.rules,
     )

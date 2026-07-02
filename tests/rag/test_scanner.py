@@ -42,10 +42,20 @@ def test_classifies_source_documentation_tests_and_rules(scaffold_repo: Path) ->
     assert by_path["docs/architecture.md"].kind is FileKind.documentation
     assert by_path["README.md"].kind is FileKind.documentation
 
-    # Files under .codereviewer/ are rules.
+    # Files under .openrabbit/ are rules.
     rule_paths = {r.path.as_posix() for r in records if r.kind is FileKind.rules}
-    assert ".codereviewer/coding_rules.md" in rule_paths
-    assert ".codereviewer/security_rules.md" in rule_paths
+    assert ".openrabbit/coding_rules.md" in rule_paths
+    assert ".openrabbit/security_rules.md" in rule_paths
+
+
+def test_legacy_codereviewer_rules_are_still_indexed(tmp_path: Path) -> None:
+    _write(tmp_path, ".codereviewer/coding_rules.md", "# legacy rules")
+
+    records = _scan(tmp_path)
+
+    assert {r.path.as_posix() for r in records if r.kind is FileKind.rules} == {
+        ".codereviewer/coding_rules.md"
+    }
 
 
 def test_other_files_are_skipped_by_default(scaffold_repo: Path) -> None:
@@ -68,13 +78,23 @@ def test_ignore_txt_is_honored(scaffold_repo: Path) -> None:
     _write(scaffold_repo, "src/app.py", "x")
     _write(scaffold_repo, "src/generated.py", "x")
 
-    ignore = scaffold_repo / ".codereviewer" / "ignore.txt"
+    ignore = scaffold_repo / ".openrabbit" / "ignore.txt"
     # The init template already ignores generated dirs; add a single-file rule.
     ignore.write_text("src/generated.py\n", encoding="utf-8")
 
     paths = {r.path.as_posix() for r in _scan(scaffold_repo)}
     assert "src/app.py" in paths
     assert "src/generated.py" not in paths
+
+
+def test_openrabbit_runtime_state_is_not_indexed(scaffold_repo: Path) -> None:
+    _write(scaffold_repo, ".openrabbit/state.json", "{}")
+    _write(scaffold_repo, ".openrabbit/models/adapter_config.json", "{}")
+
+    paths = {r.path.as_posix() for r in _scan(scaffold_repo, include_other=True)}
+
+    assert ".openrabbit/state.json" not in paths
+    assert ".openrabbit/models/adapter_config.json" not in paths
 
 
 def test_builtin_ignores_drop_caches_and_vcs(scaffold_repo: Path) -> None:

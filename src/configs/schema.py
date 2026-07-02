@@ -1,6 +1,6 @@
 """Pydantic models for OpenRabbit configuration.
 
-The on-disk format is ``<repo>/.codereviewer/config.yml``. Environment
+The on-disk format is ``<repo>/.openrabbit/config.yml``. Environment
 variables prefixed with ``OPENRABBIT_`` override individual fields using a
 ``__`` delimiter (e.g. ``OPENRABBIT_POLLING__INTERVAL_SECONDS=30``).
 """

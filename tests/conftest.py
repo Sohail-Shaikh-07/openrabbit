@@ -14,7 +14,7 @@ from cli.commands.init import run_init
 def scaffold_repo(tmp_path: Path) -> Iterator[Path]:
     """A tmp directory that already looks like a repo OpenRabbit was initialized in.
 
-    Yields the repo root with ``.codereviewer/`` populated from the project
+    Yields the repo root with ``.openrabbit/`` populated from the project
     templates. Used by every test that needs a valid config to load.
     """
     run_init(tmp_path)
