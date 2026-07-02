@@ -121,6 +121,7 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
         return ReviewPipelineResult(
             agent_results=[],
             ranked_findings=[RankedFinding(finding=finding, score=2.7)],
+            dropped_findings_count=2,
         )
 
     settings = load_settings(scaffold_repo, env={})
@@ -134,6 +135,7 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
     )
 
     assert summary["findings_count"] == 1
+    assert summary["dropped_findings_count"] == 2
     assert summary["findings"][0]["title"] == "Missing guard"
     assert summary["findings"][0]["score"] == 2.7
 
@@ -150,6 +152,7 @@ def test_render_summary_prints_every_field() -> None:
         "hunks": 5,
         "commits": 2,
         "findings_count": 0,
+        "dropped_findings_count": 0,
         "findings": [],
     }
     out = io.StringIO()
@@ -175,6 +178,7 @@ def test_render_summary_prints_findings() -> None:
         "hunks": 1,
         "commits": 1,
         "findings_count": 1,
+        "dropped_findings_count": 3,
         "findings": [
             {
                 "severity": "high",
@@ -195,5 +199,6 @@ def test_render_summary_prints_findings() -> None:
 
     text = out.getvalue()
     assert "Findings:     1" in text
+    assert "Dropped:      3 ungrounded" in text
     assert "[HIGH] Missing guard" in text
     assert "src/a.py:2" in text
