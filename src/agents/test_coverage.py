@@ -14,7 +14,12 @@ import time
 from agents.base import BaseReviewAgent
 from agents.llm import OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
-from agents.prompting import JSON_RESPONSE_CONTRACT, REVIEW_DISCIPLINE, collect_context
+from agents.prompting import (
+    JSON_RESPONSE_CONTRACT,
+    REVIEW_DISCIPLINE,
+    collect_context,
+    format_changed_line_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,8 @@ Coverage classes to consider:
 
 Existing test context:
 {test_context}
+
+{changed_line_evidence}
 
 Diff:
 {diff}
@@ -63,8 +70,10 @@ class TestCoverageAgent(BaseReviewAgent):
             pr = state.get("pr_payload")
             diff: str = getattr(pr, "diff", "") or "" if pr else ""
             test_context = collect_context(state, "tests")
+            changed_line_evidence = format_changed_line_evidence(state.get("pr_payload"))
             prompt = _PROMPT_TEMPLATE.format(
                 test_context=test_context,
+                changed_line_evidence=changed_line_evidence,
                 diff=diff,
                 review_discipline=REVIEW_DISCIPLINE,
                 json_contract=JSON_RESPONSE_CONTRACT,

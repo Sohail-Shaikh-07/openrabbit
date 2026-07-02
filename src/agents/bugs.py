@@ -14,7 +14,12 @@ import time
 from agents.base import BaseReviewAgent
 from agents.llm import OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
-from agents.prompting import JSON_RESPONSE_CONTRACT, REVIEW_DISCIPLINE, collect_context
+from agents.prompting import (
+    JSON_RESPONSE_CONTRACT,
+    REVIEW_DISCIPLINE,
+    collect_context,
+    format_changed_line_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,8 @@ Correctness classes to consider:
 
 Project context:
 {project_context}
+
+{changed_line_evidence}
 
 Diff:
 {diff}
@@ -66,9 +73,11 @@ class BugDetectionAgent(BaseReviewAgent):
             project_context = collect_context(
                 state, "bug", "architecture", "security", "performance"
             )
+            changed_line_evidence = format_changed_line_evidence(state.get("pr_payload"))
             prompt = _PROMPT_TEMPLATE.format(
                 diff=diff,
                 project_context=project_context,
+                changed_line_evidence=changed_line_evidence,
                 review_discipline=REVIEW_DISCIPLINE,
                 json_contract=JSON_RESPONSE_CONTRACT,
             )

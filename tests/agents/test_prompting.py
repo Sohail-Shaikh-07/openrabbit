@@ -1,0 +1,76 @@
+"""Tests for shared review prompt helpers."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from agents.prompting import format_changed_line_evidence
+from github_.diff import DiffLine, Hunk
+
+
+def _payload(files: list[object]) -> object:
+    return SimpleNamespace(files=files)
+
+
+def _file(path: str, hunks: list[Hunk], status: str = "modified") -> object:
+    return SimpleNamespace(path=path, hunks=hunks, status=status, is_binary=False)
+
+
+def test_format_changed_line_evidence_lists_added_lines_with_new_line_numbers() -> None:
+    hunk = Hunk(
+        old_start=64,
+        old_lines=5,
+        new_start=67,
+        new_lines=6,
+        lines=[
+            DiffLine(kind="context", text="def advanced_search(self, query: str) -> list[Task]:"),
+            DiffLine(kind="deletion", text="return []"),
+            DiffLine(kind="addition", text="where_clause = f\"title LIKE '%{query}%'\""),
+            DiffLine(
+                kind="addition", text='rows_sql = text(f"SELECT * FROM tasks WHERE {where_clause}")'
+            ),
+        ],
+    )
+
+    evidence = format_changed_line_evidence(
+        _payload([_file("app/repositories/task_repository.py", [hunk])])
+    )
+
+    assert "Changed-line evidence:" in evidence
+    assert "app/repositories/task_repository.py (modified)" in evidence
+    assert "+68 where_clause = f\"title LIKE '%{query}%'\"" in evidence
+    assert '+69 rows_sql = text(f"SELECT * FROM tasks WHERE {where_clause}")' in evidence
+    assert "return []" not in evidence
+
+
+def test_format_changed_line_evidence_is_bounded_per_file_and_file_count() -> None:
+    hunk = Hunk(
+        old_start=1,
+        old_lines=1,
+        new_start=10,
+        new_lines=4,
+        lines=[
+            DiffLine(kind="addition", text="first = 1"),
+            DiffLine(kind="addition", text="second = 2"),
+            DiffLine(kind="addition", text="third = 3"),
+        ],
+    )
+
+    evidence = format_changed_line_evidence(
+        _payload(
+            [
+                _file("app/one.py", [hunk]),
+                _file("app/two.py", [hunk]),
+            ]
+        ),
+        max_files=1,
+        max_lines_per_file=2,
+    )
+
+    assert "app/one.py" in evidence
+    assert "app/two.py" not in evidence
+    assert "+10 first = 1" in evidence
+    assert "+11 second = 2" in evidence
+    assert "third = 3" not in evidence
+    assert "... 1 additional changed file omitted." in evidence
+    assert "... 1 additional added line omitted." in evidence
