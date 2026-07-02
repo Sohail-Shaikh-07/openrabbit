@@ -1,161 +1,252 @@
 # OpenRabbit
 
-OpenRabbit is a self-hosted AI code reviewer for GitHub pull requests. You run it on your own machine, point it at a repo, and it leaves inline review comments on new PRs the way a teammate would.
+OpenRabbit is a local-first AI pull request reviewer for GitHub repositories. You run it on your own machine, point it at a repo, and use a local model to inspect pull request diffs with repository context.
 
-Nothing leaves your machine. No SaaS account, no cloud inference, no telemetry. The source code stays on your laptop or your server.
+The core trade-off is privacy and ownership: source code is reviewed on your laptop or server, with Ollama as the default model runtime and Qdrant as the repository context store.
 
-## Why it exists
+## Current Status
 
-Most AI code reviewers ship as a SaaS. That means uploading proprietary code to a third party, paying per seat, and trusting another vendor with one of the most sensitive parts of your workflow. OpenRabbit is the opposite trade-off: bring your own machine, bring your own model, keep the code in your network.
+OpenRabbit is at `v1.0.0`. The foundation is in place: CLI, configuration, GitHub PR parsing, repository indexing, local multi-agent review, ranking, fine-tuning utilities, and release validation.
 
-## How a review happens
+The current CLI review flow is best treated as a local review preview:
 
-1. You open a pull request on GitHub.
-2. OpenRabbit polls the repo every 60 seconds and notices the PR.
-3. It pulls the diff, looks up relevant context from the repo (architecture notes, related code, your team's coding rules), and runs a set of specialized review agents in parallel.
-4. The agents return findings. A ranker merges duplicates and drops low-signal noise.
-5. OpenRabbit posts the surviving comments as a GitHub review.
+1. OpenRabbit fetches a pull request from GitHub.
+2. It parses commits, changed files, hunks, and changed-line evidence.
+3. Enabled review agents run against the diff with strict JSON output prompts.
+4. Findings are grounded to changed files and changed lines.
+5. A ranker removes duplicates, orders the findings, and drops ungrounded output.
+6. The CLI prints the summary locally.
 
-The model behind the agents is a QLoRA-adapted Qwen2.5-Coder-7B trained specifically for code review, with Ollama as the default runtime.
+The GitHub publisher module exists, but posting from `openrabbit review` and automatic polling-to-review execution are still important next gaps. Today, `openrabbit review` prints locally even when `--dry-run` is omitted; `--dry-run` is kept as the explicit preview/no-post flag for the upcoming publish flow. See [docs/pr-agent-gap-analysis.md](docs/pr-agent-gap-analysis.md) for the current comparison against PR-Agent and the recommended roadmap.
 
-## Status
+## What Works Today
 
-v1.0.0 is complete. All six development phases have shipped.
-
-| Phase | Focus | Status |
-| ----- | ----- | ------ |
-| 1 | CLI, configuration, Docker, testing | Done |
-| 2 | GitHub integration and PR polling | Done |
-| 3 | Repository-aware retrieval with Qdrant | Done |
-| 4 | Multi-agent review system | Done |
-| 5 | Fine-tuning the reviewer model | Done |
-| 6 | Benchmarks and v1.0 release | Done |
+| Area | Current capability |
+| --- | --- |
+| CLI | `init`, `index`, `review`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| Configuration | `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
+| GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
+| Local model | Ollama-backed review agents using `model.model_name` from config |
+| Agents | Security, performance, architecture, bug, and test coverage agents |
+| Prompting | Changed-line evidence first, strict JSON contract, no speculative findings |
+| Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
+| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI |
+| Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
+| Benchmarks | Benchmark runner, scorer, and profiler for measuring review quality |
 
 ## Requirements
 
 - Python 3.12 or 3.13
-- Poetry
-- A GitHub personal access token with `repo` scope
-- Ollama (for running the local model)
-- Docker (optional, for running Qdrant alongside the daemon)
+- Poetry, or `pip` for a local package install
+- GitHub personal access token with access to the target repository
+- Ollama for local review inference
+- Qdrant for repository indexing
+- Docker, optional, for running Qdrant locally
 
-## Quick start
+## Install
 
-### With Docker (recommended)
-
-```bash
-cp .env.example .env
-# edit .env and add your GITHUB_TOKEN
-docker compose up -d
-docker compose exec openrabbit openrabbit --help
-```
-
-This starts the OpenRabbit daemon and Qdrant together. Your repo is mounted read-only at `/workspace` inside the container.
-
-### From source
+From the OpenRabbit repository:
 
 ```bash
 poetry install
 poetry run openrabbit --help
-poetry run openrabbit init
 ```
 
-`openrabbit init` writes a `.openrabbit/` folder into the current repository with template configuration files you can edit before starting the daemon.
+Or install into your user Python environment:
 
-## Configuration
-
-After running `openrabbit init`, edit the files under `.openrabbit/`:
-
-```
-.openrabbit/
-  config.yml          Main settings (model, polling interval, GitHub token)
-  architecture.md     High-level description of the repo's architecture
-  coding_rules.md     Style and design rules you want enforced in reviews
-  security_rules.md   Security checks to apply in every review
-  review_examples.md  Examples of good and bad review comments for your codebase
-  ignore.txt          Glob patterns for files to skip (like lock files)
+```bash
+python -m pip install --user .
+openrabbit --help
 ```
 
-A minimal `config.yml`:
+If the `openrabbit` command is not found after `pip install --user`, make sure your Python user scripts directory is on `PATH`.
+
+## Model Setup
+
+OpenRabbit uses Ollama by default. For a base-model test before fine-tuning:
+
+```bash
+ollama pull qwen2.5-coder:7b
+ollama run qwen2.5-coder:7b
+```
+
+Then set `.openrabbit/config.yml` to:
 
 ```yaml
-github:
-  token: ghp_...          # or use the GITHUB_TOKEN env var
-repository:
-  target: owner/repo      # GitHub repo to watch
+model:
+  provider: ollama
+  model_name: qwen2.5-coder:7b
+  base_model: qwen2.5-coder:7b
+```
+
+When you have packaged a fine-tuned adapter as an Ollama model, switch `model_name` to that local model name:
+
+```yaml
+model:
+  provider: ollama
+  model_name: openrabbit-reviewer-v1
+  base_model: qwen2.5-coder:7b
+```
+
+See [docs/model-finetuning.md](docs/model-finetuning.md) for the Colab training flow, Hugging Face adapter packaging, Ollama import, and local configuration.
+
+## GitHub Token Setup
+
+OpenRabbit reads the token in this order:
+
+1. `OPENRABBIT_GITHUB__TOKEN`
+2. The environment variable named by `github.token_env` in `.openrabbit/config.yml`, default `GITHUB_TOKEN`
+3. On Windows, persistent User or Machine environment variables when the current shell has stale env state
+
+PowerShell:
+
+```powershell
+setx GITHUB_TOKEN "github_pat_your_token_here"
+```
+
+Open a new terminal after `setx`, or use this for the current session:
+
+```powershell
+$env:GITHUB_TOKEN = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User")
+```
+
+macOS/Linux:
+
+```bash
+export GITHUB_TOKEN="github_pat_your_token_here"
+```
+
+## Repository Setup
+
+Inside the repository you want OpenRabbit to review:
+
+```bash
+openrabbit init
+```
+
+This creates:
+
+```text
+.openrabbit/
+  config.yml
+  architecture.md
+  coding_rules.md
+  security_rules.md
+  review_examples.md
+  ignore.txt
+```
+
+A minimal config:
+
+```yaml
+review:
+  security: true
+  performance: true
+  architecture: true
+  bug: true
+  test_coverage: true
+  style: false
 
 model:
   provider: ollama
-  name: qwen2.5-coder:7b
+  model_name: qwen2.5-coder:7b
+  base_model: qwen2.5-coder:7b
 
 polling:
   interval_seconds: 60
+
+github:
+  token_env: GITHUB_TOKEN
+
+repository:
+  target: owner/repo
 ```
 
-Any value in `config.yml` can be overridden by an environment variable. For example, `GITHUB__TOKEN=...` overrides `github.token`.
-
-## CLI commands
-
-### `openrabbit start`
-
-Runs the polling daemon in the foreground. Press Ctrl+C to stop.
+Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 
 ```bash
-poetry run openrabbit start --workspace . --repo owner/repo
+OPENRABBIT_POLLING__INTERVAL_SECONDS=30
+OPENRABBIT_REVIEW__STYLE=true
+OPENRABBIT_GITHUB__TOKEN=github_pat_your_token_here
 ```
 
-### `openrabbit review`
+## CLI Commands
 
-Runs a one-off review of a specific PR, executes the configured local model agents, and prints ranked findings. Useful for testing your configuration or previewing what OpenRabbit would say.
+### `openrabbit init`
+
+Creates the `.openrabbit/` scaffold.
 
 ```bash
-poetry run openrabbit review --pr 42
-poetry run openrabbit review --pr 42 --dry-run   # print only, do not post to GitHub
+openrabbit init
+openrabbit init --path /path/to/repo
+openrabbit init --force
 ```
 
 ### `openrabbit index`
 
-Scans the current repository and builds (or rebuilds) the RAG index in Qdrant. Run this once after `init` and again whenever the codebase changes significantly.
+Scans a repository, chunks docs/source/rules, embeds them, and stores them in Qdrant.
 
 ```bash
-poetry run openrabbit index
+docker compose up -d qdrant
+openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
 ```
 
-### `openrabbit init`
+### `openrabbit review`
 
-Writes the `.openrabbit/` configuration scaffold into a target directory.
+Fetches one PR, runs the enabled local agents, grounds findings to the diff, and prints a ranked summary.
 
 ```bash
-poetry run openrabbit init --path /path/to/repo
+openrabbit review --pr 42 --repo owner/repo --dry-run
+openrabbit --quiet review --pr 42 --repo owner/repo --dry-run
+openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 ```
+
+In the current release, `review` prints the result locally and does not post comments to GitHub. `--dry-run` is the explicit no-post flag that will continue to protect preview runs once publishing is wired in.
+
+### `openrabbit start`
+
+Runs the polling service in the foreground and records PR polling state under `.openrabbit/state.json`.
+
+```bash
+openrabbit start --workspace . --repo owner/repo
+```
+
+In the current release, `start` detects and logs polling events. Wiring those events into the full review-and-publish pipeline is a tracked next gap.
 
 ### `openrabbit install-model`
 
-Downloads and installs the OpenRabbit-Reviewer-v1 LoRA adapter from Hugging Face Hub.
+Downloads a PEFT/LoRA adapter package from Hugging Face into `~/.openrabbit/models/`.
 
 ```bash
-poetry run openrabbit install-model
-poetry run openrabbit install-model --model-id myorg/my-adapter --token hf_...
+openrabbit install-model
+openrabbit install-model --model-id myorg/my-adapter --token hf_your_token_here
 ```
 
-## Platform support
+This installs the adapter files. To use the adapter with Ollama, create an Ollama model from the adapter as described in [docs/model-finetuning.md](docs/model-finetuning.md).
 
-OpenRabbit runs on Linux, macOS, and Windows. The CI matrix covers all three. If you find a platform-specific bug, open an issue with your OS and Python version.
+## Docker Notes
 
-## Repository layout
+`docker-compose.yml` is useful for starting Qdrant during local development:
 
+```bash
+docker compose up -d qdrant
 ```
+
+Copy `.env.example` to `.env` if you want compose to pass a GitHub token or a custom workspace path into the containerized CLI. The `openrabbit` image packages the CLI, but local source install is still the most direct workflow for reviewing a working repository because `openrabbit init` needs write access to create `.openrabbit/`.
+
+## Repository Layout
+
+```text
 src/
   cli/           Typer entry point and subcommands
-  configs/       YAML and env configuration
-  github_/       GitHub REST client and PR parser
-  rag/           Repository scanner, chunker, retriever (Qdrant)
-  agents/        Multi-agent review pipeline (LangGraph)
-  ranking/       Comment deduplication and ranking
-  models/        Model serving (Ollama, vLLM, transformers)
-  finetuning/    QLoRA training and evaluation pipeline
-  benchmarks/    Evaluation harness for measuring review quality
-  api/           Local FastAPI surface
+  configs/       YAML and environment configuration
+  github_/       GitHub REST client, PR parser, polling, publisher
+  rag/           Repository scanner, chunker, embeddings, Qdrant store
+  agents/        Local multi-agent review pipeline
+  ranking/       Changed-line grounding, deduplication, scoring
+  finetuning/    QLoRA training, evaluation, adapter packaging
+  benchmarks/    Review quality benchmark runner, scorer, profiler
+  api/           Placeholder local API package
 tests/
 scripts/
   train.py        Run a QLoRA fine-tuning job
@@ -164,10 +255,8 @@ scripts/
 
 ## Benchmarks
 
-The `benchmarks` package provides an evaluation harness for measuring how well OpenRabbit finds known issues in a set of test diffs.
-
 ```python
-from benchmarks import BenchmarkRunner, BenchmarkScorer, BenchmarkCase
+from benchmarks import BenchmarkCase, BenchmarkRunner, BenchmarkScorer
 
 cases = [
     BenchmarkCase(
@@ -185,12 +274,6 @@ scored = scorer.score(report, cases)
 print(f"macro F1: {scored.macro_f1:.3f}")
 ```
 
-## Fine-tuning and local models
-
-OpenRabbit trains `OpenRabbit-Reviewer-v1` as a QLoRA adapter on top of `Qwen/Qwen2.5-Coder-7B-Instruct`. The runtime uses a local Ollama model name from `.openrabbit/config.yml`.
-
-See [docs/model-finetuning.md](docs/model-finetuning.md) for the Google Colab free-tier training flow, adapter packaging, Ollama import, and local OpenRabbit configuration.
-
 ## Development
 
 ```bash
@@ -199,21 +282,12 @@ poetry run pytest
 poetry run ruff check .
 poetry run black --check .
 poetry run mypy
-```
-
-Pre-commit hooks ship with the repo. After `poetry install`, run `pre-commit install` once to wire them up.
-
-To verify the install works on your platform:
-
-```bash
 poetry run python scripts/smoke_test.py
 ```
 
 ## Contributing
 
-Issues and PRs are welcome. Each piece of work is tracked as `OP-N` on the issue tracker. If you want to pick something up, comment on the issue and grab it.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+Issues and PRs are welcome. Each planned piece of work is tracked as `OP-N` on the issue tracker. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
 
 ## License
 
