@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agents.llm import OllamaClient
+from agents.llm import OllamaClient, parse_findings
 from agents.models import ReviewState, Severity
 from agents.security import CONFIDENCE_THRESHOLD, SecurityAgent
 
@@ -82,6 +82,29 @@ async def test_ollama_client_passes_model_and_prompt() -> None:
     assert payload["model"] == "my-model"
     assert payload["prompt"] == "my prompt"
     assert payload["stream"] is False
+    assert payload["format"] == "json"
+
+
+def test_parse_findings_accepts_markdown_json_fence() -> None:
+    raw = """```json
+{"findings":[{"severity":"high","file":"auth.py","line":10,"confidence":0.91,"title":"Hardcoded secret","reason":"Secret is committed.","suggestion":"Move it to an environment variable.","fix":""}]}
+```"""
+
+    findings = parse_findings(raw, "security")
+
+    assert len(findings) == 1
+    assert findings[0].title == "Hardcoded secret"
+
+
+def test_parse_findings_accepts_short_prose_around_json() -> None:
+    raw = """Here is the review result:
+{"findings":[{"severity":"medium","file":"app.py","line":7,"confidence":0.82,"title":"Missing guard","reason":"Input may be None.","suggestion":"Add a guard clause.","fix":""}]}
+Done."""
+
+    findings = parse_findings(raw, "bug")
+
+    assert len(findings) == 1
+    assert findings[0].category == "bug"
 
 
 # ---------------------------------------------------------------------------

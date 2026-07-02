@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import httpx
 
@@ -31,6 +32,8 @@ _SEVERITY_MAP: dict[str, Severity] = {
     "medium": Severity.medium,
     "low": Severity.low,
 }
+
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(?P<body>\{.*?\})\s*```", re.DOTALL)
 
 
 class OllamaClient:
@@ -70,6 +73,7 @@ class OllamaClient:
         payload = {
             "model": self._model,
             "prompt": prompt,
+            "format": "json",
             "stream": False,
         }
         async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -89,14 +93,19 @@ def parse_findings(raw: str, category: str) -> list[Finding]:
     Findings whose confidence is below :data:`CONFIDENCE_THRESHOLD` are
     silently dropped. Malformed JSON returns an empty list.
     """
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
+    data = _load_json_object(raw)
+    if data is None:
         logger.warning("LLM response was not valid JSON (category=%s)", category)
         return []
 
     results: list[Finding] = []
-    for item in data.get("findings", []):
+    raw_findings = data.get("findings", [])
+    if not isinstance(raw_findings, list):
+        return []
+
+    for item in raw_findings:
+        if not isinstance(item, dict):
+            continue
         try:
             confidence = float(item.get("confidence", 0.0))
             if confidence < CONFIDENCE_THRESHOLD:
@@ -119,6 +128,65 @@ def parse_findings(raw: str, category: str) -> list[Finding]:
             logger.warning("Skipping malformed finding: %s", item)
 
     return results
+
+
+def _load_json_object(raw: str) -> dict[str, object] | None:
+    """Load a JSON object from raw model output, tolerating common wrappers."""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = None
+    if isinstance(data, dict):
+        return data
+
+    fenced = _JSON_FENCE_RE.search(raw.strip())
+    if fenced:
+        try:
+            data = json.loads(fenced.group("body"))
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            return data
+
+    extracted = _extract_first_json_object(raw)
+    if extracted is None:
+        return None
+    try:
+        data = json.loads(extracted)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def _extract_first_json_object(raw: str) -> str | None:
+    start = raw.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for idx, char in enumerate(raw[start:], start=start):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start : idx + 1]
+    return None
 
 
 def mean_confidence(findings: list[Finding]) -> float:
