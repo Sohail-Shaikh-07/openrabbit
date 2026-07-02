@@ -73,8 +73,37 @@ def test_github_token_resolution_falls_back_to_named_env(tmp_path: Path) -> None
     assert settings.resolved_github_token(env=env) == "ambient-token"
 
 
-def test_github_token_resolution_returns_none_when_unset(tmp_path: Path) -> None:
+def test_github_token_resolution_uses_windows_user_env_when_process_env_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _write_config(tmp_path, CONFIG_YML)
+
+    monkeypatch.setattr("configs.settings._persistent_windows_env", lambda name: "user-token")
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.resolved_github_token(env={}) == "user-token"
+
+
+def test_github_token_resolution_keeps_process_env_before_windows_user_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    env = {"GITHUB_TOKEN": "process-token"}
+
+    monkeypatch.setattr("configs.settings._persistent_windows_env", lambda name: "user-token")
+    settings = load_settings(tmp_path, env=env)
+
+    assert settings.resolved_github_token(env=env) == "process-token"
+
+
+def test_github_token_resolution_returns_none_when_unset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    monkeypatch.setattr("configs.settings._persistent_windows_env", lambda name: None)
 
     settings = load_settings(tmp_path, env={})
 

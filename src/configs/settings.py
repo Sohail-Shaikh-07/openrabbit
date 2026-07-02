@@ -11,6 +11,7 @@ Two entry points:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +60,10 @@ class Settings(BaseModel):
         if self.github.token:
             return self.github.token
         source = env if env is not None else os.environ
-        return source.get(self.github.token_env)
+        token = source.get(self.github.token_env)
+        if token:
+            return token
+        return _persistent_windows_env(self.github.token_env)
 
 
 def find_config_file(start: Path) -> Path:
@@ -166,3 +170,32 @@ def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, An
         else:
             out[key] = value
     return out
+
+
+def _persistent_windows_env(name: str) -> str | None:
+    """Read a persistent Windows User/Machine env var when process env is stale."""
+    if sys.platform != "win32":
+        return None
+
+    try:
+        import winreg
+    except ImportError:  # pragma: no cover - defensive for unusual runtimes
+        return None
+
+    for root, path in (
+        (winreg.HKEY_CURRENT_USER, "Environment"),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+    ):
+        try:
+            with winreg.OpenKey(root, path) as key:
+                value, _ = winreg.QueryValueEx(key, name)
+        except OSError:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+
+    return None
