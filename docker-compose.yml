@@ -7,10 +7,12 @@ services:
       dockerfile: Dockerfile
     image: openrabbit:latest
     container_name: openrabbit
-    env_file:
-      - .env
     environment:
-      OPENRABBIT_QDRANT__URL: http://qdrant:6333
+      # Docker Compose automatically reads .env when present. These pass
+      # through the same token variables supported by the CLI without adding
+      # unsupported settings keys.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      OPENRABBIT_GITHUB__TOKEN: ${OPENRABBIT_GITHUB__TOKEN:-}
     volumes:
       # Mount the repository OpenRabbit should review at /workspace.
       # Override with OPENRABBIT_WORKSPACE=/path/to/repo in your .env.
