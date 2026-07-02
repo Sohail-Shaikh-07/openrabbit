@@ -118,7 +118,7 @@ class GitHubClient:
         if not token:
             raise GitHubAuthError(
                 "no GitHub token found. Set GITHUB_TOKEN, OPENRABBIT_GITHUB__TOKEN, "
-                "or the token_env named in .codereviewer/config.yml."
+                "or the token_env named in .openrabbit/config.yml."
             )
         return cls(
             token=token,

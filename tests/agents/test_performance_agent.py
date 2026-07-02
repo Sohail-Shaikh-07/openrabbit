@@ -13,12 +13,15 @@ from agents.performance import PerformanceAgent
 
 def _make_state(
     diff: str = "diff --git a/service.py\n+for item in items:\n+    db.query(item)",
+    performance_context: list[object] | None = None,
 ) -> ReviewState:
     pr = MagicMock()
     pr.diff = diff
+    retrieval = MagicMock()
+    retrieval.performance = performance_context or []
     return {
         "pr_payload": pr,
-        "retrieval_result": MagicMock(),
+        "retrieval_result": retrieval,
         "agent_results": [],
         "error": None,
     }
@@ -111,6 +114,34 @@ async def test_performance_agent_handles_llm_error() -> None:
         result = await agent.run(state)
 
     assert result.findings == []
+
+
+@pytest.mark.asyncio
+async def test_performance_agent_includes_project_context_and_impact_guardrails() -> None:
+    agent = PerformanceAgent()
+    state = _make_state(
+        performance_context=[
+            {
+                "payload": {
+                    "source_path": "src/repository.py",
+                    "text": "load_orders already batches related account rows.",
+                }
+            }
+        ]
+    )
+    captured: list[str] = []
+
+    async def fake_generate(prompt: str) -> str:
+        captured.append(prompt)
+        return _llm_response([])
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(side_effect=fake_generate)
+        await agent.run(state)
+
+    assert "load_orders already batches related account rows." in captured[0]
+    assert "concrete runtime impact" in captured[0]
+    assert "Do not invent" in captured[0]
 
 
 @pytest.mark.asyncio

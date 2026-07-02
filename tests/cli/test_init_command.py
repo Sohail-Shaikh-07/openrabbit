@@ -18,7 +18,7 @@ _RUNNER = CliRunner()
 def test_run_init_creates_all_templates(tmp_path: Path) -> None:
     result = run_init(tmp_path)
 
-    scaffold = tmp_path / ".codereviewer"
+    scaffold = tmp_path / ".openrabbit"
     assert scaffold.is_dir()
     assert result.scaffold_dir == scaffold
     assert {p.name for p in result.created} == set(TEMPLATES)
@@ -38,13 +38,13 @@ def test_run_init_refuses_to_overwrite_without_force(tmp_path: Path) -> None:
 
 def test_run_init_force_overwrites_existing_files(tmp_path: Path) -> None:
     run_init(tmp_path)
-    (tmp_path / ".codereviewer" / "config.yml").write_text("trash", encoding="utf-8")
+    (tmp_path / ".openrabbit" / "config.yml").write_text("trash", encoding="utf-8")
 
     result = run_init(tmp_path, force=True)
 
     assert {p.name for p in result.overwritten} == set(TEMPLATES)
     assert result.created == []
-    assert (tmp_path / ".codereviewer" / "config.yml").read_text(encoding="utf-8") == TEMPLATES[
+    assert (tmp_path / ".openrabbit" / "config.yml").read_text(encoding="utf-8") == TEMPLATES[
         "config.yml"
     ]
 
@@ -66,7 +66,7 @@ def test_cli_init_creates_scaffold(tmp_path: Path) -> None:
     result = _RUNNER.invoke(app, ["init", "--path", str(tmp_path)])
 
     assert result.exit_code == OK, result.stdout
-    assert (tmp_path / ".codereviewer" / "config.yml").exists()
+    assert (tmp_path / ".openrabbit" / "config.yml").exists()
 
 
 def test_cli_init_refuses_overwrite_without_force(tmp_path: Path) -> None:
@@ -78,12 +78,12 @@ def test_cli_init_refuses_overwrite_without_force(tmp_path: Path) -> None:
 
 def test_cli_init_force_overwrites(tmp_path: Path) -> None:
     _RUNNER.invoke(app, ["init", "--path", str(tmp_path)])
-    (tmp_path / ".codereviewer" / "config.yml").write_text("trash", encoding="utf-8")
+    (tmp_path / ".openrabbit" / "config.yml").write_text("trash", encoding="utf-8")
 
     result = _RUNNER.invoke(app, ["init", "--path", str(tmp_path), "--force"])
 
     assert result.exit_code == OK
-    assert (tmp_path / ".codereviewer" / "config.yml").read_text(encoding="utf-8") == TEMPLATES[
+    assert (tmp_path / ".openrabbit" / "config.yml").read_text(encoding="utf-8") == TEMPLATES[
         "config.yml"
     ]
 

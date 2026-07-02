@@ -27,7 +27,7 @@ def run_index_blocking(
     Parameters
     ----------
     workspace:
-        The repository root to index. Must contain a ``.codereviewer/``
+        The repository root to index. Must contain a ``.openrabbit/``
         directory (created by ``openrabbit init``).
     qdrant_host:
         Qdrant server host.

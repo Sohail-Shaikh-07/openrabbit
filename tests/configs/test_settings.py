@@ -15,8 +15,8 @@ from configs import (
 )
 
 
-def _write_config(tmp_path: Path, body: str) -> Path:
-    scaffold = tmp_path / ".codereviewer"
+def _write_config(tmp_path: Path, body: str, subdir: str = ".openrabbit") -> Path:
+    scaffold = tmp_path / subdir
     scaffold.mkdir()
     config = scaffold / "config.yml"
     config.write_text(body, encoding="utf-8")
@@ -109,7 +109,24 @@ def test_find_config_file_returns_first_hit(tmp_path: Path) -> None:
 
     found = find_config_file(tmp_path)
 
+    assert found == tmp_path / ".openrabbit" / "config.yml"
+
+
+def test_legacy_codereviewer_config_still_loads(tmp_path: Path) -> None:
+    _write_config(tmp_path, CONFIG_YML, subdir=".codereviewer")
+
+    found = find_config_file(tmp_path)
+
     assert found == tmp_path / ".codereviewer" / "config.yml"
+
+
+def test_openrabbit_config_wins_over_legacy_config(tmp_path: Path) -> None:
+    _write_config(tmp_path, "polling:\n  interval_seconds: 120\n", subdir=".codereviewer")
+    _write_config(tmp_path, "polling:\n  interval_seconds: 30\n", subdir=".openrabbit")
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.polling.interval_seconds == 30
 
 
 def test_polling_interval_lower_bound_enforced(tmp_path: Path) -> None:

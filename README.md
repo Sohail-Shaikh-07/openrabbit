@@ -60,14 +60,14 @@ poetry run openrabbit --help
 poetry run openrabbit init
 ```
 
-`openrabbit init` writes a `.codereviewer/` folder into the current repository with template configuration files you can edit before starting the daemon.
+`openrabbit init` writes a `.openrabbit/` folder into the current repository with template configuration files you can edit before starting the daemon.
 
 ## Configuration
 
-After running `openrabbit init`, edit the files under `.codereviewer/`:
+After running `openrabbit init`, edit the files under `.openrabbit/`:
 
 ```
-.codereviewer/
+.openrabbit/
   config.yml          Main settings (model, polling interval, GitHub token)
   architecture.md     High-level description of the repo's architecture
   coding_rules.md     Style and design rules you want enforced in reviews
@@ -123,7 +123,7 @@ poetry run openrabbit index
 
 ### `openrabbit init`
 
-Writes the `.codereviewer/` configuration scaffold into a target directory.
+Writes the `.openrabbit/` configuration scaffold into a target directory.
 
 ```bash
 poetry run openrabbit init --path /path/to/repo
@@ -187,7 +187,7 @@ print(f"macro F1: {scored.macro_f1:.3f}")
 
 ## Fine-tuning and local models
 
-OpenRabbit trains `OpenRabbit-Reviewer-v1` as a QLoRA adapter on top of `Qwen/Qwen2.5-Coder-7B-Instruct`. The runtime uses a local Ollama model name from `.codereviewer/config.yml`.
+OpenRabbit trains `OpenRabbit-Reviewer-v1` as a QLoRA adapter on top of `Qwen/Qwen2.5-Coder-7B-Instruct`. The runtime uses a local Ollama model name from `.openrabbit/config.yml`.
 
 See [docs/model-finetuning.md](docs/model-finetuning.md) for the Google Colab free-tier training flow, adapter packaging, Ollama import, and local OpenRabbit configuration.
 

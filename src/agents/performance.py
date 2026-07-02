@@ -14,38 +14,37 @@ import time
 from agents.base import BaseReviewAgent
 from agents.llm import OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
+from agents.prompting import JSON_RESPONSE_CONTRACT, REVIEW_DISCIPLINE, collect_context
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """You are a performance code reviewer. Analyze the following pull request diff and identify performance issues.
+_PROMPT_TEMPLATE = """You are OpenRabbit's performance review agent. Review the pull request like a senior engineer responsible for latency, throughput, cost, and resource safety.
 
-Check specifically for:
-- N+1 database queries (queries inside loops or lazy-loaded relationships)
-- Inefficient loops (nested loops over large collections, missing early exits)
-- Repeated computation (same expensive value calculated multiple times)
-- Large memory allocations (loading entire datasets into memory unnecessarily)
-- Blocking I/O in async contexts (time.sleep, blocking file reads, sync HTTP calls)
+Mission:
+- Find performance regressions with concrete runtime impact introduced or exposed by the changed lines.
+- Estimate why the issue matters: extra queries, asymptotic growth, blocking behavior, memory growth, or repeated expensive work.
+- Use project context to avoid flagging code that is already batched, cached, bounded, or intentionally off the hot path.
+- Prefer no finding over speculative micro-optimization.
+
+Performance classes to consider:
+- N+1 queries, network calls in loops, or repeated remote calls.
+- Algorithmic regressions: quadratic work over unbounded inputs, missing early exits, unnecessary full scans.
+- Repeated expensive computation or serialization that should be cached or moved.
+- Large memory allocations, loading full datasets, buffering streams, unbounded collections.
+- Blocking I/O in async paths, sync clients inside event loops, avoidable lock contention.
+- Resource leaks that increase latency, memory, file descriptors, or connection usage over time.
+
+Project performance context:
+{project_context}
 
 Diff:
 {diff}
 
-Reply with ONLY a JSON object in this exact format, no prose:
-{{
-  "findings": [
-    {{
-      "severity": "critical|high|medium|low",
-      "file": "path/to/file.py",
-      "line": 42,
-      "confidence": 0.85,
-      "title": "Short title",
-      "reason": "Why this hurts performance.",
-      "suggestion": "How to fix it.",
-      "fix": "Optional corrected code snippet"
-    }}
-  ]
-}}
+{review_discipline}
 
-If no performance issues are found, return {{"findings": []}}
+{json_contract}
+
+If no meaningful performance issues are found, return {{"findings": []}}.
 """
 
 
@@ -64,7 +63,13 @@ class PerformanceAgent(BaseReviewAgent):
         try:
             pr = state.get("pr_payload")
             diff: str = getattr(pr, "diff", "") or "" if pr else ""
-            prompt = _PROMPT_TEMPLATE.format(diff=diff)
+            project_context = collect_context(state, "performance")
+            prompt = _PROMPT_TEMPLATE.format(
+                diff=diff,
+                project_context=project_context,
+                review_discipline=REVIEW_DISCIPLINE,
+                json_contract=JSON_RESPONSE_CONTRACT,
+            )
             raw = await self._client.generate(prompt)
             findings = parse_findings(raw, "performance")
         except Exception:

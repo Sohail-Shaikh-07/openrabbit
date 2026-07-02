@@ -14,44 +14,37 @@ import time
 from agents.base import BaseReviewAgent
 from agents.llm import OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
+from agents.prompting import JSON_RESPONSE_CONTRACT, REVIEW_DISCIPLINE, collect_context
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """You are a test coverage code reviewer. Analyze the following pull request diff and identify missing or inadequate tests.
+_PROMPT_TEMPLATE = """You are OpenRabbit's test coverage review agent. Review the pull request like a senior maintainer deciding whether the changed behavior is protected by useful tests.
 
-Existing test context (from the project's test suite):
+Mission:
+- Identify important behavior introduced or changed by the diff that lacks meaningful tests.
+- Use existing test context to recommend the right file, style, and assertion level.
+- Focus on user-visible behavior, edge cases, regression risks, error paths, and integration boundaries.
+- Avoid asking for tests when the diff is purely documentation, generated code, or already covered by nearby tests.
+
+Coverage classes to consider:
+- New public functions, commands, API endpoints, config behavior, model adapters, or integration logic.
+- Changed error handling, validation, branching, permissions, serialization, retries, or persistence.
+- Missing regression coverage for bug fixes.
+- Weak assertions that only check that code runs rather than checking behavior.
+- Missing integration tests when unit tests cannot prove the cross-module contract.
+
+Existing test context:
 {test_context}
 
 Diff:
 {diff}
 
-Check specifically for:
-- New functions or methods added without corresponding unit tests
-- New classes added without test coverage
-- Edge cases and error paths that are not tested
-- Weak assertions (only checking that code runs, not checking output)
-- Missing integration tests for new API endpoints or service methods
+{review_discipline}
 
-Reply with ONLY a JSON object in this exact format, no prose:
-{{
-  "findings": [
-    {{
-      "severity": "critical|high|medium|low",
-      "file": "path/to/file.py",
-      "line": 42,
-      "confidence": 0.80,
-      "title": "Short title",
-      "reason": "Why this needs a test.",
-      "suggestion": "What test to add and where.",
-      "fix": "Optional example test snippet"
-    }}
-  ]
-}}
+{json_contract}
 
-If test coverage looks adequate, return {{"findings": []}}
+If test coverage looks adequate, return {{"findings": []}}.
 """
-
-_NO_CONTEXT = "(No test context retrieved for this review.)"
 
 
 class TestCoverageAgent(BaseReviewAgent):
@@ -69,10 +62,12 @@ class TestCoverageAgent(BaseReviewAgent):
         try:
             pr = state.get("pr_payload")
             diff: str = getattr(pr, "diff", "") or "" if pr else ""
-            test_context = _extract_test_context(state)
+            test_context = collect_context(state, "tests")
             prompt = _PROMPT_TEMPLATE.format(
                 test_context=test_context,
                 diff=diff,
+                review_discipline=REVIEW_DISCIPLINE,
+                json_contract=JSON_RESPONSE_CONTRACT,
             )
             raw = await self._client.generate(prompt)
             findings = parse_findings(raw, "tests")
@@ -85,13 +80,3 @@ class TestCoverageAgent(BaseReviewAgent):
             confidence=mean_confidence(findings),
             execution_time=time.monotonic() - started,
         )
-
-
-def _extract_test_context(state: ReviewState) -> str:
-    retrieval = state.get("retrieval_result")
-    if retrieval is None:
-        return _NO_CONTEXT
-    tests: list[str] = getattr(retrieval, "tests", []) or []
-    if not tests:
-        return _NO_CONTEXT
-    return "\n\n".join(tests)

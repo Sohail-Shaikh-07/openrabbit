@@ -6,7 +6,7 @@ This guide explains how OpenRabbit trains `OpenRabbit-Reviewer-v1`, where the fi
 
 OpenRabbit reviews run against a local Ollama model.
 
-The configured model name comes from `.codereviewer/config.yml`:
+The configured model name comes from `.openrabbit/config.yml`:
 
 ```yaml
 model:
@@ -275,7 +275,7 @@ In the repository you want reviewed:
 poetry run openrabbit init
 ```
 
-Edit `.codereviewer/config.yml`:
+Edit `.openrabbit/config.yml`:
 
 ```yaml
 github:

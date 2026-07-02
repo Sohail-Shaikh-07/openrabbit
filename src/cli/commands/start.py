@@ -44,7 +44,7 @@ def resolve_target_repo(settings: Settings, flag: str | None) -> str:
         return settings.repository.target
     raise StartError(
         "no repository to watch. Pass --repo OWNER/REPO or set repository.target "
-        "in .codereviewer/config.yml."
+        "in .openrabbit/config.yml."
     )
 
 

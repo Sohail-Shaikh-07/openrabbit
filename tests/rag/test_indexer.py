@@ -93,7 +93,7 @@ async def test_run_index_skips_files_with_no_chunks(scaffold_repo: Path) -> None
     await run_index(scaffold_repo, store=store, engine=_mock_engine())
 
     # Empty file produces no chunks -- upsert for that file should not be called
-    # with an empty list (we check via call count; if only .codereviewer/ rules
+    # with an empty list (we check via call count; if only .openrabbit/ rules
     # produce chunks, those go through; empty.py should add 0).
     for call in store.upsert.call_args_list:
         items: list[EmbeddedChunk] = call.kwargs["items"]
@@ -116,7 +116,7 @@ async def test_run_index_empty_repo_returns_zero_counts(scaffold_repo: Path) -> 
     store = _mock_store()
     result = await run_index(scaffold_repo, store=store, engine=_mock_engine())
 
-    # scaffold_repo has .codereviewer/ rules files which produce chunks.
+    # scaffold_repo has .openrabbit/ rules files which produce chunks.
     # files_scanned is at least the count of rule files.
     assert result.files_scanned >= 0
     assert result.chunks_indexed >= 0

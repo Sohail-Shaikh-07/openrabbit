@@ -84,6 +84,8 @@ async def test_architecture_agent_includes_context_in_prompt() -> None:
 
     assert len(captured_prompts) == 1
     assert "Services must not depend on each other directly." in captured_prompts[0]
+    assert "Do not invent" in captured_prompts[0]
+    assert "changed lines" in captured_prompts[0]
 
 
 @pytest.mark.asyncio

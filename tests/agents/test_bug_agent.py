@@ -11,12 +11,19 @@ from agents.bugs import BugDetectionAgent
 from agents.models import ReviewState, Severity
 
 
-def _make_state(diff: str = "diff --git a/app.py\n+result = user.profile.name") -> ReviewState:
+def _make_state(
+    diff: str = "diff --git a/app.py\n+result = user.profile.name",
+    bug_context: list[object] | None = None,
+) -> ReviewState:
     pr = MagicMock()
     pr.diff = diff
+    retrieval = MagicMock()
+    retrieval.bug = bug_context or []
+    retrieval.architecture = bug_context or []
+    retrieval.security = bug_context or []
     return {
         "pr_payload": pr,
-        "retrieval_result": MagicMock(),
+        "retrieval_result": retrieval,
         "agent_results": [],
         "error": None,
     }
@@ -150,6 +157,34 @@ async def test_bug_agent_multiple_findings() -> None:
     severities = {f.title: f.severity for f in result.findings}
     assert severities["Race condition on shared state"] == Severity.critical
     assert severities["Unhandled exception"] == Severity.medium
+
+
+@pytest.mark.asyncio
+async def test_bug_agent_includes_project_context_and_changed_line_guardrails() -> None:
+    agent = BugDetectionAgent()
+    state = _make_state(
+        bug_context=[
+            {
+                "payload": {
+                    "source_path": ".openrabbit/coding_rules.md",
+                    "text": "All public handlers must validate empty input explicitly.",
+                }
+            }
+        ]
+    )
+    captured: list[str] = []
+
+    async def fake_generate(prompt: str) -> str:
+        captured.append(prompt)
+        return _llm_response([])
+
+    with patch.object(agent, "_client") as mock_client:
+        mock_client.generate = AsyncMock(side_effect=fake_generate)
+        await agent.run(state)
+
+    assert "All public handlers must validate empty input explicitly." in captured[0]
+    assert "changed lines" in captured[0]
+    assert "Do not invent" in captured[0]
 
 
 @pytest.mark.asyncio

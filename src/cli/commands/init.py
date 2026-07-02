@@ -1,6 +1,6 @@
 """Implementation of ``openrabbit init``.
 
-Creates the ``.codereviewer/`` scaffold in a target directory. Pure function on
+Creates the ``.openrabbit/`` scaffold in a target directory. Pure function on
 the filesystem so it can be tested with ``tmp_path`` without invoking the full
 Typer app.
 """
@@ -16,7 +16,7 @@ from cli.templates import TEMPLATES
 _log = get_logger(__name__)
 
 
-SCAFFOLD_DIR_NAME = ".codereviewer"
+SCAFFOLD_DIR_NAME = ".openrabbit"
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class InitConflict(RuntimeError):
 
 
 def run_init(target_dir: Path, *, force: bool = False) -> InitResult:
-    """Create ``<target_dir>/.codereviewer/`` and write template files.
+    """Create ``<target_dir>/.openrabbit/`` and write template files.
 
     Args:
         target_dir: Repository root where the scaffold should live.

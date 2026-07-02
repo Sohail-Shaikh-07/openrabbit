@@ -14,39 +14,37 @@ import time
 from agents.base import BaseReviewAgent
 from agents.llm import OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
+from agents.prompting import JSON_RESPONSE_CONTRACT, REVIEW_DISCIPLINE, collect_context
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """You are a bug detection code reviewer. Analyze the following pull request diff and identify correctness issues and bugs.
+_PROMPT_TEMPLATE = """You are OpenRabbit's correctness review agent. Review the pull request like a senior engineer looking for defects that could break real users or production workflows.
 
-Check specifically for:
-- Null or None dereference (accessing attributes or calling methods on values that may be None)
-- Logic errors (wrong operator, inverted condition, incorrect algorithm)
-- Boundary conditions (off-by-one errors, empty collection handling, integer overflow)
-- Race conditions (shared mutable state accessed from multiple threads without locking)
-- Missing error handling (unhandled exceptions, unchecked return values)
-- Exception safety (resources not cleaned up on error, missing finally/context manager)
+Mission:
+- Identify concrete bugs introduced or exposed by the changed lines.
+- Trace input assumptions, state changes, branch conditions, and error paths before raising a finding.
+- Prefer exact failure modes over vague "could be improved" comments.
+- Respect project-specific rules and retrieved implementation context when deciding whether behavior is intentional.
+
+Correctness classes to consider:
+- Null or None dereference, unchecked optional values, and missing guards.
+- Logic errors: inverted conditions, wrong operators, stale state, incorrect algorithmic assumptions.
+- Boundary defects: empty collections, first/last item, pagination, indexes, time zones, overflow, truncation.
+- Concurrency and lifecycle defects: races, leaked resources, missing cleanup, unsafe retries.
+- Error handling: swallowed exceptions, unhandled external failures, partial writes, inconsistent rollback.
+- Contract drift: changed caller/callee expectations, schema mismatches, backwards-incompatible behavior.
+
+Project context:
+{project_context}
 
 Diff:
 {diff}
 
-Reply with ONLY a JSON object in this exact format, no prose:
-{{
-  "findings": [
-    {{
-      "severity": "critical|high|medium|low",
-      "file": "path/to/file.py",
-      "line": 42,
-      "confidence": 0.85,
-      "title": "Short title",
-      "reason": "Why this is a bug.",
-      "suggestion": "How to fix it.",
-      "fix": "Optional corrected code snippet"
-    }}
-  ]
-}}
+{review_discipline}
 
-If no bugs are found, return {{"findings": []}}
+{json_contract}
+
+If no correctness bugs are found, return {{"findings": []}}.
 """
 
 
@@ -65,7 +63,15 @@ class BugDetectionAgent(BaseReviewAgent):
         try:
             pr = state.get("pr_payload")
             diff: str = getattr(pr, "diff", "") or "" if pr else ""
-            prompt = _PROMPT_TEMPLATE.format(diff=diff)
+            project_context = collect_context(
+                state, "bug", "architecture", "security", "performance"
+            )
+            prompt = _PROMPT_TEMPLATE.format(
+                diff=diff,
+                project_context=project_context,
+                review_discipline=REVIEW_DISCIPLINE,
+                json_contract=JSON_RESPONSE_CONTRACT,
+            )
             raw = await self._client.generate(prompt)
             findings = parse_findings(raw, "bug")
         except Exception:

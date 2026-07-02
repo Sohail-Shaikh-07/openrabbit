@@ -1,6 +1,6 @@
 """Repository scanner.
 
-Walks a checkout root, applies ``.codereviewer/ignore.txt`` plus a small
+Walks a checkout root, applies ``.openrabbit/ignore.txt`` plus a small
 default ignore set, classifies each file by purpose, and yields typed
 :class:`FileRecord` rows. The chunker in OP-12 consumes those records and
 turns them into vector-store chunks.
@@ -19,7 +19,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-CODEREVIEWER_DIR = ".codereviewer"
+OPENRABBIT_DIR = ".openrabbit"
+LEGACY_CODEREVIEWER_DIR = ".codereviewer"
+CODEREVIEWER_DIR = LEGACY_CODEREVIEWER_DIR
+RULE_DIRS = frozenset({OPENRABBIT_DIR, LEGACY_CODEREVIEWER_DIR})
 
 # Patterns that always get skipped regardless of what the user puts in their
 # own ignore.txt. Keep this short and obvious. Anything controversial belongs
@@ -36,6 +39,9 @@ _BUILTIN_IGNORES: tuple[str, ...] = (
     ".venv/**",
     "venv/**",
     "node_modules/**",
+    ".openrabbit/state.json",
+    ".openrabbit/state.json.tmp",
+    ".openrabbit/models/**",
     "**/*.pyc",
 )
 
@@ -138,7 +144,7 @@ class RepositoryScanner:
         if not root.is_dir():
             raise NotADirectoryError(root)
 
-        matcher = IgnoreMatcher.from_file(root / CODEREVIEWER_DIR / "ignore.txt")
+        matcher = IgnoreMatcher.from_file(_ignore_file(root))
         for path in sorted(root.rglob("*"), key=lambda p: p.as_posix()):
             if not path.is_file():
                 continue
@@ -166,7 +172,7 @@ def _classify(relative: Path) -> FileKind:
     parts = relative.parts
     suffix = relative.suffix.lower()
 
-    if parts and parts[0] == CODEREVIEWER_DIR:
+    if parts and parts[0] in RULE_DIRS:
         return FileKind.rules
 
     if _is_test_path(relative):
@@ -198,3 +204,10 @@ def _is_test_path(relative: Path) -> bool:
     if name.endswith((".spec.ts", ".spec.tsx")):
         return True
     return name.endswith((".test.js", ".spec.js"))
+
+
+def _ignore_file(root: Path) -> Path:
+    primary = root / OPENRABBIT_DIR / "ignore.txt"
+    if primary.is_file():
+        return primary
+    return root / LEGACY_CODEREVIEWER_DIR / "ignore.txt"

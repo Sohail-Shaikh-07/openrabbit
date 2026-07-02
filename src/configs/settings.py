@@ -2,7 +2,7 @@
 
 Two entry points:
 
-- :func:`load_settings` reads ``<repo>/.codereviewer/config.yml`` and merges
+- :func:`load_settings` reads ``<repo>/.openrabbit/config.yml`` and merges
   environment variables.
 - :class:`Settings` is the Pydantic root model; instantiate it directly with
   a dict (mostly for testing).
@@ -25,14 +25,15 @@ from configs.schema import (
     ReviewSettings,
 )
 
-CONFIG_SUBDIR = ".codereviewer"
+CONFIG_SUBDIR = ".openrabbit"
+LEGACY_CONFIG_SUBDIR = ".codereviewer"
 CONFIG_FILENAME = "config.yml"
 ENV_PREFIX = "OPENRABBIT_"
 ENV_DELIMITER = "__"
 
 
 class ConfigNotFoundError(FileNotFoundError):
-    """Raised when ``.codereviewer/config.yml`` cannot be located."""
+    """Raised when no OpenRabbit config file can be located."""
 
 
 class Settings(BaseModel):
@@ -65,16 +66,22 @@ def find_config_file(start: Path) -> Path:
     """Locate the config file by walking up from ``start``.
 
     Raises:
-        ConfigNotFoundError: If no ``.codereviewer/config.yml`` is found in
+        ConfigNotFoundError: If no ``.openrabbit/config.yml`` or legacy
+            ``.codereviewer/config.yml`` is found in
             ``start`` or any of its parents.
     """
     start = start.resolve()
     for directory in (start, *start.parents):
-        candidate = directory / CONFIG_SUBDIR / CONFIG_FILENAME
-        if candidate.is_file():
-            return candidate
+        candidates = (
+            directory / CONFIG_SUBDIR / CONFIG_FILENAME,
+            directory / LEGACY_CONFIG_SUBDIR / CONFIG_FILENAME,
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
     raise ConfigNotFoundError(
-        f"No {CONFIG_SUBDIR}/{CONFIG_FILENAME} found in {start} or any parent. "
+        f"No {CONFIG_SUBDIR}/{CONFIG_FILENAME} or "
+        f"{LEGACY_CONFIG_SUBDIR}/{CONFIG_FILENAME} found in {start} or any parent. "
         "Run `openrabbit init` first."
     )
 
