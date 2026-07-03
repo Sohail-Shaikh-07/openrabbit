@@ -14,6 +14,7 @@ from cli.commands.review import render_summary, run_review
 from cli.commands.review_pipeline import ReviewPipelineResult
 from configs import load_settings
 from github_ import GitHubAPIError
+from rag.retriever import RetrievalResult
 from ranking.ranker import RankedFinding
 
 _BASE = "https://api.github.com"
@@ -34,6 +35,10 @@ def _pr_json() -> dict[str, object]:
         "body": "Body",
         "merged": False,
     }
+
+
+async def _empty_context_loader(_payload: object) -> None:
+    return None
 
 
 @respx.mock
@@ -134,6 +139,7 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
         repo="o/r",
         env={"GITHUB_TOKEN": "tkn"},
         agent_runner=fake_runner,
+        context_loader=_empty_context_loader,
         dry_run=True,
     )
 
@@ -198,6 +204,7 @@ async def test_run_review_publishes_ranked_findings_when_not_dry_run(scaffold_re
         env={"GITHUB_TOKEN": "tkn"},
         agent_runner=fake_runner,
         publisher=fake_publisher,
+        context_loader=_empty_context_loader,
     )
 
     assert summary["comments_posted"] is True
@@ -265,6 +272,7 @@ async def test_run_review_uses_github_publisher_by_default(scaffold_repo: Path) 
         repo="o/r",
         env={"GITHUB_TOKEN": "tkn"},
         agent_runner=fake_runner,
+        context_loader=_empty_context_loader,
     )
 
     assert summary["comments_posted"] is True
@@ -328,6 +336,7 @@ async def test_run_review_dry_run_never_publishes(scaffold_repo: Path) -> None:
         env={"GITHUB_TOKEN": "tkn"},
         agent_runner=fake_runner,
         publisher=fake_publisher,
+        context_loader=_empty_context_loader,
         dry_run=True,
     )
 
@@ -359,6 +368,7 @@ async def test_run_review_does_not_publish_empty_findings(scaffold_repo: Path) -
         env={"GITHUB_TOKEN": "tkn"},
         agent_runner=fake_runner,
         publisher=fake_publisher,
+        context_loader=_empty_context_loader,
     )
 
     assert summary["comments_posted"] is False
@@ -418,12 +428,102 @@ async def test_run_review_surfaces_publisher_errors(scaffold_repo: Path) -> None
             env={"GITHUB_TOKEN": "tkn"},
             agent_runner=fake_runner,
             publisher=fake_publisher,
+            context_loader=_empty_context_loader,
         )
     except GitHubAPIError as exc:
         assert exc.status_code == 422
         assert "line is invalid" in str(exc)
     else:  # pragma: no cover - defensive assertion
         raise AssertionError("expected GitHubAPIError")
+
+
+@respx.mock
+async def test_run_review_passes_loaded_context_to_agent_runner(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(return_value=httpx.Response(200, json=[]))
+    retrieval = RetrievalResult(security=[{"score": 0.9, "payload": {"name": "rule"}}])
+    captured: list[object] = []
+
+    async def fake_context_loader(_payload: object) -> RetrievalResult:
+        return retrieval
+
+    async def fake_runner(*_args: object, **kwargs: object) -> ReviewPipelineResult:
+        captured.append(kwargs.get("retrieval_result"))
+        return ReviewPipelineResult(agent_results=[], ranked_findings=[])
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=fake_context_loader,
+        dry_run=True,
+    )
+
+    assert captured == [retrieval]
+    assert summary["context_loaded"] is True
+
+
+@respx.mock
+async def test_run_review_marks_empty_context_as_diff_only(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(return_value=httpx.Response(200, json=[]))
+
+    async def fake_context_loader(_payload: object) -> RetrievalResult:
+        return RetrievalResult()
+
+    async def fake_runner(*_args: object, **kwargs: object) -> ReviewPipelineResult:
+        assert isinstance(kwargs.get("retrieval_result"), RetrievalResult)
+        return ReviewPipelineResult(agent_results=[], ranked_findings=[])
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=fake_context_loader,
+        dry_run=True,
+    )
+
+    assert summary["context_loaded"] is False
+
+
+@respx.mock
+async def test_run_review_continues_when_context_loader_fails(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(return_value=httpx.Response(200, json=[]))
+    captured: list[object] = []
+
+    async def failing_context_loader(_payload: object) -> RetrievalResult:
+        raise RuntimeError("qdrant down")
+
+    async def fake_runner(*_args: object, **kwargs: object) -> ReviewPipelineResult:
+        captured.append(kwargs.get("retrieval_result"))
+        return ReviewPipelineResult(agent_results=[], ranked_findings=[])
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=failing_context_loader,
+        dry_run=True,
+    )
+
+    assert captured == [None]
+    assert summary["context_loaded"] is False
 
 
 def test_render_summary_prints_every_field() -> None:
@@ -439,6 +539,7 @@ def test_render_summary_prints_every_field() -> None:
         "commits": 2,
         "findings_count": 0,
         "dropped_findings_count": 0,
+        "context_loaded": False,
         "findings": [],
         "publish_status": "no_findings",
     }
@@ -451,6 +552,7 @@ def test_render_summary_prints_every_field() -> None:
     assert "3 (1 binary)" in text
     assert "Hunks:" in text
     assert "Commits:" in text
+    assert "Context:      diff only" in text
     assert "no findings to post" in text
 
 
@@ -467,6 +569,7 @@ def test_render_summary_prints_findings() -> None:
         "commits": 1,
         "findings_count": 1,
         "dropped_findings_count": 3,
+        "context_loaded": True,
         "publish_status": "posted",
         "findings": [
             {
@@ -489,6 +592,7 @@ def test_render_summary_prints_findings() -> None:
     text = out.getvalue()
     assert "Findings:     1" in text
     assert "Dropped:      3 ungrounded" in text
+    assert "Context:      loaded" in text
     assert "Published:    yes" in text
     assert "[HIGH] Missing guard" in text
     assert "src/a.py:2" in text

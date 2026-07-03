@@ -181,6 +181,32 @@ async def test_retrieve_encodes_query_from_pr_context() -> None:
 
 
 @pytest.mark.asyncio
+async def test_retrieve_query_includes_title_body_paths_and_hunk_lines() -> None:
+    engine = _mock_engine()
+    store = _mock_store()
+    retriever = ContextRetriever(engine=engine, store=store)
+    pr = _make_pr_payload(title="Add task export", filenames=["src/tasks/export.py"])
+    pr.pull_request.body = "Adds CSV export for filtered tasks."
+    pr.files[0].hunks = [
+        MagicMock(
+            lines=[
+                MagicMock(text="def export_tasks():"),
+                MagicMock(text="return csv_data"),
+            ]
+        )
+    ]
+
+    await retriever.retrieve(pr)
+
+    query_text = engine.aencode.call_args[0][0][0].text
+    assert "Add task export" in query_text
+    assert "CSV export" in query_text
+    assert "src/tasks/export.py" in query_text
+    assert "def export_tasks():" in query_text
+    assert "return csv_data" in query_text
+
+
+@pytest.mark.asyncio
 async def test_retrieve_deduplicates_results_by_payload_name() -> None:
     hit_a = {"id": "1", "score": 0.95, "payload": {"name": "auth"}}
     hit_b = {"id": "2", "score": 0.85, "payload": {"name": "auth"}}

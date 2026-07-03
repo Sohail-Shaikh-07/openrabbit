@@ -12,11 +12,12 @@ The current manual review flow is:
 
 1. OpenRabbit fetches a pull request from GitHub.
 2. It parses commits, changed files, hunks, and changed-line evidence.
-3. Enabled review agents run against the diff with strict JSON output prompts.
-4. Findings are grounded to changed files and changed lines.
-5. A ranker removes duplicates, orders the findings, and drops ungrounded output.
-6. The CLI prints the summary locally.
-7. If `--dry-run` is not set and findings exist, OpenRabbit posts them as a GitHub review.
+3. It tries to retrieve relevant repository context from Qdrant using the PR title, body, changed files, and hunk lines.
+4. Enabled review agents run against the diff plus any retrieved context with strict JSON output prompts.
+5. Findings are grounded to changed files and changed lines.
+6. A ranker removes duplicates, orders the findings, and drops ungrounded output.
+7. The CLI prints the summary locally.
+8. If `--dry-run` is not set and findings exist, OpenRabbit posts them as a GitHub review.
 
 `openrabbit start` runs the polling daemon and reviews new pull requests or new head commits automatically. Metadata-only PR updates with the same head SHA are skipped to avoid repeated reviews. Use `openrabbit review --dry-run` as the safe manual preview path. See [docs/pr-agent-gap-analysis.md](docs/pr-agent-gap-analysis.md) for the current comparison against PR-Agent and the recommended roadmap.
 
@@ -31,7 +32,7 @@ The current manual review flow is:
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Prompting | Changed-line evidence first, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
-| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI |
+| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, and profiler for measuring review quality |
 
@@ -192,9 +193,11 @@ docker compose up -d qdrant
 openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
 ```
 
+Run this after `openrabbit init`, after major documentation or architecture changes, and after large source changes when you want reviews to use fresh repository context. If Qdrant is unavailable or no index exists, reviews continue in diff-only mode and report `Context: diff only`.
+
 ### `openrabbit review`
 
-Fetches one PR, runs the enabled local agents, grounds findings to the diff, prints a ranked summary, and publishes a GitHub review when findings exist.
+Fetches one PR, loads indexed repository context when available, runs the enabled local agents, grounds findings to the diff, prints a ranked summary, and publishes a GitHub review when findings exist.
 
 ```bash
 openrabbit review --pr 42 --repo owner/repo --dry-run

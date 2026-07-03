@@ -147,17 +147,7 @@ class ContextRetriever:
 
     async def _build_query_vector(self, pr: Any) -> Any:
         """Encode the PR context into a query embedding vector."""
-        parts: list[str] = []
-        if hasattr(pr, "pull_request") and pr.pull_request.title:
-            parts.append(pr.pull_request.title)
-        for f in pr.files:
-            parts.append(f.path)
-            for hunk in f.hunks:
-                ctx = getattr(hunk, "context", "")
-                if ctx:
-                    parts.append(ctx)
-
-        query_text = " ".join(parts)
+        query_text = _query_text_from_pr(pr)
         query_chunk = Chunk(
             source_path=_QUERY_PATH,
             kind=ChunkKind.section,
@@ -225,3 +215,32 @@ def _dedup(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
             seen.add(name)
         out.append(hit)
     return out
+
+
+def _query_text_from_pr(pr: Any) -> str:
+    """Build retrieval text from PR metadata, changed files, and hunk lines."""
+    parts: list[str] = []
+    pull_request = getattr(pr, "pull_request", None)
+    title = str(getattr(pull_request, "title", "") or "").strip()
+    body = str(getattr(pull_request, "body", "") or "").strip()
+    if title:
+        parts.append(title)
+    if body:
+        parts.append(body)
+
+    files = getattr(pr, "files", None)
+    if isinstance(files, list):
+        for file_ in files:
+            path = str(getattr(file_, "path", "") or "").strip()
+            if path:
+                parts.append(path)
+            hunks = getattr(file_, "hunks", None)
+            if not isinstance(hunks, list):
+                continue
+            for hunk in hunks:
+                for line in getattr(hunk, "lines", []) or []:
+                    text = str(getattr(line, "text", "") or "").strip()
+                    if text:
+                        parts.append(text)
+
+    return " ".join(parts)

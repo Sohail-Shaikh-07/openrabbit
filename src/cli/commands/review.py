@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
@@ -25,6 +25,7 @@ _log = get_logger(__name__)
 
 AgentRunner = Callable[..., Awaitable[ReviewPipelineResult]]
 ReviewPublisher = Callable[..., Awaitable[None]]
+ContextLoader = Callable[[Any], Awaitable[Any]]
 
 
 async def run_review(
@@ -37,6 +38,7 @@ async def run_review(
     run_agents: bool = True,
     agent_runner: AgentRunner | None = None,
     publisher: ReviewPublisher | None = None,
+    context_loader: ContextLoader | None = None,
 ) -> dict[str, object]:
     """Fetch, review, optionally publish, and return a summary dict.
 
@@ -55,13 +57,27 @@ async def run_review(
     binary_count = sum(1 for f in payload.files if f.is_binary)
     ranked: list[RankedFinding] = []
     dropped_findings_count = 0
+    retrieval_result: Any | None = None
 
     if run_agents:
+        loader = context_loader or _load_review_context
+        try:
+            retrieval_result = await loader(payload)
+        except Exception as exc:
+            _log.warning(
+                "review.context_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            retrieval_result = None
         runner = agent_runner or run_agent_review
-        pipeline_result = await runner(payload, settings=settings)
+        pipeline_result = await runner(
+            payload, settings=settings, retrieval_result=retrieval_result
+        )
         ranked = pipeline_result.ranked_findings
         dropped_findings_count = pipeline_result.dropped_findings_count
 
+    context_loaded = _has_retrieval_context(retrieval_result)
     comments_posted = False
     publish_status = "dry_run" if dry_run else "no_findings"
     if not dry_run and ranked:
@@ -90,6 +106,7 @@ async def run_review(
         "dry_run": dry_run,
         "findings_count": len(ranked),
         "dropped_findings_count": dropped_findings_count,
+        "context_loaded": context_loaded,
         "findings": [_serialize_ranked_finding(rf) for rf in ranked],
         "comments_posted": comments_posted,
         "publish_status": publish_status,
@@ -115,6 +132,9 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     dropped = summary.get("dropped_findings_count")
     if isinstance(dropped, int) and dropped > 0:
         print(f"  Dropped:      {dropped} ungrounded", file=out)
+    context_loaded = summary.get("context_loaded")
+    if isinstance(context_loaded, bool):
+        print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
     publish_status = summary.get("publish_status")
     if publish_status == "posted":
         print("  Published:    yes", file=out)
@@ -148,6 +168,50 @@ def _serialize_ranked_finding(ranked: RankedFinding) -> dict[str, object]:
     finding = ranked.finding.as_dict()
     finding["score"] = ranked.score
     return finding
+
+
+async def _load_review_context(pr_payload: Any) -> Any:
+    """Load repository-aware RAG context for *pr_payload*.
+
+    The underlying retriever catches Qdrant/index/embedding errors and returns
+    an empty result, so review execution can continue with the diff alone.
+    """
+    store: Any | None = None
+    try:
+        from rag.embeddings import EmbeddingEngine
+        from rag.retriever import ContextRetriever
+        from rag.vector_store import VectorStore
+
+        store = VectorStore()
+        retriever = ContextRetriever(engine=EmbeddingEngine(), store=store)
+        return await retriever.retrieve(pr_payload)
+    except Exception as exc:
+        _log.warning(
+            "review.context_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return None
+    finally:
+        if store is not None:
+            try:
+                await store.close()
+            except Exception as exc:
+                _log.warning(
+                    "review.context_close_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+
+
+def _has_retrieval_context(retrieval_result: Any | None) -> bool:
+    if retrieval_result is None:
+        return False
+    for dimension in ("security", "architecture", "performance", "tests"):
+        value = getattr(retrieval_result, dimension, None)
+        if isinstance(value, list) and value:
+            return True
+    return False
 
 
 async def _publish_review(
