@@ -12,7 +12,7 @@ import logging
 import time
 
 from agents.base import BaseReviewAgent
-from agents.llm import OllamaClient, mean_confidence, parse_findings
+from agents.llm import LLMClient, OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
 from agents.prompting import (
     JSON_RESPONSE_CONTRACT,
@@ -59,7 +59,7 @@ class ArchitectureAgent(BaseReviewAgent):
 
     name = "architecture"
 
-    def __init__(self, client: OllamaClient | None = None) -> None:
+    def __init__(self, client: LLMClient | None = None) -> None:
         self._client = client or OllamaClient()
 
     async def run(self, state: ReviewState) -> AgentResult:

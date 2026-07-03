@@ -29,7 +29,7 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Manual review | `openrabbit review --pr N --repo owner/repo` fetches and parses PR data, runs agents, ranks findings, prints a summary, and publishes grounded findings when not in dry-run mode |
 | Polling | `openrabbit start` watches a repository, records polling state, and triggers reviews for new PRs and new head SHAs |
 | Publishing | Manual review publishing and polling-triggered publishing are wired for GitHub |
-| Local model | Ollama provider is wired; vLLM and Transformers are schema placeholders |
+| Model layer | Shared provider contract exists; Ollama provider is wired; vLLM and Transformers remain schema placeholders |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
 | RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, and automatic review context loading |
@@ -116,14 +116,14 @@ Recommended tasks:
 - Coordinate context packing with the token-aware compression task.
 - Surface which context sources were used in verbose mode.
 
-### 7. Provider abstraction is incomplete
+### 7. Hosted provider support is incomplete
 
-The config schema allows `ollama`, `vllm`, and `transformers`, but only Ollama is wired in `build_review_agents`.
+The review-agent pipeline now uses a shared provider contract, and Ollama is wired through the provider factory. Hosted providers are still not implemented, and the public schema still lists `vllm` and `transformers` as placeholders.
 
 Recommended tasks:
 
-- Define a common LLM client protocol.
-- Implement vLLM and Transformers clients or remove them from the public schema until they are ready.
+- Implement OpenAI and OpenAI-compatible clients on the shared contract.
+- Decide whether `vllm` and `transformers` should be implemented soon or removed from the public schema until they are ready.
 - Add provider-specific health checks and error messages.
 
 ### 8. Config layering is basic

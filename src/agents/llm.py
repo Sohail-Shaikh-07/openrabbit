@@ -1,11 +1,13 @@
 """Shared LLM utilities used by all OpenRabbit review agents.
 
 Contains:
+- LLMClient: async review-generation contract implemented by model providers
 - OllamaClient: async HTTP wrapper for the local Ollama instance
 - parse_findings: JSON -> Finding list parser (shared across agents)
 - mean_confidence: aggregate confidence helper
 
-No remote API calls are made -- everything stays on the user's machine.
+The default provider is local-first. Hosted providers plug into the same
+contract but are only used when explicitly configured.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import json
 import logging
 import os
 import re
+from typing import Protocol
 
 import httpx
 
@@ -36,6 +39,24 @@ _SEVERITY_MAP: dict[str, Severity] = {
 }
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(?P<body>\{.*?\})\s*```", re.DOTALL)
+
+
+class LLMClient(Protocol):
+    """Small async contract every review model provider must implement."""
+
+    @property
+    def provider_name(self) -> str:
+        """Provider identifier used in logs, diagnostics, and tests."""
+        ...
+
+    @property
+    def model_name(self) -> str:
+        """Configured model name sent to the provider."""
+        ...
+
+    async def generate(self, prompt: str) -> str:
+        """Generate a raw response for a review prompt."""
+        ...
 
 
 class OllamaClient:
@@ -62,6 +83,16 @@ class OllamaClient:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._timeout = _resolve_timeout(timeout)
+
+    @property
+    def provider_name(self) -> str:
+        """Provider identifier for the local Ollama runtime."""
+        return "ollama"
+
+    @property
+    def model_name(self) -> str:
+        """Configured Ollama model name."""
+        return self._model
 
     @property
     def timeout(self) -> float:

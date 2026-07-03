@@ -28,7 +28,7 @@ The current manual review flow is:
 | CLI | `init`, `index`, `review`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
-| Local model | Ollama-backed review agents using `model.model_name` from config |
+| Model layer | Shared provider contract with Ollama-backed review agents using `model.model_name` from config |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Prompting | Changed-line evidence first, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
@@ -207,6 +207,8 @@ openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 ```
 
 Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
+
+Today, `model.provider: ollama` is the implemented provider. The model layer uses a shared provider contract so hosted OpenAI and OpenAI-compatible providers can plug into the same review-agent pipeline in the next release tasks.
 
 ### `openrabbit start`
 
