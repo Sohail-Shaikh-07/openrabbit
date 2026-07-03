@@ -32,7 +32,7 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Local model | Ollama provider is wired; vLLM and Transformers are schema placeholders |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
-| RAG | Scanner, chunker, embeddings, Qdrant vector store, and indexing command |
+| RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, and automatic review context loading |
 | Fine-tuning | QLoRA training/evaluation/packaging pipeline for a Qwen2.5-Coder adapter |
 | Benchmarks | Runner, scorer, and profiler for review quality evaluation |
 
@@ -106,15 +106,15 @@ Recommended tasks:
 - Summarize low-risk or oversized files before agent execution.
 - Report what was omitted from the model context.
 
-### 6. RAG is indexed but not yet clearly integrated into every review path
+### 6. RAG needs deeper and more selective context packing
 
-The RAG indexer and vector store exist, but the manual review command currently passes no retrieval result into the agent pipeline. That means reviews can still behave as diff-only unless a caller wires retrieval manually.
+The review command now loads repository context automatically when Qdrant has an index available. The next gap is making context selection more precise for large repositories and large pull requests.
 
 Recommended tasks:
 
-- Load retrieval context automatically in `openrabbit review`.
-- Query by changed files, changed symbols, and PR title/body.
-- Feed coding rules, security rules, architecture notes, and related source chunks to the relevant agents.
+- Query by changed symbols and related call sites, not only PR metadata and hunk text.
+- Coordinate context packing with the token-aware compression task.
+- Surface which context sources were used in verbose mode.
 
 ### 7. Provider abstraction is incomplete
 
@@ -162,7 +162,7 @@ Recommended tasks:
 
 | Priority | Task | Why |
 | --- | --- | --- |
-| P0 | Auto-load RAG context during review | Delivers the repository-aware promise |
+| P0 | Improve RAG context selection and packing | Keeps repository-aware reviews precise as PRs and repos grow |
 | P0 | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
 | P1 | Add PR description command | Fast, visible value for every PR |
 | P1 | Add token-aware PR compression | Required for large real-world PRs |

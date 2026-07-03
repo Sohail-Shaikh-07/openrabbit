@@ -184,7 +184,8 @@ class VectorStore:
 
     async def close(self) -> None:
         """Release resources held by the underlying Qdrant client."""
-        await self._get_client().close()
+        if self._client is not None:
+            await self._client.close()
 
     # ------------------------------------------------------------------
     # Internal helpers

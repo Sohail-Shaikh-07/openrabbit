@@ -216,6 +216,13 @@ async def test_close_delegates_to_client() -> None:
 
 
 @pytest.mark.asyncio
+async def test_close_without_client_is_noop() -> None:
+    store = VectorStore()
+
+    await store.close()
+
+
+@pytest.mark.asyncio
 async def test_constants_are_strings() -> None:
     assert isinstance(COLLECTION_FUNCTIONS, str)
     assert isinstance(COLLECTION_DOCS, str)
