@@ -3,7 +3,7 @@
 Checks PR diffs for common performance anti-patterns:
 N+1 database queries, inefficient loops, repeated computation,
 large memory allocations, and blocking I/O in async contexts.
-Reuses the shared OllamaClient and parsing helpers from agents.llm.
+Reuses the shared LLM client contract and parsing helpers from agents.llm.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 import time
 
 from agents.base import BaseReviewAgent
-from agents.llm import OllamaClient, mean_confidence, parse_findings
+from agents.llm import LLMClient, OllamaClient, mean_confidence, parse_findings
 from agents.models import AgentResult, Finding, ReviewState
 from agents.prompting import (
     JSON_RESPONSE_CONTRACT,
@@ -60,7 +60,7 @@ class PerformanceAgent(BaseReviewAgent):
 
     name = "performance"
 
-    def __init__(self, client: OllamaClient | None = None) -> None:
+    def __init__(self, client: LLMClient | None = None) -> None:
         self._client = client or OllamaClient()
 
     async def run(self, state: ReviewState) -> AgentResult:

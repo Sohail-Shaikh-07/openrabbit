@@ -123,6 +123,13 @@ def test_ollama_client_default_timeout_is_generous_for_local_models() -> None:
     assert client.timeout >= 300.0
 
 
+def test_ollama_client_exposes_provider_metadata() -> None:
+    client = OllamaClient(model="openrabbit-reviewer-v1")
+
+    assert client.provider_name == "ollama"
+    assert client.model_name == "openrabbit-reviewer-v1"
+
+
 def test_ollama_client_timeout_can_come_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENRABBIT_OLLAMA_TIMEOUT_SECONDS", "240")
     client = OllamaClient()
