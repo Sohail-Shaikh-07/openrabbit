@@ -18,7 +18,7 @@ The current manual review flow is:
 6. The CLI prints the summary locally.
 7. If `--dry-run` is not set and findings exist, OpenRabbit posts them as a GitHub review.
 
-Automatic polling-to-review execution is still an important next gap. Today, `openrabbit review --dry-run` is the safe preview path, while `openrabbit review` publishes grounded findings when there is something useful to post. See [docs/pr-agent-gap-analysis.md](docs/pr-agent-gap-analysis.md) for the current comparison against PR-Agent and the recommended roadmap.
+`openrabbit start` runs the polling daemon and reviews new pull requests or new head commits automatically. Metadata-only PR updates with the same head SHA are skipped to avoid repeated reviews. Use `openrabbit review --dry-run` as the safe manual preview path. See [docs/pr-agent-gap-analysis.md](docs/pr-agent-gap-analysis.md) for the current comparison against PR-Agent and the recommended roadmap.
 
 ## What Works Today
 
@@ -207,13 +207,13 @@ Use `--dry-run` to print the result locally without posting comments. Empty find
 
 ### `openrabbit start`
 
-Runs the polling service in the foreground and records PR polling state under `.openrabbit/state.json`.
+Runs the polling service in the foreground, records PR polling state under `.openrabbit/state.json`, and reviews new PRs or new head commits automatically.
 
 ```bash
 openrabbit start --workspace . --repo owner/repo
 ```
 
-In the current release, `start` detects and logs polling events. Wiring those events into the full review-and-publish pipeline is a tracked next gap.
+The first poll seeds state without reviewing every already-open PR. After that, new PRs and changed head SHAs trigger the same review-and-publish path as `openrabbit review`. Same-SHA updates, such as label or description changes, are logged and skipped.
 
 ### `openrabbit install-model`
 
