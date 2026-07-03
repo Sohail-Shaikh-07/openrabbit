@@ -1,7 +1,8 @@
 """Implementation of ``openrabbit review --pr N``.
 
 Pulls a single PR through the parser, runs the configured local review agents,
-ranks their findings, and prints a dry-run friendly summary.
+ranks their findings, prints a dry-run friendly summary, and publishes review
+comments when not running in dry-run mode.
 """
 
 from __future__ import annotations
@@ -15,13 +16,15 @@ from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
-from github_ import GitHubClient, PullRequestParser, RepositoryHandle
+from github_ import GitHubAuthError, GitHubClient, PullRequestParser, RepositoryHandle
+from github_.publisher import GitHubPublisher
 from ranking.ranker import RankedFinding
 
 _log = get_logger(__name__)
 
 
 AgentRunner = Callable[..., Awaitable[ReviewPipelineResult]]
+ReviewPublisher = Callable[..., Awaitable[None]]
 
 
 async def run_review(
@@ -33,8 +36,9 @@ async def run_review(
     dry_run: bool = False,
     run_agents: bool = True,
     agent_runner: AgentRunner | None = None,
+    publisher: ReviewPublisher | None = None,
 ) -> dict[str, object]:
-    """Fetch and parse one pull request, returning a summary dict.
+    """Fetch, review, optionally publish, and return a summary dict.
 
     The returned dict is printed by the CLI. Returning structured data here
     keeps the function trivially testable without scraping stdout.
@@ -58,6 +62,21 @@ async def run_review(
         ranked = pipeline_result.ranked_findings
         dropped_findings_count = pipeline_result.dropped_findings_count
 
+    comments_posted = False
+    publish_status = "dry_run" if dry_run else "no_findings"
+    if not dry_run and ranked:
+        await _publish_review(
+            settings,
+            env=env,
+            handle=handle,
+            pr_number=payload.number,
+            ranked=ranked,
+            head_sha=payload.head_sha,
+            publisher=publisher,
+        )
+        comments_posted = True
+        publish_status = "posted"
+
     return {
         "repo": handle.full_name,
         "number": payload.number,
@@ -72,7 +91,8 @@ async def run_review(
         "findings_count": len(ranked),
         "dropped_findings_count": dropped_findings_count,
         "findings": [_serialize_ranked_finding(rf) for rf in ranked],
-        "comments_posted": False,
+        "comments_posted": comments_posted,
+        "publish_status": publish_status,
     }
 
 
@@ -95,6 +115,13 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     dropped = summary.get("dropped_findings_count")
     if isinstance(dropped, int) and dropped > 0:
         print(f"  Dropped:      {dropped} ungrounded", file=out)
+    publish_status = summary.get("publish_status")
+    if publish_status == "posted":
+        print("  Published:    yes", file=out)
+    elif publish_status == "no_findings":
+        print("  Published:    no findings to post", file=out)
+    elif publish_status == "dry_run":
+        print("  Published:    no (dry run)", file=out)
     if findings:
         print("", file=out)
         print("Model findings:", file=out)
@@ -121,6 +148,34 @@ def _serialize_ranked_finding(ranked: RankedFinding) -> dict[str, object]:
     finding = ranked.finding.as_dict()
     finding["score"] = ranked.score
     return finding
+
+
+async def _publish_review(
+    settings: Settings,
+    *,
+    env: dict[str, str] | None,
+    handle: RepositoryHandle,
+    pr_number: int,
+    ranked: list[RankedFinding],
+    head_sha: str,
+    publisher: ReviewPublisher | None,
+) -> None:
+    """Post *ranked* findings to GitHub using the configured repository."""
+    if publisher is not None:
+        await publisher(pr_number=pr_number, ranked=ranked, head_sha=head_sha)
+        return
+
+    token = settings.resolved_github_token(env=env)
+    if token is None:
+        # This should not happen after GitHubClient.from_settings succeeded, but
+        # keep the failure explicit if a future caller changes the fetch path.
+        raise GitHubAuthError("cannot publish review without a resolved GitHub token")
+
+    await GitHubPublisher(token=token, owner=handle.owner, repo=handle.repo).publish(
+        pr_number=pr_number,
+        ranked=ranked,
+        head_sha=head_sha,
+    )
 
 
 # Keep an unused-import suppression so Path is available for type hints in

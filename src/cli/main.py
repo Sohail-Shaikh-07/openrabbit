@@ -210,7 +210,7 @@ def review(
         help="Print the review summary without posting comments to GitHub.",
     ),
 ) -> None:
-    """Run a one-off parse of a specific pull request and print a summary."""
+    """Run a one-off review of a pull request and publish findings unless dry-run."""
     workspace = workspace.resolve()
     settings = _load_settings_or_exit(workspace)
     try:
