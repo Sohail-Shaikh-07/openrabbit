@@ -1,15 +1,16 @@
 """Implementation of ``openrabbit start``.
 
-Wires the OP-3 settings loader, the OP-6 GitHub client, the OP-7 repository
-handle, and the OP-9 polling service into one foreground daemon. The handler
-defaults to logging each event. Phase 4 will swap it for the real agent
-pipeline.
+Wires settings, GitHub access, polling state, and the review pipeline into one
+foreground daemon. The daemon reviews new pull requests and new head commits,
+while same-SHA metadata updates are logged and skipped.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from cli.logging import get_logger
 from configs.settings import Settings
@@ -25,6 +26,7 @@ _log = get_logger(__name__)
 
 STATE_SUBDIR = ".openrabbit"
 STATE_FILENAME = "state.json"
+ReviewRunner = Callable[..., Awaitable[dict[str, object]]]
 
 
 class StartError(RuntimeError):
@@ -58,12 +60,58 @@ async def _log_handler(event: PollEvent, handle: RepositoryHandle) -> None:
     )
 
 
+async def _run_manual_review(*args: Any, **kwargs: Any) -> dict[str, object]:
+    """Import lazily to avoid a cycle with ``cli.commands.review``."""
+    from cli.commands.review import run_review
+
+    return await run_review(*args, **kwargs)
+
+
+def build_review_handler(
+    settings: Settings,
+    *,
+    env: dict[str, str] | None = None,
+    review_runner: ReviewRunner | None = None,
+) -> Callable[[PollEvent, RepositoryHandle], Awaitable[None]]:
+    """Build the polling handler that reviews PRs with changed head SHAs."""
+    runner = review_runner or _run_manual_review
+
+    async def _handler(event: PollEvent, handle: RepositoryHandle) -> None:
+        await _log_handler(event, handle)
+        if event.kind == "pull_request_updated":
+            _log.info(
+                "start.review_skipped",
+                repo=handle.full_name,
+                pr=event.number,
+                reason="head_sha_unchanged",
+            )
+            return
+
+        summary = await runner(
+            settings,
+            number=event.number,
+            repo=handle.full_name,
+            env=env,
+            dry_run=False,
+        )
+        _log.info(
+            "start.review_complete",
+            repo=handle.full_name,
+            pr=event.number,
+            findings=summary.get("findings_count", 0),
+            comments_posted=summary.get("comments_posted", False),
+        )
+
+    return _handler
+
+
 async def run_start(
     settings: Settings,
     *,
     workspace: Path,
     repo: str | None = None,
     env: dict[str, str] | None = None,
+    review_runner: ReviewRunner | None = None,
 ) -> None:
     """Run the polling service in the foreground until cancelled."""
     target = resolve_target_repo(settings, repo)
@@ -72,11 +120,13 @@ async def run_start(
     state_path = workspace / STATE_SUBDIR / STATE_FILENAME
     store = FileStateStore(state_path)
 
+    handler = build_review_handler(settings, env=env, review_runner=review_runner)
+
     service = PollingService(
         handle,
         interval_seconds=settings.polling.interval_seconds,
         store=store,
-        handler=_log_handler,
+        handler=handler,
     )
 
     _log.info(
@@ -98,9 +148,14 @@ def run_start_blocking(
     workspace: Path,
     repo: str | None = None,
     env: dict[str, str] | None = None,
+    review_runner: ReviewRunner | None = None,
 ) -> None:
     """Synchronous wrapper used by the Typer command."""
     try:
-        asyncio.run(run_start(settings, workspace=workspace, repo=repo, env=env))
+        asyncio.run(
+            run_start(
+                settings, workspace=workspace, repo=repo, env=env, review_runner=review_runner
+            )
+        )
     except KeyboardInterrupt:
         _log.info("start.shutdown")

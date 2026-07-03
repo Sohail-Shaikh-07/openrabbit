@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -11,8 +12,35 @@ import respx
 from cli.commands.init import run_init
 from cli.commands.start import StartError, resolve_target_repo, run_start
 from configs import RepositorySettings, Settings, load_settings
+from github_ import FileStateStore, PollState, SeenPullRequest
 
 _BASE = "https://api.github.com"
+
+
+def _pr_summary(
+    number: int,
+    *,
+    updated_at: str,
+    head_sha: str,
+) -> dict[str, Any]:
+    return {
+        "number": number,
+        "title": f"PR {number}",
+        "state": "open",
+        "draft": False,
+        "user": {"login": "alice", "id": 1},
+        "head": {"ref": "feat", "sha": head_sha, "label": "alice:feat"},
+        "base": {"ref": "main", "sha": "b" * 40, "label": "o:main"},
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": updated_at,
+        "labels": [],
+    }
+
+
+def _seed_state(scaffold_repo: Path, *prs: SeenPullRequest) -> None:
+    FileStateStore(scaffold_repo / ".openrabbit" / "state.json").save(
+        PollState(pull_requests={pr.number: pr for pr in prs})
+    )
 
 
 def test_resolve_target_flag_wins_over_settings() -> None:
@@ -62,6 +90,186 @@ async def test_run_start_runs_polling_until_cancelled(
 
     assert rounds == [1]
     assert (scaffold_repo / ".openrabbit" / "state.json").is_file()
+
+
+@respx.mock
+async def test_run_start_reviews_new_pull_request(
+    scaffold_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    async def fake_sleep(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+    _seed_state(
+        scaffold_repo,
+        SeenPullRequest(
+            number=1,
+            updated_at="2026-01-01T00:00:00+00:00",
+            head_sha="a" * 40,
+        ),
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                _pr_summary(1, updated_at="2026-01-01T00:00:00Z", head_sha="a" * 40),
+                _pr_summary(2, updated_at="2026-01-02T00:00:00Z", head_sha="c" * 40),
+            ],
+        )
+    )
+    reviewed: list[int] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        reviewed.append(int(kwargs["number"]))
+        return {"findings_count": 1, "comments_posted": True}
+
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_start(
+            settings,
+            workspace=scaffold_repo,
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+            review_runner=fake_review_runner,
+        )
+
+    assert reviewed == [2]
+
+
+@respx.mock
+async def test_run_start_reviews_new_head_sha(
+    scaffold_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    async def fake_sleep(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+    _seed_state(
+        scaffold_repo,
+        SeenPullRequest(
+            number=1,
+            updated_at="2026-01-01T00:00:00+00:00",
+            head_sha="a" * 40,
+        ),
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(
+        return_value=httpx.Response(
+            200,
+            json=[_pr_summary(1, updated_at="2026-01-02T00:00:00Z", head_sha="z" * 40)],
+        )
+    )
+    reviewed: list[int] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        reviewed.append(int(kwargs["number"]))
+        return {"findings_count": 1, "comments_posted": True}
+
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_start(
+            settings,
+            workspace=scaffold_repo,
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+            review_runner=fake_review_runner,
+        )
+
+    assert reviewed == [1]
+
+
+@respx.mock
+async def test_run_start_skips_same_head_sha_update(
+    scaffold_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    async def fake_sleep(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+    _seed_state(
+        scaffold_repo,
+        SeenPullRequest(
+            number=1,
+            updated_at="2026-01-01T00:00:00+00:00",
+            head_sha="a" * 40,
+        ),
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(
+        return_value=httpx.Response(
+            200,
+            json=[_pr_summary(1, updated_at="2026-01-03T00:00:00Z", head_sha="a" * 40)],
+        )
+    )
+    reviewed: list[int] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        reviewed.append(int(kwargs["number"]))
+        return {"findings_count": 1, "comments_posted": True}
+
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_start(
+            settings,
+            workspace=scaffold_repo,
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+            review_runner=fake_review_runner,
+        )
+
+    assert reviewed == []
+
+
+@respx.mock
+async def test_run_start_review_failure_does_not_stop_polling(
+    scaffold_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    rounds: list[int] = []
+
+    async def fake_sleep(_seconds: float) -> None:
+        rounds.append(1)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+    _seed_state(
+        scaffold_repo,
+        SeenPullRequest(
+            number=1,
+            updated_at="2026-01-01T00:00:00+00:00",
+            head_sha="a" * 40,
+        ),
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(
+        return_value=httpx.Response(
+            200,
+            json=[_pr_summary(1, updated_at="2026-01-02T00:00:00Z", head_sha="z" * 40)],
+        )
+    )
+
+    async def fake_review_runner(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise RuntimeError("review failed")
+
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_start(
+            settings,
+            workspace=scaffold_repo,
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+            review_runner=fake_review_runner,
+        )
+
+    assert rounds == [1]
 
 
 def test_run_start_blocking_raises_start_error_when_no_repo(

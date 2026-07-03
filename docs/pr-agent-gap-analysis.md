@@ -27,8 +27,8 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | GitHub auth | Personal access token from `OPENRABBIT_GITHUB__TOKEN`, `GITHUB_TOKEN`, configured `token_env`, or Windows persistent env fallback |
 | Config | `.openrabbit/config.yml` plus `OPENRABBIT_...` env overrides |
 | Manual review | `openrabbit review --pr N --repo owner/repo` fetches and parses PR data, runs agents, ranks findings, prints a summary, and publishes grounded findings when not in dry-run mode |
-| Polling | `openrabbit start` watches a repository and records polling state |
-| Publishing | Manual review publishing is wired; polling is not yet wired to execute and publish reviews automatically |
+| Polling | `openrabbit start` watches a repository, records polling state, and triggers reviews for new PRs and new head SHAs |
+| Publishing | Manual review publishing and polling-triggered publishing are wired for GitHub |
 | Local model | Ollama provider is wired; vLLM and Transformers are schema placeholders |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
@@ -55,14 +55,15 @@ PR-Agent's public docs describe a much wider command and automation surface:
 
 ## High-Priority Gaps
 
-### 1. Automated review publishing is not wired end to end
+### 1. Review publishing needs operational hardening
 
-OpenRabbit has manual review publishing, but `openrabbit start` still logs polling events without invoking the full review pipeline.
+OpenRabbit now publishes manual reviews and polling-triggered reviews, but the automation path still needs operational polish before it reaches PR-Agent maturity.
 
 Recommended tasks:
 
-- Wire polling events from `openrabbit start` into review execution and publishing.
-- Add tests for dry-run/no-post, publish-on-review, and polling-to-review behavior.
+- Add controls for review frequency, max PR size, and per-repo concurrency.
+- Add clearer daemon observability around skipped PRs, posted comments, and provider failures.
+- Add webhook or GitHub Action modes for teams that do not want a long-running local polling process.
 
 ### 2. No PR description or walkthrough command
 
@@ -161,8 +162,8 @@ Recommended tasks:
 
 | Priority | Task | Why |
 | --- | --- | --- |
-| P0 | Wire review publishing and polling-to-review | Makes OpenRabbit behave like a real PR reviewer, not only a preview CLI |
 | P0 | Auto-load RAG context during review | Delivers the repository-aware promise |
+| P0 | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
 | P1 | Add PR description command | Fast, visible value for every PR |
 | P1 | Add token-aware PR compression | Required for large real-world PRs |
 | P1 | Add improve/fix suggestions | Moves from finding problems to helping resolve them |
