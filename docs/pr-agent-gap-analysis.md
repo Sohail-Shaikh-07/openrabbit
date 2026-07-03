@@ -26,9 +26,9 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | --- | --- |
 | GitHub auth | Personal access token from `OPENRABBIT_GITHUB__TOKEN`, `GITHUB_TOKEN`, configured `token_env`, or Windows persistent env fallback |
 | Config | `.openrabbit/config.yml` plus `OPENRABBIT_...` env overrides |
-| Manual review | `openrabbit review --pr N --repo owner/repo` fetches and parses PR data, runs agents, ranks findings, and prints a summary |
+| Manual review | `openrabbit review --pr N --repo owner/repo` fetches and parses PR data, runs agents, ranks findings, prints a summary, and publishes grounded findings when not in dry-run mode |
 | Polling | `openrabbit start` watches a repository and records polling state |
-| Publishing | GitHub review publisher exists, but CLI review and polling are not yet wired to post comments automatically |
+| Publishing | Manual review publishing is wired; polling is not yet wired to execute and publish reviews automatically |
 | Local model | Ollama provider is wired; vLLM and Transformers are schema placeholders |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
@@ -55,14 +55,12 @@ PR-Agent's public docs describe a much wider command and automation surface:
 
 ## High-Priority Gaps
 
-### 1. Review publishing is not wired end to end
+### 1. Automated review publishing is not wired end to end
 
-OpenRabbit has a `GitHubPublisher`, but `openrabbit review` currently returns and prints findings without posting them, and `openrabbit start` logs polling events without invoking the full review pipeline.
+OpenRabbit has manual review publishing, but `openrabbit start` still logs polling events without invoking the full review pipeline.
 
 Recommended tasks:
 
-- Wire `openrabbit review` to publish when `--dry-run` is not set.
-- Keep `--dry-run` as a guaranteed no-post preview.
 - Wire polling events from `openrabbit start` into review execution and publishing.
 - Add tests for dry-run/no-post, publish-on-review, and polling-to-review behavior.
 

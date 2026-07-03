@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 OpenRabbit is at `v1.0.0`. The foundation is in place: CLI, configuration, GitHub PR parsing, repository indexing, local multi-agent review, ranking, fine-tuning utilities, and release validation.
 
-The current CLI review flow is best treated as a local review preview:
+The current manual review flow is:
 
 1. OpenRabbit fetches a pull request from GitHub.
 2. It parses commits, changed files, hunks, and changed-line evidence.
@@ -16,8 +16,9 @@ The current CLI review flow is best treated as a local review preview:
 4. Findings are grounded to changed files and changed lines.
 5. A ranker removes duplicates, orders the findings, and drops ungrounded output.
 6. The CLI prints the summary locally.
+7. If `--dry-run` is not set and findings exist, OpenRabbit posts them as a GitHub review.
 
-The GitHub publisher module exists, but posting from `openrabbit review` and automatic polling-to-review execution are still important next gaps. Today, `openrabbit review` prints locally even when `--dry-run` is omitted; `--dry-run` is kept as the explicit preview/no-post flag for the upcoming publish flow. See [docs/pr-agent-gap-analysis.md](docs/pr-agent-gap-analysis.md) for the current comparison against PR-Agent and the recommended roadmap.
+Automatic polling-to-review execution is still an important next gap. Today, `openrabbit review --dry-run` is the safe preview path, while `openrabbit review` publishes grounded findings when there is something useful to post. See [docs/pr-agent-gap-analysis.md](docs/pr-agent-gap-analysis.md) for the current comparison against PR-Agent and the recommended roadmap.
 
 ## What Works Today
 
@@ -193,15 +194,16 @@ openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
 
 ### `openrabbit review`
 
-Fetches one PR, runs the enabled local agents, grounds findings to the diff, and prints a ranked summary.
+Fetches one PR, runs the enabled local agents, grounds findings to the diff, prints a ranked summary, and publishes a GitHub review when findings exist.
 
 ```bash
 openrabbit review --pr 42 --repo owner/repo --dry-run
+openrabbit review --pr 42 --repo owner/repo
 openrabbit --quiet review --pr 42 --repo owner/repo --dry-run
 openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 ```
 
-In the current release, `review` prints the result locally and does not post comments to GitHub. `--dry-run` is the explicit no-post flag that will continue to protect preview runs once publishing is wired in.
+Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
 
 ### `openrabbit start`
 
