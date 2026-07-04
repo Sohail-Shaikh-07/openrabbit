@@ -74,15 +74,15 @@ Recommended tasks:
 - Add optional markdown or JSON output formats.
 - Optionally publish or update a PR comment/body when enabled.
 
-### 3. No improvement or fix-suggestion command
+### 3. Improvement and fix-suggestion command now has a first pass
 
-PR-Agent's `/improve` proposes code improvements. OpenRabbit findings include optional `fix` snippets, but there is no dedicated improve workflow.
+PR-Agent's `/improve` proposes code improvements. OpenRabbit now has a read-only `openrabbit improve` command that proposes small fixes for changed lines, grounds suggestions to changed files and changed new-side lines, and prints them locally.
 
 Recommended tasks:
 
-- Add `openrabbit improve --pr N`.
-- Return patch-style suggestions only when grounded to changed lines.
-- Keep suggestions small and reviewable.
+- Add optional patch or GitHub suggested-change formatting.
+- Add optional publishing as review comments when enabled.
+- Add quality benchmarks for over-suggestion and false-positive rates.
 
 ### 4. No interactive ask command
 
@@ -163,7 +163,7 @@ Recommended tasks:
 | P0 | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
 | Done | Add PR description command | Fast, visible value for every PR |
 | Done | Add token-aware PR compression | Keeps large real-world PRs inside deterministic prompt budgets |
-| P1 | Add improve/fix suggestions | Moves from finding problems to helping resolve them |
+| Done | Add improve/fix suggestions | Moves from finding problems to helping resolve them |
 | P1 | Add GitHub Action recipe | Removes local manual friction for teams |
 | P2 | Add ask command | Useful for interactive PR exploration |
 | P2 | Expand provider support | Helps teams use their preferred local or hosted runtime |
