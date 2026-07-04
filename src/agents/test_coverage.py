@@ -19,6 +19,7 @@ from agents.prompting import (
     REVIEW_DISCIPLINE,
     collect_context,
     format_changed_line_evidence,
+    format_prompt_diff,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,8 +68,7 @@ class TestCoverageAgent(BaseReviewAgent):
         findings: list[Finding] = []
 
         try:
-            pr = state.get("pr_payload")
-            diff: str = getattr(pr, "diff", "") or "" if pr else ""
+            diff = format_prompt_diff(state.get("pr_payload"))
             test_context = collect_context(state, "tests")
             changed_line_evidence = format_changed_line_evidence(state.get("pr_payload"))
             prompt = _PROMPT_TEMPLATE.format(

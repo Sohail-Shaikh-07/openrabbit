@@ -13,7 +13,7 @@ The current manual review flow is:
 1. OpenRabbit fetches a pull request from GitHub.
 2. It parses commits, changed files, hunks, and changed-line evidence.
 3. It tries to retrieve relevant repository context from Qdrant using the PR title, body, changed files, and hunk lines.
-4. Enabled review agents run against the diff plus any retrieved context with strict JSON output prompts.
+4. Enabled review agents run against a token-aware compressed diff plus any retrieved context with strict JSON output prompts.
 5. Findings are grounded to changed files and changed lines.
 6. A ranker removes duplicates, orders the findings, and drops ungrounded output.
 7. The CLI prints the summary locally.
@@ -30,7 +30,7 @@ The current manual review flow is:
 | GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract with Ollama-backed review agents using `model.model_name` from config |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
-| Prompting | Changed-line evidence first, strict JSON contract, no speculative findings |
+| Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
@@ -266,6 +266,8 @@ openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 ```
 
 Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
+
+Review agents receive changed-line evidence before the full diff. For larger pull requests, OpenRabbit rebuilds a compact diff from parsed GitHub hunks, prioritizes risky and code-heavy files, keeps prompts within a deterministic token budget, and includes an omission note when content is left out.
 
 Today, `model.provider: ollama`, `model.provider: openai`, and `model.provider: openai-compatible` are implemented. The model layer uses a shared provider contract so more runtimes can plug into the same review-agent pipeline.
 
