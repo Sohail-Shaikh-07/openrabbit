@@ -31,6 +31,8 @@ LEGACY_CONFIG_SUBDIR = ".codereviewer"
 CONFIG_FILENAME = "config.yml"
 ENV_PREFIX = "OPENRABBIT_"
 ENV_DELIMITER = "__"
+_MODEL_SECRET_KEY_MARKERS = ("api_key", "secret", "token", "password", "credential")
+_MODEL_SECRET_SAFE_KEYS = {"api_key_env"}
 
 
 class ConfigNotFoundError(FileNotFoundError):
@@ -119,7 +121,9 @@ def load_settings(
 
     config_path = find_config_file(start)
     raw = _read_yaml(config_path)
+    _reject_inline_model_secrets(raw)
     overrides = _env_overrides(env_map)
+    _reject_inline_model_secrets(overrides)
     merged = _deep_merge(raw, overrides)
     return Settings.model_validate(merged)
 
@@ -178,6 +182,22 @@ def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, An
         else:
             out[key] = value
     return out
+
+
+def _reject_inline_model_secrets(config: dict[str, Any]) -> None:
+    model_config = config.get("model")
+    if not isinstance(model_config, dict):
+        return
+
+    for key in model_config:
+        normalized = str(key).strip().lower()
+        if normalized in _MODEL_SECRET_SAFE_KEYS:
+            continue
+        if any(marker in normalized for marker in _MODEL_SECRET_KEY_MARKERS):
+            raise ValueError(
+                f"model.{key} is not supported. Store provider secrets in an "
+                "environment variable and set model.api_key_env to that variable name."
+            )
 
 
 def _persistent_windows_env(name: str) -> str | None:

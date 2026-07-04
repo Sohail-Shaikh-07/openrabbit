@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ModelProvider = Literal["ollama", "openai", "openai-compatible", "vllm", "transformers"]
 
 
 class ReviewSettings(BaseModel):
     """Which review agents are enabled for this repository."""
+
+    model_config = ConfigDict(extra="forbid")
 
     security: bool = True
     performance: bool = True
@@ -27,6 +29,8 @@ class ReviewSettings(BaseModel):
 
 class ModelSettings(BaseModel):
     """Which review model is used and how it is served."""
+
+    model_config = ConfigDict(extra="forbid")
 
     provider: ModelProvider = "ollama"
     model_name: str = "openrabbit-reviewer-v1"
@@ -40,6 +44,8 @@ class ModelSettings(BaseModel):
         if value is None:
             return value
         stripped = value.strip().rstrip("/")
+        if stripped and not stripped.startswith(("http://", "https://")):
+            raise ValueError("base_url must start with http:// or https://")
         return stripped or None
 
     @field_validator("api_key_env")
@@ -49,15 +55,30 @@ class ModelSettings(BaseModel):
             raise ValueError("api_key_env must be a non-empty environment variable name")
         return value
 
+    @model_validator(mode="after")
+    def _validate_provider_shape(self) -> ModelSettings:
+        if self.provider == "openai-compatible":
+            if not self.base_url:
+                raise ValueError(
+                    "model.base_url is required when model.provider is 'openai-compatible'"
+                )
+        elif self.base_url is not None:
+            raise ValueError("model.base_url is only supported for provider 'openai-compatible'")
+        return self
+
 
 class PollingSettings(BaseModel):
     """Polling configuration for the GitHub watcher."""
+
+    model_config = ConfigDict(extra="forbid")
 
     interval_seconds: int = Field(default=60, ge=5, le=3600)
 
 
 class RepositorySettings(BaseModel):
     """Which repository OpenRabbit watches when no ``--repo`` flag is given."""
+
+    model_config = ConfigDict(extra="forbid")
 
     target: str | None = None
 
@@ -78,6 +99,8 @@ class GithubSettings(BaseModel):
     ``token_env`` variable, or via the explicit override
     ``OPENRABBIT_GITHUB__TOKEN``. Resolution order is handled in the loader.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     token: str | None = None
     token_env: str = "GITHUB_TOKEN"

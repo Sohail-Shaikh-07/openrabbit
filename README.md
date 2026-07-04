@@ -118,7 +118,7 @@ model:
   api_key_env: OPENAI_API_KEY
 ```
 
-Do not put the API key value in `.openrabbit/config.yml`. OpenRabbit reads the variable named by `model.api_key_env` and sends it only in the OpenAI request header. For custom endpoint roots, use the OpenAI-compatible provider below.
+Do not put the API key value in `.openrabbit/config.yml`. OpenRabbit rejects inline model secrets such as `model.api_key`; it reads the variable named by `model.api_key_env` and sends it only in the provider request header. For custom endpoint roots, use the OpenAI-compatible provider below.
 
 ### OpenAI-Compatible Provider
 
