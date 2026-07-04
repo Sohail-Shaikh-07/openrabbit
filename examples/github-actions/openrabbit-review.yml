@@ -1,0 +1,97 @@
+name: OpenRabbit review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to review
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: openrabbit-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  OPENRABBIT_GITHUB__TOKEN: ${{ github.token }}
+
+jobs:
+  review:
+    name: Review pull request
+    runs-on: [self-hosted, linux, openrabbit]
+    if: github.event.pull_request.draft != true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve PR number
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "PR_NUMBER=${{ inputs.pr }}" >> "$GITHUB_ENV"
+          else
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install OpenRabbit
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "openrabbit @ git+https://github.com/Sohail-Shaikh-07/openrabbit.git@main"
+
+      - name: Prepare OpenRabbit config
+        shell: bash
+        run: |
+          if [ ! -f ".openrabbit/config.yml" ]; then
+            mkdir -p .openrabbit
+            cat > .openrabbit/config.yml <<'YAML'
+          review:
+            security: true
+            performance: true
+            architecture: true
+            bug: true
+            test_coverage: true
+            style: false
+
+          model:
+            provider: ollama
+            model_name: qwen2.5-coder:7b
+            base_model: qwen2.5-coder:7b
+
+          github:
+            token_env: GITHUB_TOKEN
+
+          repository:
+            target:
+          YAML
+          fi
+
+      - name: Ensure Ollama model is available
+        shell: bash
+        run: |
+          ollama list
+          ollama pull qwen2.5-coder:7b
+
+      - name: Optional repository index
+        shell: bash
+        continue-on-error: true
+        run: |
+          openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
+
+      - name: Review PR
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          openrabbit review --pr "$PR_NUMBER" --repo "${{ github.repository }}"
