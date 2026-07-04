@@ -65,14 +65,13 @@ Recommended tasks:
 - Add clearer daemon observability around skipped PRs, posted comments, and provider failures.
 - Add webhook or GitHub Action modes for teams that do not want a long-running local polling process.
 
-### 2. No PR description or walkthrough command
+### 2. PR description and walkthrough command now has a first pass
 
-PR-Agent's `/describe` generates a PR summary, title, labels, and walkthrough. OpenRabbit currently focuses on findings only.
+PR-Agent's `/describe` generates a PR summary, title, labels, and walkthrough. OpenRabbit now has a read-only `openrabbit describe` command that prints a PR summary, changed-file walkthrough, risk areas, and testing focus through the configured model provider.
 
 Recommended tasks:
 
-- Add `openrabbit describe --pr N`.
-- Generate a concise PR summary, changed-file walkthrough, risk areas, and suggested test focus.
+- Add optional markdown or JSON output formats.
 - Optionally publish or update a PR comment/body when enabled.
 
 ### 3. No improvement or fix-suggestion command
@@ -162,7 +161,7 @@ Recommended tasks:
 | --- | --- | --- |
 | P0 | Improve RAG context selection and packing | Keeps repository-aware reviews precise as PRs and repos grow |
 | P0 | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
-| P1 | Add PR description command | Fast, visible value for every PR |
+| Done | Add PR description command | Fast, visible value for every PR |
 | Done | Add token-aware PR compression | Keeps large real-world PRs inside deterministic prompt budgets |
 | P1 | Add improve/fix suggestions | Moves from finding problems to helping resolve them |
 | P1 | Add GitHub Action recipe | Removes local manual friction for teams |

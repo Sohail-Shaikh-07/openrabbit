@@ -25,7 +25,7 @@ The current manual review flow is:
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `review`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `review`, `describe`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -272,6 +272,15 @@ Use `--dry-run` to print the result locally without posting comments. Empty find
 Review agents receive changed-line evidence before the full diff. For larger pull requests, OpenRabbit rebuilds a compact diff from parsed GitHub hunks, prioritizes risky and code-heavy files, keeps prompts within a deterministic token budget, and includes an omission note when content is left out.
 
 Today, `model.provider: ollama`, `model.provider: openai`, and `model.provider: openai-compatible` are implemented. The model layer uses a shared provider contract so more runtimes can plug into the same review-agent pipeline.
+
+### `openrabbit describe`
+
+Fetches one PR, loads indexed repository context when available, and prints a read-only summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`, but it never publishes comments or mutates the pull request.
+
+```bash
+openrabbit describe --pr 42 --repo owner/repo
+openrabbit --quiet describe --pr 42 --repo owner/repo
+```
 
 ### `openrabbit start`
 

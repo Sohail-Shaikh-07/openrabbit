@@ -94,6 +94,12 @@ def test_review_command_accepts_dry_run_flag() -> None:
     assert "dry-run" in plain
 
 
+def test_describe_command_is_listed() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "describe" in result.output
+
+
 # ---------------------------------------------------------------------------
 # openrabbit --version
 # ---------------------------------------------------------------------------
