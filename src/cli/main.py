@@ -16,6 +16,7 @@ from rich.console import Console
 
 from cli import exit_codes
 from cli import logging as orlog
+from cli.commands.ask import render_answer, run_ask_blocking
 from cli.commands.describe import render_description, run_describe_blocking
 from cli.commands.improve import render_improvements, run_improve_blocking
 from cli.commands.index import run_index_blocking
@@ -267,6 +268,47 @@ def describe(
     import sys
 
     render_description(summary, sys.stdout)
+
+
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="Question to ask about the pull request."),
+    pr: int = typer.Option(..., "--pr", help="Pull request number to ask about."),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to ask about, in owner/repo form. Overrides repository.target.",
+    ),
+) -> None:
+    """Ask an evidence-based question about a pull request."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        summary = run_ask_blocking(
+            settings,  # type: ignore[arg-type]
+            number=pr,
+            question=question,
+            repo=repo,
+        )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except (GitHubAuthError, GitHubAPIError) as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    render_answer(summary, sys.stdout)
 
 
 @app.command()

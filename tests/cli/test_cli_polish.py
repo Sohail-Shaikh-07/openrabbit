@@ -106,6 +106,12 @@ def test_improve_command_is_listed() -> None:
     assert "improve" in result.output
 
 
+def test_ask_command_is_listed() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "ask" in result.output
+
+
 # ---------------------------------------------------------------------------
 # openrabbit --version
 # ---------------------------------------------------------------------------

@@ -84,15 +84,15 @@ Recommended tasks:
 - Add optional publishing as review comments when enabled.
 - Add quality benchmarks for over-suggestion and false-positive rates.
 
-### 4. No interactive ask command
+### 4. Interactive ask command now has a first pass
 
-PR-Agent supports `/ask` and line-level questions. OpenRabbit has no way to ask the local model a question about a PR.
+PR-Agent supports `/ask` and line-level questions. OpenRabbit now has a read-only `openrabbit ask` command that answers a focused question about a PR using metadata, changed-line evidence, diff context, and retrieved repository context when available.
 
 Recommended tasks:
 
-- Add `openrabbit ask --pr N "question"`.
-- Retrieve PR diff plus repository context before answering.
-- Add a strict answer contract that separates evidence, answer, and uncertainty.
+- Add optional JSON output for scripting.
+- Add optional PR comment publishing when explicitly enabled.
+- Add line-level ask support for a selected file and line.
 
 ### 5. Large PR compression now has a first pass
 
