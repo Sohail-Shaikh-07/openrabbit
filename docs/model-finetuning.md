@@ -4,7 +4,7 @@ This guide explains how OpenRabbit trains `OpenRabbit-Reviewer-v1`, where the fi
 
 ## Current Runtime Path
 
-OpenRabbit reviews run against a local Ollama model.
+OpenRabbit reviews can run against local Ollama, the official OpenAI API, or an OpenAI-compatible chat completions endpoint. Fine-tuned OpenRabbit adapters are used locally through Ollama after you package or convert them into an Ollama model.
 
 The configured model name comes from `.openrabbit/config.yml`:
 
@@ -15,7 +15,7 @@ model:
   base_model: qwen2.5-coder:7b
 ```
 
-`openrabbit review --pr <number>` fetches the PR, runs the enabled agents against the local Ollama model, ranks the findings, and prints them. It does not post comments to GitHub yet.
+`openrabbit review --pr <number>` fetches the PR, runs the enabled agents against the configured provider, ranks the findings, and prints them. Without `--dry-run`, grounded findings are posted as a GitHub review. Provider setup for Ollama, OpenAI, and OpenAI-compatible endpoints is covered in [model-providers.md](model-providers.md).
 
 ## Models
 
@@ -305,4 +305,4 @@ ollama serve
 poetry run openrabbit review --pr 123 --repo owner/repo --dry-run
 ```
 
-The command prints ranked model findings. GitHub comment publishing is intentionally still disabled in this path.
+The command prints ranked model findings without posting comments. Remove `--dry-run` when you want OpenRabbit to publish grounded findings as a GitHub review.

@@ -28,7 +28,7 @@ The current manual review flow is:
 | CLI | `init`, `index`, `review`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
-| Model layer | Shared provider contract with Ollama-backed review agents using `model.model_name` from config |
+| Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
@@ -44,7 +44,7 @@ The current manual review flow is:
 - Ollama for local review inference
 - Qdrant for repository indexing
 - Docker, optional, for running Qdrant locally
-- OpenAI API key, optional, only when using `model.provider: openai`
+- OpenAI or OpenAI-compatible API key, optional, only when using hosted or gateway providers
 
 ## Install
 
@@ -65,6 +65,8 @@ openrabbit --help
 If the `openrabbit` command is not found after `pip install --user`, make sure your Python user scripts directory is on `PATH`.
 
 ## Model Setup
+
+See [docs/model-providers.md](docs/model-providers.md) for the full provider setup guide, secret handling rules, environment overrides, and troubleshooting.
 
 OpenRabbit uses Ollama by default. For a base-model test before fine-tuning:
 
@@ -118,7 +120,7 @@ model:
   api_key_env: OPENAI_API_KEY
 ```
 
-Do not put the API key value in `.openrabbit/config.yml`. OpenRabbit rejects inline model secrets such as `model.api_key`; it reads the variable named by `model.api_key_env` and sends it only in the provider request header. For custom endpoint roots, use the OpenAI-compatible provider below.
+Do not put the API key value in `.openrabbit/config.yml`. OpenRabbit rejects inline model secrets such as `model.api_key`; it reads the variable named by `model.api_key_env` and sends it only in the provider request header. For custom endpoint roots, use the OpenAI-compatible provider below. More detail is in [docs/model-providers.md](docs/model-providers.md).
 
 ### OpenAI-Compatible Provider
 
@@ -146,7 +148,7 @@ model:
   api_key_env: OPENAI_COMPATIBLE_API_KEY
 ```
 
-`base_url` should be the endpoint root, without `/chat/completions`. For local servers that do not enforce authentication, set the configured environment variable to a harmless placeholder such as `local-key`; OpenRabbit still sends it only in the request header.
+`base_url` should be the endpoint root, without `/chat/completions`. For local servers that do not enforce authentication, set the configured environment variable to a harmless placeholder such as `local-key`; OpenRabbit still sends it only in the request header. See [docs/model-providers.md](docs/model-providers.md) for examples and troubleshooting.
 
 ## GitHub Token Setup
 
