@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-ModelProvider = Literal["ollama", "openai", "vllm", "transformers"]
+ModelProvider = Literal["ollama", "openai", "openai-compatible", "vllm", "transformers"]
 
 
 class ReviewSettings(BaseModel):
@@ -31,7 +31,16 @@ class ModelSettings(BaseModel):
     provider: ModelProvider = "ollama"
     model_name: str = "openrabbit-reviewer-v1"
     base_model: str = "qwen2.5-coder:7b-instruct"
+    base_url: str | None = None
     api_key_env: str = "OPENAI_API_KEY"
+
+    @field_validator("base_url")
+    @classmethod
+    def _normalize_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip().rstrip("/")
+        return stripped or None
 
     @field_validator("api_key_env")
     @classmethod

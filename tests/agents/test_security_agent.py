@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agents.llm import OllamaClient, OpenAIClient, parse_findings
+from agents.llm import OllamaClient, OpenAIClient, OpenAICompatibleClient, parse_findings
 from agents.models import ReviewState, Severity
 from agents.security import CONFIDENCE_THRESHOLD, SecurityAgent
 from github_.diff import DiffLine, Hunk
@@ -177,6 +177,44 @@ def test_openai_client_exposes_provider_metadata_without_key() -> None:
 def test_openai_client_requires_api_key() -> None:
     with pytest.raises(ValueError, match="API key"):
         OpenAIClient(api_key=" ", model="gpt-4.1-mini")
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_client_posts_to_custom_base_url() -> None:
+    client = OpenAICompatibleClient(
+        api_key="local-key",
+        model="openai/gpt-oss-20b",
+        base_url="http://localhost:8000/v1/",
+    )
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": '{"findings":[]}'}}],
+    }
+
+    with patch("agents.llm.httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=mock_response)
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await client.generate("review prompt")
+
+    assert result == '{"findings":[]}'
+    call_args = mock_http.post.call_args
+    assert call_args.args[0] == "http://localhost:8000/v1/chat/completions"
+    assert call_args.kwargs["headers"]["Authorization"] == "Bearer local-key"
+    assert call_args.kwargs["json"]["model"] == "openai/gpt-oss-20b"
+    assert client.provider_name == "openai-compatible"
+
+
+def test_openai_compatible_client_requires_http_base_url() -> None:
+    with pytest.raises(ValueError, match="base URL"):
+        OpenAICompatibleClient(
+            api_key="local-key",
+            model="openai/gpt-oss-20b",
+            base_url="localhost:8000/v1",
+        )
 
 
 # ---------------------------------------------------------------------------
