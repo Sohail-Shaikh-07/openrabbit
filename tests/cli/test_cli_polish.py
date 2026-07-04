@@ -100,6 +100,12 @@ def test_describe_command_is_listed() -> None:
     assert "describe" in result.output
 
 
+def test_improve_command_is_listed() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "improve" in result.output
+
+
 # ---------------------------------------------------------------------------
 # openrabbit --version
 # ---------------------------------------------------------------------------
