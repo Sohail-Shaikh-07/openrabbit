@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-ModelProvider = Literal["ollama", "vllm", "transformers"]
+ModelProvider = Literal["ollama", "openai", "vllm", "transformers"]
 
 
 class ReviewSettings(BaseModel):
@@ -31,6 +31,14 @@ class ModelSettings(BaseModel):
     provider: ModelProvider = "ollama"
     model_name: str = "openrabbit-reviewer-v1"
     base_model: str = "qwen2.5-coder:7b-instruct"
+    api_key_env: str = "OPENAI_API_KEY"
+
+    @field_validator("api_key_env")
+    @classmethod
+    def _non_empty_api_key_env(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("api_key_env must be a non-empty environment variable name")
+        return value
 
 
 class PollingSettings(BaseModel):

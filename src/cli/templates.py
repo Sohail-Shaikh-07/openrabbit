@@ -28,6 +28,9 @@ model:
   provider: ollama
   model_name: openrabbit-reviewer-v1
   base_model: qwen2.5-coder:7b-instruct
+  # For provider: openai, set this env var in your shell instead of storing
+  # the key in this file.
+  api_key_env: OPENAI_API_KEY
 
 polling:
   interval_seconds: 60

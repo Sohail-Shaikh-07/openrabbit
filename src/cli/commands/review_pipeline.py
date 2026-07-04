@@ -29,13 +29,14 @@ async def run_agent_review(
     settings: Settings | None = None,
     agents: list[BaseReviewAgent] | None = None,
     retrieval_result: Any | None = None,
+    env: dict[str, str] | None = None,
     ranker: CommentRanker | None = None,
 ) -> ReviewPipelineResult:
     """Run configured review agents for *pr_payload* and rank their findings."""
     if agents is None:
         if settings is None:
             raise ValueError("settings are required when agents are not provided")
-        agents = build_review_agents(settings)
+        agents = build_review_agents(settings, env=env)
 
     state: ReviewState = {
         "pr_payload": pr_payload,
