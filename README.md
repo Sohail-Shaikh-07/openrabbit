@@ -25,7 +25,7 @@ The current manual review flow is:
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `review`, `describe`, `improve`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `review`, `describe`, `ask`, `improve`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -280,6 +280,15 @@ Fetches one PR, loads indexed repository context when available, and prints a re
 ```bash
 openrabbit describe --pr 42 --repo owner/repo
 openrabbit --quiet describe --pr 42 --repo owner/repo
+```
+
+### `openrabbit ask`
+
+Fetches one PR, loads indexed repository context when available, and answers a focused question about the pull request. The answer is separated into direct answer, evidence, uncertainty, and follow-up checks. The command uses the same configured model provider as `openrabbit review`, but it never posts comments or mutates the pull request.
+
+```bash
+openrabbit ask --pr 42 --repo owner/repo "Does this change add enough test coverage?"
+openrabbit --quiet ask --pr 42 --repo owner/repo "What files should I inspect first?"
 ```
 
 ### `openrabbit improve`
