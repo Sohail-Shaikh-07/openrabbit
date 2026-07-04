@@ -123,6 +123,28 @@ def test_model_api_key_resolution_uses_configured_env(tmp_path: Path) -> None:
     assert settings.resolved_model_api_key(env=env) == "sk-test"
 
 
+def test_openai_compatible_provider_supports_base_url(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "\n".join(
+            [
+                "model:",
+                "  provider: openai-compatible",
+                "  model_name: openai/gpt-oss-20b",
+                "  base_url: 'http://localhost:8000/v1/'",
+                "  api_key_env: OPENAI_COMPATIBLE_API_KEY",
+            ]
+        ),
+    )
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.model.provider == "openai-compatible"
+    assert settings.model.model_name == "openai/gpt-oss-20b"
+    assert settings.model.base_url == "http://localhost:8000/v1"
+    assert settings.model.api_key_env == "OPENAI_COMPATIBLE_API_KEY"
+
+
 def test_model_api_key_resolution_uses_windows_user_env_when_process_env_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

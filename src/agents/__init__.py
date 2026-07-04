@@ -13,11 +13,12 @@ from agents.bugs import BugDetectionAgent
 from agents.coordinator import CoordinatorGraph
 from agents.factory import (
     MissingModelAPIKeyError,
+    MissingModelBaseURLError,
     UnsupportedModelProviderError,
     build_llm_client,
     build_review_agents,
 )
-from agents.llm import LLMClient, OllamaClient, OpenAIClient
+from agents.llm import LLMClient, OllamaClient, OpenAIClient, OpenAICompatibleClient
 from agents.models import AgentResult, Finding, ReviewState, Severity
 from agents.performance import PerformanceAgent
 from agents.security import SecurityAgent
@@ -32,8 +33,10 @@ __all__ = [
     "Finding",
     "LLMClient",
     "MissingModelAPIKeyError",
+    "MissingModelBaseURLError",
     "OllamaClient",
     "OpenAIClient",
+    "OpenAICompatibleClient",
     "PerformanceAgent",
     "ReviewState",
     "SecurityAgent",

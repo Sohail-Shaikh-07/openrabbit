@@ -124,11 +124,11 @@ class OllamaClient:
 
 
 class OpenAIClient:
-    """Async HTTP client for the official OpenAI Chat Completions API.
+    """Async HTTP client for OpenAI-style Chat Completions APIs.
 
     The API key is accepted by the constructor and only sent in the
     Authorization header. It is not exposed via repr, properties, logs, or
-    generated config files.
+    generated config files. By default this targets the official OpenAI API.
     """
 
     def __init__(
@@ -136,20 +136,27 @@ class OpenAIClient:
         *,
         api_key: str,
         model: str,
+        base_url: str = _OPENAI_BASE_URL,
+        provider_name: str = "openai",
         timeout: float = _OPENAI_TIMEOUT,
     ) -> None:
         if not api_key.strip():
             raise ValueError("OpenAI API key is required")
         if not model.strip():
             raise ValueError("OpenAI model name is required")
+        normalized_base_url = base_url.strip().rstrip("/")
+        if not normalized_base_url.startswith(("http://", "https://")):
+            raise ValueError("OpenAI base URL must start with http:// or https://")
         self._api_key = api_key
         self._model = model
+        self._base_url = normalized_base_url
+        self._provider_name = provider_name
         self._timeout = timeout
 
     @property
     def provider_name(self) -> str:
-        """Provider identifier for the official OpenAI runtime."""
-        return "openai"
+        """Provider identifier for diagnostics and tests."""
+        return self._provider_name
 
     @property
     def model_name(self) -> str:
@@ -180,13 +187,33 @@ class OpenAIClient:
         }
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
-                f"{_OPENAI_BASE_URL}/chat/completions",
+                f"{self._base_url}/chat/completions",
                 json=payload,
                 headers=headers,
             )
             response.raise_for_status()
             data = response.json()
         return _extract_openai_content(data)
+
+
+class OpenAICompatibleClient(OpenAIClient):
+    """Client for OpenAI-compatible chat/completions endpoints."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        base_url: str,
+        timeout: float = _OPENAI_TIMEOUT,
+    ) -> None:
+        super().__init__(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            provider_name="openai-compatible",
+            timeout=timeout,
+        )
 
 
 # ---------------------------------------------------------------------------

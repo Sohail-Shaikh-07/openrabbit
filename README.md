@@ -118,7 +118,35 @@ model:
   api_key_env: OPENAI_API_KEY
 ```
 
-Do not put the API key value in `.openrabbit/config.yml`. OpenRabbit reads the variable named by `model.api_key_env` and sends it only in the OpenAI request header. Custom OpenAI-compatible base URLs are planned for the next provider task.
+Do not put the API key value in `.openrabbit/config.yml`. OpenRabbit reads the variable named by `model.api_key_env` and sends it only in the OpenAI request header. For custom endpoint roots, use the OpenAI-compatible provider below.
+
+### OpenAI-Compatible Provider
+
+Use `openai-compatible` for gateways that expose a `/v1/chat/completions` API, such as vLLM OpenAI server, LiteLLM, OpenRouter-style endpoints, local gateways, or enterprise model gateways.
+
+PowerShell:
+
+```powershell
+setx OPENAI_COMPATIBLE_API_KEY "your_gateway_key_here"
+```
+
+macOS/Linux:
+
+```bash
+export OPENAI_COMPATIBLE_API_KEY="your_gateway_key_here"
+```
+
+`.openrabbit/config.yml`:
+
+```yaml
+model:
+  provider: openai-compatible
+  model_name: openai/gpt-oss-20b
+  base_url: http://localhost:8000/v1
+  api_key_env: OPENAI_COMPATIBLE_API_KEY
+```
+
+`base_url` should be the endpoint root, without `/chat/completions`. For local servers that do not enforce authentication, set the configured environment variable to a harmless placeholder such as `local-key`; OpenRabbit still sends it only in the request header.
 
 ## GitHub Token Setup
 
@@ -181,6 +209,8 @@ model:
   provider: ollama
   model_name: qwen2.5-coder:7b
   base_model: qwen2.5-coder:7b
+  # base_url is only required for provider: openai-compatible
+  # base_url: http://localhost:8000/v1
   api_key_env: OPENAI_API_KEY
 
 polling:
@@ -237,7 +267,7 @@ openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 
 Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
 
-Today, `model.provider: ollama` and `model.provider: openai` are implemented. The model layer uses a shared provider contract so OpenAI-compatible custom base URLs can plug into the same review-agent pipeline in the next release tasks.
+Today, `model.provider: ollama`, `model.provider: openai`, and `model.provider: openai-compatible` are implemented. The model layer uses a shared provider contract so more runtimes can plug into the same review-agent pipeline.
 
 ### `openrabbit start`
 
