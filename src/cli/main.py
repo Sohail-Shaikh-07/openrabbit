@@ -16,6 +16,7 @@ from rich.console import Console
 
 from cli import exit_codes
 from cli import logging as orlog
+from cli.commands.describe import render_description, run_describe_blocking
 from cli.commands.index import run_index_blocking
 from cli.commands.init import InitConflict, run_init
 from cli.commands.install_model import InstallResult, run_install_model
@@ -229,6 +230,42 @@ def review(
     import sys
 
     render_summary(summary, sys.stdout)
+
+
+@app.command()
+def describe(
+    pr: int = typer.Option(..., "--pr", help="Pull request number to describe."),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to describe, in owner/repo form. Overrides repository.target.",
+    ),
+) -> None:
+    """Generate a read-only summary and walkthrough of a pull request."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        summary = run_describe_blocking(
+            settings,  # type: ignore[arg-type]
+            number=pr,
+            repo=repo,
+        )
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except (GitHubAuthError, GitHubAPIError) as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    render_description(summary, sys.stdout)
 
 
 @app.command("install-model")
