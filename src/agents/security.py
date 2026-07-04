@@ -25,6 +25,7 @@ from agents.prompting import (
     REVIEW_DISCIPLINE,
     collect_context,
     format_changed_line_evidence,
+    format_prompt_diff,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ class SecurityAgent(BaseReviewAgent):
         findings: list[Finding] = []
 
         try:
-            diff = _extract_diff(state)
+            diff = format_prompt_diff(state.get("pr_payload"))
             project_context = collect_context(state, "security")
             changed_line_evidence = format_changed_line_evidence(state.get("pr_payload"))
             prompt = _PROMPT_TEMPLATE.format(
@@ -109,14 +110,6 @@ class SecurityAgent(BaseReviewAgent):
             confidence=mean_confidence(findings),
             execution_time=time.monotonic() - started,
         )
-
-
-def _extract_diff(state: ReviewState) -> str:
-    pr = state.get("pr_payload")
-    if pr is None:
-        return ""
-    diff: str = getattr(pr, "diff", "") or ""
-    return diff
 
 
 def _detect_preflight_findings(pr_payload: object) -> list[Finding]:

@@ -95,16 +95,15 @@ Recommended tasks:
 - Retrieve PR diff plus repository context before answering.
 - Add a strict answer contract that separates evidence, answer, and uncertainty.
 
-### 5. Large PR compression is missing
+### 5. Large PR compression now has a first pass
 
-OpenRabbit formats changed-line evidence and limits prompt context, but it does not yet have PR-Agent-style adaptive patch fitting or compression for large PRs.
+OpenRabbit formats changed-line evidence, rebuilds prompt diffs from parsed GitHub hunks, prioritizes risky and code-heavy files, and includes omission notes when a PR exceeds the prompt budget.
 
 Recommended tasks:
 
-- Add a token budget estimator for changed files, hunks, and retrieved context.
-- Prioritize changed lines, nearby context, security-sensitive files, and directly related RAG hits.
+- Tune token budgets per review agent.
 - Summarize low-risk or oversized files before agent execution.
-- Report what was omitted from the model context.
+- Surface omitted context in the CLI summary for verbose reviews.
 
 ### 6. RAG needs deeper and more selective context packing
 
@@ -164,7 +163,7 @@ Recommended tasks:
 | P0 | Improve RAG context selection and packing | Keeps repository-aware reviews precise as PRs and repos grow |
 | P0 | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
 | P1 | Add PR description command | Fast, visible value for every PR |
-| P1 | Add token-aware PR compression | Required for large real-world PRs |
+| Done | Add token-aware PR compression | Keeps large real-world PRs inside deterministic prompt budgets |
 | P1 | Add improve/fix suggestions | Moves from finding problems to helping resolve them |
 | P1 | Add GitHub Action recipe | Removes local manual friction for teams |
 | P2 | Add ask command | Useful for interactive PR exploration |
