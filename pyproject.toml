@@ -28,6 +28,9 @@ packages = [
     { include = "rag", from = "src" },
     { include = "ranking", from = "src" },
 ]
+include = [
+    { path = "src/benchmarks/corpora/*.jsonl", format = ["sdist", "wheel"] },
+]
 
 # rag is included in coverage as it lands across Phase 3.
 

@@ -348,7 +348,7 @@ scripts/
 ## Benchmarks
 
 ```python
-from benchmarks import BenchmarkCase, BenchmarkRunner, BenchmarkScorer
+from benchmarks import BenchmarkCase, BenchmarkRunner, BenchmarkScorer, load_benchmark_cases
 
 cases = [
     BenchmarkCase(
@@ -358,6 +358,9 @@ cases = [
     )
 ]
 
+# Or use the packaged v1.1 regression corpus:
+cases = load_benchmark_cases()
+
 runner = BenchmarkRunner(agents=[...])
 report = await runner.run(cases)
 
@@ -365,6 +368,8 @@ scorer = BenchmarkScorer()
 scored = scorer.score(report, cases)
 print(f"macro F1: {scored.macro_f1:.3f}")
 ```
+
+See [docs/benchmark-corpus.md](docs/benchmark-corpus.md) for the packaged corpus format and regression coverage.
 
 ## Development
 

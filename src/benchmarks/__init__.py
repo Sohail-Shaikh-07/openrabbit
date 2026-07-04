@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from benchmarks.corpus import DEFAULT_V1_1_CORPUS, CorpusFormatError, load_benchmark_cases
 from benchmarks.profiler import LatencyProfiler, StepTiming
 from benchmarks.runner import BenchmarkRunner
 from benchmarks.schema import BenchmarkCase, BenchmarkPayload, BenchmarkReport, BenchmarkResult
 from benchmarks.scorer import BenchmarkScorer, CaseScore, ScoredReport
 
 __all__ = [
+    "DEFAULT_V1_1_CORPUS",
     "BenchmarkCase",
     "BenchmarkPayload",
     "BenchmarkReport",
@@ -15,7 +17,9 @@ __all__ = [
     "BenchmarkRunner",
     "BenchmarkScorer",
     "CaseScore",
+    "CorpusFormatError",
     "LatencyProfiler",
     "ScoredReport",
     "StepTiming",
+    "load_benchmark_cases",
 ]
