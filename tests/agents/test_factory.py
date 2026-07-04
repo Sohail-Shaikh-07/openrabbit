@@ -63,7 +63,7 @@ def test_build_llm_client_requires_openai_api_key() -> None:
 
 
 def test_build_llm_client_requires_compatible_base_url() -> None:
-    model = ModelSettings(
+    model = ModelSettings.model_construct(
         provider="openai-compatible",
         model_name="openai/gpt-oss-20b",
         api_key_env="OPENAI_COMPATIBLE_API_KEY",

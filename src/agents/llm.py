@@ -101,6 +101,9 @@ class OllamaClient:
         """Request timeout in seconds."""
         return self._timeout
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(provider_name={self.provider_name!r}, model_name={self.model_name!r})"
+
     async def generate(self, prompt: str) -> str:
         """Send *prompt* to Ollama and return the raw response text.
 
@@ -167,6 +170,9 @@ class OpenAIClient:
     def timeout(self) -> float:
         """Request timeout in seconds."""
         return self._timeout
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(provider_name={self.provider_name!r}, model_name={self.model_name!r})"
 
     async def generate(self, prompt: str) -> str:
         """Send *prompt* to OpenAI and return the raw model text."""

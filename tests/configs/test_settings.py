@@ -145,6 +145,59 @@ def test_openai_compatible_provider_supports_base_url(tmp_path: Path) -> None:
     assert settings.model.api_key_env == "OPENAI_COMPATIBLE_API_KEY"
 
 
+def test_openai_compatible_provider_requires_base_url(tmp_path: Path) -> None:
+    _write_config(tmp_path, "model:\n  provider: openai-compatible\n")
+
+    with pytest.raises(ValueError, match=r"model\.base_url"):
+        load_settings(tmp_path, env={})
+
+
+def test_model_base_url_requires_http_scheme(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "model:\n  provider: openai-compatible\n  base_url: localhost:8000/v1\n",
+    )
+
+    with pytest.raises(ValueError, match="base_url"):
+        load_settings(tmp_path, env={})
+
+
+def test_model_base_url_rejected_for_official_openai(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "model:\n  provider: openai\n  base_url: https://gateway.example.com/v1\n",
+    )
+
+    with pytest.raises(ValueError, match="only supported"):
+        load_settings(tmp_path, env={})
+
+
+def test_inline_model_api_key_is_rejected_without_leaking_value(tmp_path: Path) -> None:
+    _write_config(tmp_path, "model:\n  provider: openai\n  api_key: sk-secret-value\n")
+
+    with pytest.raises(ValueError) as exc:
+        load_settings(tmp_path, env={})
+
+    message = str(exc.value)
+    assert "model.api_key" in message
+    assert "api_key_env" in message
+    assert "sk-secret-value" not in message
+
+
+def test_inline_model_secret_env_override_is_rejected_without_leaking_value(
+    tmp_path: Path,
+) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+
+    with pytest.raises(ValueError) as exc:
+        load_settings(tmp_path, env={"OPENRABBIT_MODEL__API_KEY": "sk-env-secret"})
+
+    message = str(exc.value)
+    assert "model.api_key" in message
+    assert "api_key_env" in message
+    assert "sk-env-secret" not in message
+
+
 def test_model_api_key_resolution_uses_windows_user_env_when_process_env_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
