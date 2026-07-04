@@ -110,6 +110,38 @@ def test_github_token_resolution_returns_none_when_unset(
     assert settings.resolved_github_token(env={}) is None
 
 
+def test_model_api_key_resolution_uses_configured_env(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "model:\n  provider: openai\n  model_name: gpt-4.1-mini\n  api_key_env: MY_OPENAI_KEY\n",
+    )
+    env = {"MY_OPENAI_KEY": "sk-test"}
+
+    settings = load_settings(tmp_path, env=env)
+
+    assert settings.model.provider == "openai"
+    assert settings.resolved_model_api_key(env=env) == "sk-test"
+
+
+def test_model_api_key_resolution_uses_windows_user_env_when_process_env_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config(tmp_path, "model:\n  provider: openai\n")
+
+    monkeypatch.setattr("configs.settings._persistent_windows_env", lambda name: "sk-user")
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.resolved_model_api_key(env={}) == "sk-user"
+
+
+def test_model_api_key_env_must_be_non_empty(tmp_path: Path) -> None:
+    _write_config(tmp_path, "model:\n  api_key_env: ' '\n")
+
+    with pytest.raises(ValueError):
+        load_settings(tmp_path, env={})
+
+
 def test_missing_scaffold_raises_helpful_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigNotFoundError) as exc:
         load_settings(tmp_path, env={})

@@ -72,7 +72,7 @@ async def run_review(
             retrieval_result = None
         runner = agent_runner or run_agent_review
         pipeline_result = await runner(
-            payload, settings=settings, retrieval_result=retrieval_result
+            payload, settings=settings, retrieval_result=retrieval_result, env=env
         )
         ranked = pipeline_result.ranked_findings
         dropped_findings_count = pipeline_result.dropped_findings_count

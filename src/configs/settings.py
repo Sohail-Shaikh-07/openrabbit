@@ -65,6 +65,14 @@ class Settings(BaseModel):
             return token
         return _persistent_windows_env(self.github.token_env)
 
+    def resolved_model_api_key(self, env: dict[str, str] | None = None) -> str | None:
+        """Return the model provider API key from the configured environment name."""
+        source = env if env is not None else os.environ
+        token = source.get(self.model.api_key_env)
+        if token:
+            return token
+        return _persistent_windows_env(self.model.api_key_env)
+
 
 def find_config_file(start: Path) -> Path:
     """Locate the config file by walking up from ``start``.

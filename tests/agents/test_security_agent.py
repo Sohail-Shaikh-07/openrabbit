@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agents.llm import OllamaClient, parse_findings
+from agents.llm import OllamaClient, OpenAIClient, parse_findings
 from agents.models import ReviewState, Severity
 from agents.security import CONFIDENCE_THRESHOLD, SecurityAgent
 from github_.diff import DiffLine, Hunk
@@ -135,6 +135,48 @@ def test_ollama_client_timeout_can_come_from_environment(monkeypatch: pytest.Mon
     client = OllamaClient()
 
     assert client.timeout == 240.0
+
+
+@pytest.mark.asyncio
+async def test_openai_client_posts_chat_completion_request() -> None:
+    client = OpenAIClient(api_key="sk-test", model="gpt-4.1-mini")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": '{"findings":[]}'}}],
+    }
+
+    with patch("agents.llm.httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=mock_response)
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await client.generate("review prompt")
+
+    assert result == '{"findings":[]}'
+    mock_http.post.assert_called_once()
+    call_args = mock_http.post.call_args
+    assert call_args.args[0] == "https://api.openai.com/v1/chat/completions"
+    assert call_args.kwargs["headers"]["Authorization"] == "Bearer sk-test"
+    payload = call_args.kwargs["json"]
+    assert payload["model"] == "gpt-4.1-mini"
+    assert payload["messages"] == [{"role": "user", "content": "review prompt"}]
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["temperature"] == 0
+
+
+def test_openai_client_exposes_provider_metadata_without_key() -> None:
+    client = OpenAIClient(api_key="sk-secret", model="gpt-4.1-mini")
+
+    assert client.provider_name == "openai"
+    assert client.model_name == "gpt-4.1-mini"
+    assert "sk-secret" not in repr(client)
+
+
+def test_openai_client_requires_api_key() -> None:
+    with pytest.raises(ValueError, match="API key"):
+        OpenAIClient(api_key=" ", model="gpt-4.1-mini")
 
 
 # ---------------------------------------------------------------------------

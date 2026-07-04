@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "http://localhost:11434"
 _DEFAULT_MODEL = "qwen2.5-coder:7b"
+_OPENAI_BASE_URL = "https://api.openai.com/v1"
+_OPENAI_TIMEOUT = 120.0
 _TIMEOUT = 300.0
 _TIMEOUT_ENV = "OPENRABBIT_OLLAMA_TIMEOUT_SECONDS"
 
@@ -121,6 +123,72 @@ class OllamaClient:
             return str(response.json().get("response", ""))
 
 
+class OpenAIClient:
+    """Async HTTP client for the official OpenAI Chat Completions API.
+
+    The API key is accepted by the constructor and only sent in the
+    Authorization header. It is not exposed via repr, properties, logs, or
+    generated config files.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout: float = _OPENAI_TIMEOUT,
+    ) -> None:
+        if not api_key.strip():
+            raise ValueError("OpenAI API key is required")
+        if not model.strip():
+            raise ValueError("OpenAI model name is required")
+        self._api_key = api_key
+        self._model = model
+        self._timeout = timeout
+
+    @property
+    def provider_name(self) -> str:
+        """Provider identifier for the official OpenAI runtime."""
+        return "openai"
+
+    @property
+    def model_name(self) -> str:
+        """Configured OpenAI model name."""
+        return self._model
+
+    @property
+    def timeout(self) -> float:
+        """Request timeout in seconds."""
+        return self._timeout
+
+    async def generate(self, prompt: str) -> str:
+        """Send *prompt* to OpenAI and return the raw model text."""
+        payload = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{_OPENAI_BASE_URL}/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+        return _extract_openai_content(data)
+
+
 # ---------------------------------------------------------------------------
 # Shared parsing helpers
 # ---------------------------------------------------------------------------
@@ -197,6 +265,21 @@ def _load_json_object(raw: str) -> dict[str, object] | None:
     if isinstance(data, dict):
         return data
     return None
+
+
+def _extract_openai_content(data: object) -> str:
+    if not isinstance(data, dict):
+        return ""
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    message = first.get("message")
+    if not isinstance(message, dict):
+        return ""
+    return str(message.get("content", "") or "")
 
 
 def _extract_first_json_object(raw: str) -> str | None:

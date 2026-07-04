@@ -44,6 +44,7 @@ The current manual review flow is:
 - Ollama for local review inference
 - Qdrant for repository indexing
 - Docker, optional, for running Qdrant locally
+- OpenAI API key, optional, only when using `model.provider: openai`
 
 ## Install
 
@@ -91,6 +92,33 @@ model:
 ```
 
 See [docs/model-finetuning.md](docs/model-finetuning.md) for the Colab training flow, Hugging Face adapter packaging, Ollama import, and local configuration.
+
+### OpenAI Provider
+
+If you want to use the official OpenAI API instead of local Ollama, set the API key in your shell and switch the provider:
+
+PowerShell:
+
+```powershell
+setx OPENAI_API_KEY "sk_your_key_here"
+```
+
+macOS/Linux:
+
+```bash
+export OPENAI_API_KEY="sk_your_key_here"
+```
+
+`.openrabbit/config.yml`:
+
+```yaml
+model:
+  provider: openai
+  model_name: gpt-4.1-mini
+  api_key_env: OPENAI_API_KEY
+```
+
+Do not put the API key value in `.openrabbit/config.yml`. OpenRabbit reads the variable named by `model.api_key_env` and sends it only in the OpenAI request header. Custom OpenAI-compatible base URLs are planned for the next provider task.
 
 ## GitHub Token Setup
 
@@ -153,6 +181,7 @@ model:
   provider: ollama
   model_name: qwen2.5-coder:7b
   base_model: qwen2.5-coder:7b
+  api_key_env: OPENAI_API_KEY
 
 polling:
   interval_seconds: 60
@@ -208,7 +237,7 @@ openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 
 Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
 
-Today, `model.provider: ollama` is the implemented provider. The model layer uses a shared provider contract so hosted OpenAI and OpenAI-compatible providers can plug into the same review-agent pipeline in the next release tasks.
+Today, `model.provider: ollama` and `model.provider: openai` are implemented. The model layer uses a shared provider contract so OpenAI-compatible custom base URLs can plug into the same review-agent pipeline in the next release tasks.
 
 ### `openrabbit start`
 
