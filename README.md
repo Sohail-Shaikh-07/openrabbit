@@ -322,6 +322,10 @@ docker compose up -d qdrant
 
 Copy `.env.example` to `.env` if you want compose to pass a GitHub token or a custom workspace path into the containerized CLI. The `openrabbit` image packages the CLI, but local source install is still the most direct workflow for reviewing a working repository because `openrabbit init` needs write access to create `.openrabbit/`.
 
+## GitHub Actions
+
+Use [docs/github-actions.md](docs/github-actions.md) for a self-hosted or configured-runner workflow recipe. A copyable example lives at [examples/github-actions/openrabbit-review.yml](examples/github-actions/openrabbit-review.yml).
+
 ## Repository Layout
 
 ```text
