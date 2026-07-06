@@ -91,6 +91,55 @@ def test_ranker_deduplicates_same_file_line_title() -> None:
     assert len(ranked) == 1
 
 
+def test_ranker_deduplicates_same_root_cause_from_multiple_agents() -> None:
+    security = _finding(
+        "SQL Injection vulnerability in advanced_search method",
+        severity=Severity.critical,
+        confidence=0.95,
+        file="app/repositories/task_repository.py",
+        line=74,
+        category="security",
+    )
+    performance = _finding(
+        "Potential SQL injection and inefficient query construction in advanced_search",
+        severity=Severity.high,
+        confidence=0.90,
+        file="app/repositories/task_repository.py",
+        line=73,
+        category="performance",
+    )
+    architecture = _finding(
+        "SQL Injection Risk and Layer Violation in Repository Advanced Search",
+        severity=Severity.high,
+        confidence=0.88,
+        file="app/repositories/task_repository.py",
+        line=73,
+        category="architecture",
+    )
+    tests = _finding(
+        "Insufficient test coverage for advanced search edge cases",
+        severity=Severity.medium,
+        confidence=0.85,
+        file="tests/test_task_search.py",
+        line=4,
+        category="tests",
+    )
+
+    ranked = CommentRanker().rank(
+        [
+            _result("security", [security]),
+            _result("performance", [performance]),
+            _result("architecture", [architecture]),
+            _result("tests", [tests]),
+        ]
+    )
+
+    assert [item.finding.title for item in ranked] == [
+        "SQL Injection vulnerability in advanced_search method",
+        "Insufficient test coverage for advanced search edge cases",
+    ]
+
+
 def test_ranker_keeps_different_lines_as_separate_findings() -> None:
     f1 = _finding("SQL injection", file="db.py", line=5)
     f2 = _finding("SQL injection", file="db.py", line=20)
