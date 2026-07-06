@@ -185,6 +185,7 @@ async def test_openai_compatible_client_posts_to_custom_base_url() -> None:
         api_key="local-key",
         model="openai/gpt-oss-20b",
         base_url="http://localhost:8000/v1/",
+        provider_name="vllm",
     )
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
@@ -205,7 +206,7 @@ async def test_openai_compatible_client_posts_to_custom_base_url() -> None:
     assert call_args.args[0] == "http://localhost:8000/v1/chat/completions"
     assert call_args.kwargs["headers"]["Authorization"] == "Bearer local-key"
     assert call_args.kwargs["json"]["model"] == "openai/gpt-oss-20b"
-    assert client.provider_name == "openai-compatible"
+    assert client.provider_name == "vllm"
 
 
 def test_openai_compatible_client_requires_http_base_url() -> None:

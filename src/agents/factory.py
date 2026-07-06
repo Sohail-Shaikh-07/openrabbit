@@ -29,7 +29,9 @@ def build_llm_client(model: ModelSettings, *, api_key: str | None = None) -> LLM
     """Return a model client for the configured provider.
 
     Official OpenAI and OpenAI-compatible chat/completions providers are
-    supported here. More local runtimes can implement the same contract later.
+    supported here. Any non-``ollama``/``openai`` provider name with a
+    ``base_url`` is treated as an OpenAI-compatible endpoint and preserved as
+    the diagnostic provider name.
     """
     if model.provider == "ollama":
         return OllamaClient(model=model.model_name)
@@ -39,25 +41,26 @@ def build_llm_client(model: ModelSettings, *, api_key: str | None = None) -> LLM
                 f"Model provider 'openai' requires an API key in {model.api_key_env}."
             )
         return OpenAIClient(api_key=api_key, model=model.model_name)
-    if model.provider == "openai-compatible":
+    if model.provider != "ollama":
         if not model.base_url:
             raise MissingModelBaseURLError(
-                "Model provider 'openai-compatible' requires model.base_url."
+                f"Model provider {model.provider!r} requires model.base_url."
             )
         if not api_key:
             raise MissingModelAPIKeyError(
-                f"Model provider 'openai-compatible' requires an API key in {model.api_key_env}."
+                f"Model provider {model.provider!r} requires an API key in {model.api_key_env}."
             )
         return OpenAICompatibleClient(
             api_key=api_key,
             model=model.model_name,
             base_url=model.base_url,
+            provider_name=model.provider,
         )
 
     raise UnsupportedModelProviderError(
         f"Model provider {model.provider!r} is not wired yet. "
         "Configured providers must implement the LLMClient contract. "
-        "Use provider='ollama', provider='openai', or provider='openai-compatible'."
+        "Use provider='ollama', provider='openai', or a custom provider with model.base_url."
     )
 
 
@@ -71,7 +74,7 @@ def build_review_agents(
         settings.model,
         api_key=(
             settings.resolved_model_api_key(env=env)
-            if settings.model.provider in {"openai", "openai-compatible"}
+            if settings.model.provider != "ollama"
             else None
         ),
     )

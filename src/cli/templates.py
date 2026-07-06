@@ -28,12 +28,12 @@ model:
   provider: ollama
   model_name: openrabbit-reviewer-v1
   base_model: qwen2.5-coder:7b-instruct
-  # For provider: openai-compatible, set the endpoint root, for example
-  # http://localhost:8000/v1 or https://gateway.example.com/v1.
+  # For any OpenAI-compatible provider name such as openrouter, vllm, or
+  # litellm, set the endpoint root, for example http://localhost:8000/v1.
   # base_url:
   # For provider: openai, set this env var in your shell instead of storing
-  # the key in this file. For provider: openai-compatible, use the env var
-  # that your gateway expects, for example OPENAI_COMPATIBLE_API_KEY.
+  # the key in this file. For custom API providers, use the env var that your
+  # gateway expects, for example OPENROUTER_API_KEY.
   api_key_env: OPENAI_API_KEY
 
 polling:

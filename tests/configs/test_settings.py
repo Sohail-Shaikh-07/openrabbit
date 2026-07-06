@@ -243,8 +243,37 @@ def test_openai_compatible_provider_supports_base_url(tmp_path: Path) -> None:
     assert settings.model.api_key_env == "OPENAI_COMPATIBLE_API_KEY"
 
 
+def test_custom_openai_compatible_provider_name_supports_base_url(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "\n".join(
+            [
+                "model:",
+                "  provider: openrouter",
+                "  model_name: openai/gpt-oss-20b",
+                "  base_url: 'https://openrouter.ai/api/v1/'",
+                "  api_key_env: OPENROUTER_API_KEY",
+            ]
+        ),
+    )
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.model.provider == "openrouter"
+    assert settings.model.model_name == "openai/gpt-oss-20b"
+    assert settings.model.base_url == "https://openrouter.ai/api/v1"
+    assert settings.model.api_key_env == "OPENROUTER_API_KEY"
+
+
 def test_openai_compatible_provider_requires_base_url(tmp_path: Path) -> None:
     _write_config(tmp_path, "model:\n  provider: openai-compatible\n")
+
+    with pytest.raises(ValueError, match=r"model\.base_url"):
+        load_settings(tmp_path, env={})
+
+
+def test_custom_provider_requires_base_url(tmp_path: Path) -> None:
+    _write_config(tmp_path, "model:\n  provider: openrouter\n")
 
     with pytest.raises(ValueError, match=r"model\.base_url"):
         load_settings(tmp_path, env={})
@@ -267,6 +296,16 @@ def test_model_base_url_rejected_for_official_openai(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="only supported"):
+        load_settings(tmp_path, env={})
+
+
+def test_model_base_url_rejected_for_ollama(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "model:\n  provider: ollama\n  base_url: http://localhost:11434\n",
+    )
+
+    with pytest.raises(ValueError, match="not supported"):
         load_settings(tmp_path, env={})
 
 
@@ -334,7 +373,7 @@ def test_extra_top_level_keys_are_rejected(tmp_path: Path) -> None:
 def test_invalid_provider_rejected(tmp_path: Path) -> None:
     _write_config(tmp_path, "model:\n  provider: ftp\n")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"model\.base_url"):
         load_settings(tmp_path, env={})
 
 

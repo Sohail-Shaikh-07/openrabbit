@@ -7,11 +7,7 @@ variables prefixed with ``OPENRABBIT_`` override individual fields using a
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
-ModelProvider = Literal["ollama", "openai", "openai-compatible", "vllm", "transformers"]
 
 
 class ReviewSettings(BaseModel):
@@ -32,11 +28,19 @@ class ModelSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: ModelProvider = "ollama"
+    provider: str = "ollama"
     model_name: str = "openrabbit-reviewer-v1"
     base_model: str = "qwen2.5-coder:7b-instruct"
     base_url: str | None = None
     api_key_env: str = "OPENAI_API_KEY"
+
+    @field_validator("provider")
+    @classmethod
+    def _normalize_provider(cls, value: str) -> str:
+        provider = value.strip().lower()
+        if not provider:
+            raise ValueError("provider must be a non-empty provider name")
+        return provider
 
     @field_validator("base_url")
     @classmethod
@@ -57,13 +61,17 @@ class ModelSettings(BaseModel):
 
     @model_validator(mode="after")
     def _validate_provider_shape(self) -> ModelSettings:
-        if self.provider == "openai-compatible":
+        if self.provider == "ollama":
+            if self.base_url is not None:
+                raise ValueError("model.base_url is not supported for provider 'ollama'")
+        elif self.provider == "openai":
+            if self.base_url is not None:
+                raise ValueError("model.base_url is only supported for OpenAI-compatible providers")
+        else:
             if not self.base_url:
                 raise ValueError(
-                    "model.base_url is required when model.provider is 'openai-compatible'"
+                    "model.base_url is required for custom OpenAI-compatible providers"
                 )
-        elif self.base_url is not None:
-            raise ValueError("model.base_url is only supported for provider 'openai-compatible'")
         return self
 
 

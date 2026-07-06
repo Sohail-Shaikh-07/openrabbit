@@ -8,9 +8,9 @@ OpenRabbit can review pull requests with a local Ollama model, the official Open
 | --- | --- | --- | --- | --- |
 | Ollama | `ollama` | No | No | Fully local review with `qwen2.5-coder:7b` or a local OpenRabbit model |
 | OpenAI | `openai` | Yes | No | Hosted OpenAI models through `https://api.openai.com/v1` |
-| OpenAI-compatible | `openai-compatible` | Yes | Yes | vLLM, LiteLLM, OpenRouter-style gateways, local OpenAI-compatible servers, or enterprise gateways |
+| OpenAI-compatible custom provider | Any name except `ollama` or `openai`, for example `openrouter`, `vllm`, `litellm`, or `openai-compatible` | Yes | Yes | vLLM, LiteLLM, OpenRouter, local OpenAI-compatible servers, or enterprise gateways |
 
-`vllm` and `transformers` may appear in the schema as future provider names, but they are not wired into the review-agent factory yet. Use `ollama`, `openai`, or `openai-compatible` for current reviews.
+For custom API providers, `provider` is the name OpenRabbit shows in diagnostics. `base_url` is what tells OpenRabbit to use the OpenAI-compatible chat completions client.
 
 ## Secret Rules
 
@@ -97,35 +97,34 @@ openrabbit review --pr 42 --repo owner/repo --dry-run
 
 ## OpenAI-Compatible Endpoints
 
-Use this provider for a server or gateway that exposes:
+Use a custom provider name for a server or gateway that exposes:
 
 ```text
 /v1/chat/completions
 ```
 
-Examples include vLLM OpenAI server, LiteLLM, OpenRouter-style endpoints, local gateways, and enterprise gateways.
+Examples include vLLM OpenAI server, LiteLLM, OpenRouter-style endpoints, local gateways, and enterprise gateways. The generic `provider: openai-compatible` still works, but a concrete name is easier to recognize in logs.
 
-PowerShell:
+OpenRouter PowerShell example:
 
 ```powershell
-setx OPENAI_COMPATIBLE_API_KEY "your_gateway_key_here"
-$env:OPENAI_COMPATIBLE_API_KEY = [Environment]::GetEnvironmentVariable("OPENAI_COMPATIBLE_API_KEY", "User")
+setx OPENROUTER_API_KEY "your_gateway_key_here"
 ```
 
 macOS/Linux:
 
 ```bash
-export OPENAI_COMPATIBLE_API_KEY="your_gateway_key_here"
+export OPENROUTER_API_KEY="your_gateway_key_here"
 ```
 
 `.openrabbit/config.yml`:
 
 ```yaml
 model:
-  provider: openai-compatible
+  provider: openrouter
   model_name: openai/gpt-oss-20b
-  base_url: http://localhost:8000/v1
-  api_key_env: OPENAI_COMPATIBLE_API_KEY
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
 ```
 
 Set `base_url` to the endpoint root, not the full chat completions URL. These are valid examples:
@@ -133,6 +132,7 @@ Set `base_url` to the endpoint root, not the full chat completions URL. These ar
 ```text
 http://localhost:8000/v1
 https://gateway.example.com/v1
+https://openrouter.ai/api/v1
 ```
 
 These are not valid:
@@ -202,12 +202,12 @@ Set the environment variable named by `model.api_key_env`, usually `OPENAI_API_K
 
 `model.base_url is required`
 
-`provider: openai-compatible` requires an HTTP or HTTPS `base_url`.
+Any custom provider such as `openrouter`, `vllm`, `litellm`, or `openai-compatible` requires an HTTP or HTTPS `base_url`.
 
 `model.base_url is only supported`
 
-Remove `base_url` unless `provider` is `openai-compatible`.
+Remove `base_url` when `provider` is `openai` or `ollama`.
 
 `unsupported provider`
 
-Use `ollama`, `openai`, or `openai-compatible`. Other provider names are not implemented in the review-agent factory yet.
+Use `ollama`, official `openai`, or a custom OpenAI-compatible provider name with `model.base_url`.

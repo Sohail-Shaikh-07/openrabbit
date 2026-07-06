@@ -7,7 +7,6 @@ import pytest
 from agents.factory import (
     MissingModelAPIKeyError,
     MissingModelBaseURLError,
-    UnsupportedModelProviderError,
     build_llm_client,
     build_review_agents,
 )
@@ -51,6 +50,22 @@ def test_build_llm_client_returns_openai_compatible_contract_client() -> None:
     assert client.model_name == "openai/gpt-oss-20b"
 
 
+def test_build_llm_client_preserves_custom_provider_name() -> None:
+    client = build_llm_client(
+        ModelSettings(
+            provider="openrouter",
+            model_name="openai/gpt-oss-20b",
+            base_url="https://openrouter.ai/api/v1",
+            api_key_env="OPENROUTER_API_KEY",
+        ),
+        api_key="openrouter-key",
+    )
+
+    assert isinstance(client, OpenAICompatibleClient)
+    assert client.provider_name == "openrouter"
+    assert client.model_name == "openai/gpt-oss-20b"
+
+
 def test_build_llm_client_requires_openai_api_key() -> None:
     model = ModelSettings(
         provider="openai", model_name="gpt-4.1-mini", api_key_env="OPENAI_API_KEY"
@@ -64,27 +79,27 @@ def test_build_llm_client_requires_openai_api_key() -> None:
 
 def test_build_llm_client_requires_compatible_base_url() -> None:
     model = ModelSettings.model_construct(
-        provider="openai-compatible",
+        provider="openrouter",
         model_name="openai/gpt-oss-20b",
-        api_key_env="OPENAI_COMPATIBLE_API_KEY",
+        api_key_env="OPENROUTER_API_KEY",
     )
 
     with pytest.raises(MissingModelBaseURLError, match=r"model\.base_url"):
-        build_llm_client(model, api_key="local-key")
+        build_llm_client(model, api_key="openrouter-key")
 
 
 def test_build_llm_client_requires_compatible_api_key() -> None:
     model = ModelSettings(
-        provider="openai-compatible",
+        provider="openrouter",
         model_name="openai/gpt-oss-20b",
-        base_url="http://localhost:8000/v1",
-        api_key_env="OPENAI_COMPATIBLE_API_KEY",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY",
     )
 
-    with pytest.raises(MissingModelAPIKeyError, match="OPENAI_COMPATIBLE_API_KEY") as exc:
+    with pytest.raises(MissingModelAPIKeyError, match="OPENROUTER_API_KEY") as exc:
         build_llm_client(model)
 
-    assert "local-key" not in str(exc.value)
+    assert "openrouter-key" not in str(exc.value)
 
 
 def test_build_review_agents_honors_enabled_agents_and_model_name() -> None:
@@ -185,8 +200,25 @@ def test_build_review_agents_wires_openai_compatible_provider() -> None:
     assert agents[0]._client.model_name == "openai/gpt-oss-20b"
 
 
-def test_build_review_agents_rejects_unimplemented_provider() -> None:
-    settings = Settings(model=ModelSettings(provider="transformers"))
+def test_build_review_agents_wires_custom_openai_compatible_provider() -> None:
+    settings = Settings(
+        review=ReviewSettings(
+            security=True,
+            performance=False,
+            architecture=False,
+            bug=False,
+            test_coverage=False,
+        ),
+        model=ModelSettings(
+            provider="openrouter",
+            model_name="openai/gpt-oss-20b",
+            base_url="https://openrouter.ai/api/v1",
+            api_key_env="OPENROUTER_API_KEY",
+        ),
+    )
 
-    with pytest.raises(UnsupportedModelProviderError, match="transformers"):
-        build_review_agents(settings)
+    agents = build_review_agents(settings, env={"OPENROUTER_API_KEY": "openrouter-key"})
+
+    assert [agent.name for agent in agents] == ["security"]
+    assert agents[0]._client.provider_name == "openrouter"
+    assert agents[0]._client.model_name == "openai/gpt-oss-20b"

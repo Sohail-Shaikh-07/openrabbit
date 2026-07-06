@@ -4,23 +4,6 @@ OpenRabbit is a local-first AI pull request reviewer for GitHub repositories. Yo
 
 The core trade-off is privacy and ownership: source code is reviewed on your laptop or server, with Ollama as the default model runtime and Qdrant as the repository context store.
 
-## Current Status
-
-OpenRabbit is at `v1.1.0`. The local-first review loop is in place, and v1.1 adds PR exploration commands, API-provider support, layered config, GitHub Action guidance, and a packaged benchmark corpus for regression checks. See [docs/release-v1.1.0.md](docs/release-v1.1.0.md) for the release notes.
-
-The current manual review flow is:
-
-1. OpenRabbit fetches a pull request from GitHub.
-2. It parses commits, changed files, hunks, and changed-line evidence.
-3. It tries to retrieve relevant repository context from Qdrant using the PR title, body, changed files, and hunk lines.
-4. Enabled review agents run against a token-aware compressed diff plus any retrieved context with strict JSON output prompts.
-5. Findings are grounded to changed files and changed lines.
-6. A ranker removes duplicates, orders the findings, and drops ungrounded output.
-7. The CLI prints the summary locally.
-8. If `--dry-run` is not set and findings exist, OpenRabbit posts them as a GitHub review.
-
-`openrabbit start` runs the polling daemon and reviews new pull requests or new head commits automatically. Metadata-only PR updates with the same head SHA are skipped to avoid repeated reviews. Use `openrabbit review --dry-run` as the safe manual preview path. See [docs/pr-agent-gap-analysis.md](docs/pr-agent-gap-analysis.md) for the current comparison against PR-Agent and the recommended roadmap.
-
 ## What Works Today
 
 | Area | Current capability |
@@ -164,11 +147,7 @@ PowerShell:
 setx GITHUB_TOKEN "github_pat_your_token_here"
 ```
 
-Open a new terminal after `setx`, or use this for the current session:
-
-```powershell
-$env:GITHUB_TOKEN = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User")
-```
+Open a new terminal after `setx`. OpenRabbit also checks persistent Windows User and Machine environment variables, so the token can still be found even when the current shell has stale environment state.
 
 macOS/Linux:
 
@@ -211,9 +190,6 @@ model:
   provider: ollama
   model_name: qwen2.5-coder:7b
   base_model: qwen2.5-coder:7b
-  # base_url is only required for provider: openai-compatible
-  # base_url: http://localhost:8000/v1
-  api_key_env: OPENAI_API_KEY
 
 polling:
   interval_seconds: 60
@@ -224,6 +200,29 @@ github:
 repository:
   target: owner/repo
 ```
+
+For the official OpenAI API, use `provider: openai` and put the API model in `model_name`. You do not need `base_model` for API providers:
+
+```yaml
+model:
+  provider: openai
+  model_name: gpt-4.1-mini
+  api_key_env: OPENAI_API_KEY
+```
+
+For a custom OpenAI-compatible endpoint, set `provider` to the provider name you want OpenRabbit to show, set the served model in `model_name`, and set the endpoint root in `base_url`. For example, OpenRouter:
+
+```yaml
+model:
+  provider: openrouter
+  model_name: openai/gpt-oss-20b
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+```
+
+The generic name `openai-compatible` still works, but a concrete name such as `openrouter`, `vllm`, or `litellm` is clearer in logs and diagnostics. Any provider other than `ollama` or official `openai` is treated as OpenAI-compatible when `base_url` is set.
+
+`base_model` is mainly useful as local-model/fine-tuning metadata for Ollama and adapter workflows. It is not sent to OpenAI or OpenAI-compatible API providers during review.
 
 OpenRabbit loads configuration in layers:
 
@@ -399,10 +398,6 @@ poetry run black --check .
 poetry run mypy
 poetry run python scripts/smoke_test.py
 ```
-
-## Contributing
-
-Issues and PRs are welcome. Each planned piece of work is tracked as `OP-N` on the issue tracker. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
 
 ## License
 

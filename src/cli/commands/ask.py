@@ -227,9 +227,7 @@ async def _generate_answer(
 
 def _build_ask_client(settings: Settings, *, env: dict[str, str] | None) -> LLMClient:
     api_key = (
-        settings.resolved_model_api_key(env=env)
-        if settings.model.provider in {"openai", "openai-compatible"}
-        else None
+        settings.resolved_model_api_key(env=env) if settings.model.provider != "ollama" else None
     )
     return build_llm_client(settings.model, api_key=api_key)
 

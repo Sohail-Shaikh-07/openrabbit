@@ -211,13 +211,14 @@ class OpenAICompatibleClient(OpenAIClient):
         api_key: str,
         model: str,
         base_url: str,
+        provider_name: str = "openai-compatible",
         timeout: float = _OPENAI_TIMEOUT,
     ) -> None:
         super().__init__(
             api_key=api_key,
             model=model,
             base_url=base_url,
-            provider_name="openai-compatible",
+            provider_name=provider_name,
             timeout=timeout,
         )
 
