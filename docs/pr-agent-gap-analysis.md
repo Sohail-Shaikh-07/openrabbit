@@ -123,15 +123,13 @@ Recommended tasks:
 - Decide whether `vllm` and `transformers` should be implemented soon or removed from the public schema until they are ready.
 - Add provider-specific health checks and error messages.
 
-### 8. Config layering is basic
+### 8. Config layering now has a first pass
 
-OpenRabbit has local YAML plus env overrides. PR-Agent supports multiple persistent config locations with clear precedence.
+OpenRabbit now supports built-in defaults, optional user-level config at `~/.openrabbit/config.yml`, repository config, and environment overrides with clear precedence. PR-Agent still has broader organization/global config patterns.
 
 Recommended tasks:
 
-- Add user-level config, for example `~/.openrabbit/config.yml`.
 - Add organization or repository-default config support.
-- Document precedence: environment > repo config > user config > defaults.
 - Consider an external config URL only with strict size, timeout, and scheme restrictions.
 
 ### 9. No GitHub Action or webhook entrypoint
