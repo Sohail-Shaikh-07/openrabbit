@@ -6,7 +6,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 ## Current Status
 
-OpenRabbit is at `v1.0.0`. The foundation is in place: CLI, configuration, GitHub PR parsing, repository indexing, local multi-agent review, ranking, fine-tuning utilities, and release validation.
+OpenRabbit is at `v1.1.0`. The local-first review loop is in place, and v1.1 adds PR exploration commands, API-provider support, layered config, GitHub Action guidance, and a packaged benchmark corpus for regression checks. See [docs/release-v1.1.0.md](docs/release-v1.1.0.md) for the release notes.
 
 The current manual review flow is:
 
@@ -26,7 +26,7 @@ The current manual review flow is:
 | Area | Current capability |
 | --- | --- |
 | CLI | `init`, `index`, `review`, `describe`, `ask`, `improve`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
-| Configuration | `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
+| Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
@@ -34,7 +34,7 @@ The current manual review flow is:
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
-| Benchmarks | Benchmark runner, scorer, and profiler for measuring review quality |
+| Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
 
 ## Requirements
 

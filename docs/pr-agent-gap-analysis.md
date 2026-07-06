@@ -1,8 +1,8 @@
 # OpenRabbit vs PR-Agent Gap Analysis
 
-Date: 2026-07-02
+Date: 2026-07-06
 
-This document compares the current OpenRabbit `v1.0.0` implementation with The-PR-Agent/pr-agent and turns the gap into a practical roadmap.
+This document compares the current OpenRabbit `v1.1.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
 
 Sources reviewed:
 
@@ -25,7 +25,7 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Capability | Current state |
 | --- | --- |
 | GitHub auth | Personal access token from `OPENRABBIT_GITHUB__TOKEN`, `GITHUB_TOKEN`, configured `token_env`, or Windows persistent env fallback |
-| Config | `.openrabbit/config.yml` plus `OPENRABBIT_...` env overrides |
+| Config | Built-in defaults, optional `~/.openrabbit/config.yml`, repo config, and `OPENRABBIT_...` env overrides |
 | Manual review | `openrabbit review --pr N --repo owner/repo` fetches and parses PR data, runs agents, ranks findings, prints a summary, and publishes grounded findings when not in dry-run mode |
 | Polling | `openrabbit start` watches a repository, records polling state, and triggers reviews for new PRs and new head SHAs |
 | Publishing | Manual review publishing and polling-triggered publishing are wired for GitHub |
@@ -34,7 +34,7 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
 | RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, and automatic review context loading |
 | Fine-tuning | QLoRA training/evaluation/packaging pipeline for a Qwen2.5-Coder adapter |
-| Benchmarks | Runner, scorer, and profiler for review quality evaluation |
+| Benchmarks | Runner, scorer, profiler, and packaged v1.1 regression corpus for review quality evaluation |
 
 ## PR-Agent Capabilities To Learn From
 
