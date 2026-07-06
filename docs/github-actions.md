@@ -91,12 +91,20 @@ openrabbit review --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --dry-run
 
 Then remove `--dry-run` after you are comfortable with the output.
 
-The read-only commands are also useful in Actions logs:
+The default read-only commands are also useful in Actions logs:
 
 ```bash
 openrabbit describe --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
 openrabbit improve --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
 ```
+
+To publish improvement suggestions, use the explicit publish flag:
+
+```bash
+openrabbit improve --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --publish
+```
+
+`improve --publish` only posts grounded suggestions. Suggestions with safe replacement snippets are posted as inline GitHub suggestion blocks; broader actionable suggestions are grouped in the review body.
 
 ## Repository Context
 

@@ -1,8 +1,8 @@
 """Implementation of ``openrabbit improve --pr N``.
 
-The improve command is read-only. It asks the configured model provider for
-small fix suggestions and then grounds those suggestions to changed PR lines
-before anything is printed.
+The improve command is read-only by default. It asks the configured model
+provider for small fix suggestions, grounds those suggestions to changed PR
+lines, and only publishes them to GitHub when explicitly requested.
 """
 
 from __future__ import annotations
@@ -28,7 +28,13 @@ from cli.commands.review import ContextLoader, _has_retrieval_context, _load_rev
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
-from github_ import GitHubClient, PullRequestParser, RepositoryHandle
+from github_ import (
+    GitHubAuthError,
+    GitHubClient,
+    PullRequestParser,
+    RepositoryHandle,
+    ReviewComment,
+)
 from memory.history import PullRequestHistory
 from memory.store import SQLitePullRequestMemory
 from ranking.grounding import DiffGroundingIndex, build_diff_grounding_index
@@ -57,6 +63,18 @@ class ImprovementResult:
 
 
 ImprovementGenerator = Callable[..., Awaitable[list[ImprovementSuggestion]]]
+ImprovementPublisher = Callable[..., Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class ImprovementPublishPlan:
+    """Suggestions separated by the safest GitHub publishing target."""
+
+    inline_suggestions: list[ReviewComment]
+    inline_source_suggestions: list[ImprovementSuggestion]
+    summary_suggestions: list[ImprovementSuggestion]
+    dropped_actionability_count: int = 0
+
 
 _PROMPT_TEMPLATE = """You are OpenRabbit's improve agent. Propose small, reviewable fixes for this pull request.
 
@@ -118,8 +136,14 @@ async def run_improve(
     env: dict[str, str] | None = None,
     generator: ImprovementGenerator | None = None,
     context_loader: ContextLoader | None = None,
+    dry_run: bool = False,
+    publish: bool = False,
+    publisher: ImprovementPublisher | None = None,
 ) -> dict[str, object]:
     """Fetch a PR, generate grounded improvements, and return a summary dict."""
+    if dry_run and publish:
+        raise ValueError("--dry-run and --publish cannot be used together")
+
     target = resolve_target_repo(settings, repo)
     client = GitHubClient.from_settings(settings, env=env)
     try:
@@ -149,6 +173,27 @@ async def run_improve(
         env=env,
     )
     result = _ground_suggestions(raw_suggestions, payload)
+    publish_plan = _build_publish_plan(result.suggestions)
+
+    publish_status = "dry_run"
+    published_inline_count = 0
+    published_summary_count = 0
+    if publish:
+        if publish_plan.inline_suggestions or publish_plan.summary_suggestions:
+            await _publish_improvements(
+                settings,
+                env=env,
+                handle=handle,
+                pr_number=payload.number,
+                head_sha=payload.head_sha,
+                plan=publish_plan,
+                publisher=publisher,
+            )
+            publish_status = "posted"
+            published_inline_count = len(publish_plan.inline_suggestions)
+            published_summary_count = len(publish_plan.summary_suggestions)
+        else:
+            publish_status = "no_suggestions"
 
     hunk_total = sum(len(f.hunks) for f in payload.files)
     binary_count = sum(1 for f in payload.files if f.is_binary)
@@ -163,9 +208,17 @@ async def run_improve(
         "hunks": hunk_total,
         "commits": len(payload.commits),
         "context_loaded": _has_retrieval_context(retrieval_result),
-        "suggestions_count": len(result.suggestions),
+        "suggestions_count": len(publish_plan.inline_suggestions)
+        + len(publish_plan.summary_suggestions),
         "dropped_suggestions_count": result.dropped_suggestions_count,
-        "suggestions": [_serialize_suggestion(suggestion) for suggestion in result.suggestions],
+        "dropped_actionability_count": publish_plan.dropped_actionability_count,
+        "publish_status": publish_status,
+        "published_inline_count": published_inline_count,
+        "published_summary_count": published_summary_count,
+        "suggestions": [
+            _serialize_suggestion(suggestion)
+            for suggestion in _publishable_suggestions(publish_plan)
+        ],
     }
 
 
@@ -175,9 +228,20 @@ def run_improve_blocking(
     number: int,
     repo: str | None = None,
     env: dict[str, str] | None = None,
+    dry_run: bool = False,
+    publish: bool = False,
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
-    return asyncio.run(run_improve(settings, number=number, repo=repo, env=env))
+    return asyncio.run(
+        run_improve(
+            settings,
+            number=number,
+            repo=repo,
+            env=env,
+            dry_run=dry_run,
+            publish=publish,
+        )
+    )
 
 
 def render_improvements(summary: dict[str, object], out: TextIO) -> None:
@@ -196,9 +260,21 @@ def render_improvements(summary: dict[str, object], out: TextIO) -> None:
     dropped = summary.get("dropped_suggestions_count")
     if isinstance(dropped, int) and dropped > 0:
         print(f"  Dropped:      {dropped} ungrounded", file=out)
+    dropped_actionability = summary.get("dropped_actionability_count")
+    if isinstance(dropped_actionability, int) and dropped_actionability > 0:
+        print(f"  Dropped:      {dropped_actionability} non-actionable", file=out)
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
+    publish_status = summary.get("publish_status")
+    if publish_status == "posted":
+        inline = summary.get("published_inline_count", 0)
+        summary_count = summary.get("published_summary_count", 0)
+        print(f"  Published:    yes ({inline} inline, {summary_count} summary)", file=out)
+    elif publish_status == "no_suggestions":
+        print("  Published:    no suggestions to post", file=out)
+    elif publish_status == "dry_run":
+        print("  Published:    no (dry run)", file=out)
 
     raw_suggestions = summary.get("suggestions")
     suggestions = raw_suggestions if isinstance(raw_suggestions, list) else []
@@ -350,6 +426,130 @@ def _ground_suggestions(
         else:
             dropped += 1
     return ImprovementResult(suggestions=kept, dropped_suggestions_count=dropped)
+
+
+def _build_publish_plan(suggestions: list[ImprovementSuggestion]) -> ImprovementPublishPlan:
+    inline: list[ReviewComment] = []
+    inline_source: list[ImprovementSuggestion] = []
+    summary: list[ImprovementSuggestion] = []
+    dropped = 0
+    for suggestion in suggestions:
+        if not _is_actionable(suggestion):
+            dropped += 1
+            continue
+        if _has_safe_replacement(suggestion):
+            inline.append(_to_review_comment(suggestion))
+            inline_source.append(suggestion)
+        else:
+            summary.append(suggestion)
+    return ImprovementPublishPlan(
+        inline_suggestions=inline,
+        inline_source_suggestions=inline_source,
+        summary_suggestions=summary,
+        dropped_actionability_count=dropped,
+    )
+
+
+def _publishable_suggestions(plan: ImprovementPublishPlan) -> list[ImprovementSuggestion]:
+    return plan.inline_source_suggestions + plan.summary_suggestions
+
+
+async def _publish_improvements(
+    settings: Settings,
+    *,
+    env: dict[str, str] | None,
+    handle: RepositoryHandle,
+    pr_number: int,
+    head_sha: str,
+    plan: ImprovementPublishPlan,
+    publisher: ImprovementPublisher | None,
+) -> None:
+    if publisher is not None:
+        await publisher(
+            pr_number=pr_number,
+            inline_suggestions=plan.inline_suggestions,
+            summary_suggestions=plan.summary_suggestions,
+            head_sha=head_sha,
+        )
+        return
+
+    token = settings.resolved_github_token(env=env)
+    if not token:
+        raise GitHubAuthError("cannot publish improvements without a resolved GitHub token")
+
+    async with GitHubClient(token=token) as client:
+        await client.create_review(
+            handle.owner,
+            handle.repo,
+            pr_number,
+            body=_build_publish_body(plan),
+            event="COMMENT",
+            comments=plan.inline_suggestions,
+            commit_id=head_sha,
+        )
+
+
+def _to_review_comment(suggestion: ImprovementSuggestion) -> ReviewComment:
+    body = (
+        f"**{suggestion.title}**\n\n"
+        f"{suggestion.reason}\n\n"
+        f"```suggestion\n{suggestion.fix.strip()}\n```\n\n"
+        f"{suggestion.suggestion}"
+    )
+    return ReviewComment(path=suggestion.file, body=body, line=suggestion.line, side="RIGHT")
+
+
+def _build_publish_body(plan: ImprovementPublishPlan) -> str:
+    lines = ["## OpenRabbit Improvements\n\n"]
+    inline_count = len(plan.inline_suggestions)
+    summary_count = len(plan.summary_suggestions)
+    if inline_count:
+        lines.append(
+            f"Posted **{inline_count}** inline suggestion"
+            f"{'s' if inline_count != 1 else ''} on changed lines.\n\n"
+        )
+    if summary_count:
+        lines.append("Broader suggestions:\n\n")
+        for suggestion in plan.summary_suggestions:
+            lines.append(
+                f"- **{suggestion.title}** (`{suggestion.file}:{suggestion.line}`): "
+                f"{suggestion.suggestion}\n"
+            )
+    if not inline_count and not summary_count:
+        lines.append("No actionable improvement suggestions found.\n")
+    return "".join(lines)
+
+
+def _is_actionable(suggestion: ImprovementSuggestion) -> bool:
+    text = " ".join(
+        (suggestion.title, suggestion.reason, suggestion.suggestion, suggestion.fix)
+    ).lower()
+    if "todo" in text or "fixme" in text:
+        return False
+    if "add a comment" in text or "comment-only" in text:
+        return False
+    if not suggestion.fix and _starts_vague(suggestion.suggestion):
+        return False
+    if "refactor" in suggestion.suggestion.lower() and not suggestion.fix:
+        return False
+    return not (suggestion.fix and _is_comment_only_fix(suggestion.fix))
+
+
+def _has_safe_replacement(suggestion: ImprovementSuggestion) -> bool:
+    return bool(suggestion.fix.strip()) and not _is_comment_only_fix(suggestion.fix)
+
+
+def _starts_vague(text: str) -> bool:
+    lowered = text.strip().lower()
+    return lowered.startswith(("consider ", "maybe ", "think about ", "you could "))
+
+
+def _is_comment_only_fix(fix: str) -> bool:
+    lines = [line.strip() for line in fix.splitlines() if line.strip()]
+    if not lines:
+        return False
+    prefixes = ("#", "//", "/*", "*", "<!--")
+    return all(line.startswith(prefixes) for line in lines)
 
 
 def _is_grounded(suggestion: ImprovementSuggestion, index: DiffGroundingIndex) -> bool:

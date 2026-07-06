@@ -336,8 +336,21 @@ def improve(
         "-r",
         help="Repository to improve, in owner/repo form. Overrides repository.target.",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print improvement suggestions without posting them to GitHub.",
+    ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        help="Publish grounded, actionable improvement suggestions to GitHub.",
+    ),
 ) -> None:
-    """Generate read-only improvement suggestions for changed pull request lines."""
+    """Generate improvement suggestions for changed pull request lines."""
+    if dry_run and publish:
+        _err.print("[red]--dry-run and --publish are mutually exclusive.[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR)
     workspace = workspace.resolve()
     settings = _load_settings_or_exit(workspace)
     try:
@@ -345,7 +358,12 @@ def improve(
             settings,  # type: ignore[arg-type]
             number=pr,
             repo=repo,
+            dry_run=dry_run,
+            publish=publish,
         )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
     except StartError as exc:
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
