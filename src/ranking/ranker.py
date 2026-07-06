@@ -1,7 +1,7 @@
 """Comment ranker for OpenRabbit.
 
 Collects all findings from every review agent, deduplicates them by
-(file, line, normalised title), scores each by severity * confidence,
+(file, line, normalised title) or nearby semantic root cause, scores each by severity * confidence,
 and returns the top-N results ordered by score descending.
 
 This is the last step before the GitHub publisher posts comments.
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from agents.models import AgentResult, Finding
 
 _DEFAULT_TOP_N = 10
+_SEMANTIC_LINE_WINDOW = 5
 
 
 @dataclass
@@ -69,20 +70,62 @@ class CommentRanker:
 def _dedup(findings: list[Finding]) -> list[Finding]:
     """Return findings with duplicates removed.
 
-    When two findings share the same (file, line, normalised title), the one
-    with the higher score is kept.
+    Exact duplicates share the same (file, line, normalised title). Semantic
+    duplicates point to nearby lines in the same file and describe the same
+    root cause. In both cases, the higher-scored finding is kept.
     """
-    seen: dict[tuple[str, int, str], Finding] = {}
-    for f in findings:
-        key = (f.file, f.line, _normalise(f.title))
-        existing = seen.get(key)
-        if existing is None or _raw_score(f) > _raw_score(existing):
-            seen[key] = f
-    return list(seen.values())
+    deduped: list[Finding] = []
+    for finding in findings:
+        duplicate_index = _find_duplicate_index(deduped, finding)
+        if duplicate_index is None:
+            deduped.append(finding)
+            continue
+        if _raw_score(finding) > _raw_score(deduped[duplicate_index]):
+            deduped[duplicate_index] = finding
+    return deduped
+
+
+def _find_duplicate_index(existing: list[Finding], candidate: Finding) -> int | None:
+    for index, finding in enumerate(existing):
+        if _same_exact_finding(finding, candidate) or _same_semantic_finding(finding, candidate):
+            return index
+    return None
+
+
+def _same_exact_finding(a: Finding, b: Finding) -> bool:
+    return a.file == b.file and a.line == b.line and _normalise(a.title) == _normalise(b.title)
+
+
+def _same_semantic_finding(a: Finding, b: Finding) -> bool:
+    if a.file != b.file:
+        return False
+    if abs(a.line - b.line) > _SEMANTIC_LINE_WINDOW:
+        return False
+
+    a_kind = _issue_kind(a)
+    return a_kind != "" and a_kind == _issue_kind(b)
 
 
 def _normalise(title: str) -> str:
     return title.lower().strip()
+
+
+def _issue_kind(finding: Finding) -> str:
+    text = " ".join((finding.category, finding.title, finding.reason, finding.suggestion)).lower()
+    if "sql" in text or "injection" in text or "raw query" in text or "raw sql" in text:
+        return "sql_injection"
+    if _contains_any(text, ("null", "none", "nil")) and _contains_any(
+        text,
+        ("dereference", "attribute", "access"),
+    ):
+        return "null_dereference"
+    if _contains_any(text, ("authorization", "permission", "privilege", "admin")):
+        return "authorization"
+    return ""
+
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in text for needle in needles)
 
 
 def _raw_score(f: Finding) -> float:
