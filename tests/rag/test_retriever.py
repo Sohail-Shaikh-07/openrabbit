@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from rag.retriever import AgentDimension, ContextRetriever, RetrievalResult
+from rag.vector_store import COLLECTION_DOCS, COLLECTION_FUNCTIONS, COLLECTION_REVIEWS
 
 # Suppress grpc/protobuf DeprecationWarnings on Python 3.12.
 pytestmark = pytest.mark.filterwarnings("ignore:.*uses PyType_Spec.*:DeprecationWarning")
@@ -60,6 +61,10 @@ def _mock_store(hits: list[dict] | None = None) -> MagicMock:
     store.search = AsyncMock(return_value=hits or [])
     store.has_any_collection = AsyncMock(return_value=True)
     return store
+
+
+def _payload_hit(name: str, path: str, score: float = 0.9) -> dict:
+    return {"id": f"{path}:{name}", "score": score, "payload": {"name": name, "source_path": path}}
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +227,103 @@ async def test_retrieve_query_includes_title_body_paths_and_hunk_lines() -> None
     assert "src/tasks/export.py" in query_text
     assert "def export_tasks():" in query_text
     assert "return csv_data" in query_text
+
+
+@pytest.mark.asyncio
+async def test_retrieve_query_includes_changed_symbol_hints() -> None:
+    engine = _mock_engine()
+    store = _mock_store()
+    retriever = ContextRetriever(engine=engine, store=store)
+    pr = _make_pr_payload(title="Add task export", filenames=["src/tasks/export.py"])
+    pr.files[0].hunks = [
+        MagicMock(
+            lines=[
+                MagicMock(text="class TaskExporter:"),
+                MagicMock(text="def export_tasks(self):"),
+                MagicMock(text="async def stream_tasks(self):"),
+            ]
+        )
+    ]
+
+    await retriever.retrieve(pr)
+
+    query_text = engine.aencode.call_args[0][0][0].text
+    assert "changed symbols:" in query_text
+    assert "TaskExporter" in query_text
+    assert "export_tasks" in query_text
+    assert "stream_tasks" in query_text
+
+
+@pytest.mark.asyncio
+async def test_retrieve_prioritizes_changed_file_context_with_path_filters() -> None:
+    store = _mock_store()
+
+    async def search_side_effect(
+        collection: str,
+        _query_vec: object,
+        *,
+        top_k: int = 10,
+        filter: dict | None = None,
+    ) -> list[dict]:
+        _ = top_k
+        if collection == COLLECTION_FUNCTIONS and filter:
+            return [_payload_hit("changed-func", "src/auth/login.py")]
+        if collection == COLLECTION_DOCS:
+            return [_payload_hit("architecture-doc", "docs/architecture.md")]
+        if collection == COLLECTION_REVIEWS:
+            return [_payload_hit("review-example", ".openrabbit/review_examples.md")]
+        return [_payload_hit("security-rule", ".openrabbit/security_rules.md")]
+
+    store.search.side_effect = search_side_effect
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+    pr = _make_pr_payload(filenames=["src/auth/login.py"])
+
+    result = await retriever.retrieve(pr)
+
+    filtered_calls = [
+        call for call in store.search.await_args_list if call.kwargs.get("filter", {}).get("should")
+    ]
+    assert filtered_calls
+    assert any(
+        condition["key"] == "source_path" and condition["match"]["value"] == "src/auth/login.py"
+        for call in filtered_calls
+        for condition in call.kwargs["filter"]["should"]
+    )
+    assert result.performance[0]["payload"]["source_path"] == "src/auth/login.py"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_path_filter_includes_all_changed_files() -> None:
+    store = _mock_store()
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+    pr = _make_pr_payload(filenames=["src/auth/login.py", "src/auth/session.py"])
+
+    await retriever.retrieve(pr)
+
+    filtered_calls = [
+        call for call in store.search.await_args_list if call.kwargs.get("filter", {}).get("should")
+    ]
+    assert filtered_calls
+    values = {
+        condition["match"]["value"]
+        for call in filtered_calls
+        for condition in call.kwargs["filter"]["should"]
+    }
+    assert values == {"src/auth/login.py", "src/auth/session.py"}
+
+
+def test_retrieval_result_exposes_context_provenance() -> None:
+    result = RetrievalResult(
+        security=[_payload_hit("security-rule", ".openrabbit/security_rules.md", 0.91)],
+        architecture=[_payload_hit("architecture", "docs/architecture.md", 0.82)],
+    )
+
+    provenance = result.provenance()
+
+    assert provenance[0]["dimension"] == "security"
+    assert provenance[0]["source_path"] == ".openrabbit/security_rules.md"
+    assert provenance[0]["name"] == "security-rule"
+    assert provenance[0]["score"] == 0.91
 
 
 @pytest.mark.asyncio

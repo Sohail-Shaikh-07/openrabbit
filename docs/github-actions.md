@@ -111,11 +111,14 @@ openrabbit improve --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --publish
 If Qdrant is available on the runner, index before review:
 
 ```bash
+openrabbit index --workspace . --health --qdrant-host localhost --qdrant-port 6333
 openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
 openrabbit review --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
 ```
 
 If Qdrant is unavailable, reviews still run in diff-only mode.
+
+When context is loaded, the review summary includes `Context sources:` with the indexed files that contributed retrieved context. This is useful in CI logs because it confirms whether the run used repository rules, docs, tests, or source-symbol chunks.
 
 OpenRabbit checks for an existing RAG index before loading the embedding model during review, so runners without Qdrant do not need to download embedding weights just to complete a diff-only review.
 

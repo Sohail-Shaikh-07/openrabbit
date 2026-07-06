@@ -268,10 +268,15 @@ Scans a repository, chunks docs/source/rules, embeds them, and stores them in Qd
 
 ```bash
 docker compose up -d qdrant
+openrabbit index --workspace . --health
 openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
 ```
 
 Run this after `openrabbit init`, after major documentation or architecture changes, and after large source changes when you want reviews to use fresh repository context. If Qdrant is unavailable or no index exists, reviews continue in diff-only mode and report `Context: diff only`.
+
+The index includes source symbols, tests, documentation, README-style files, prior review examples, and `.openrabbit/*` rules. During review, OpenRabbit uses the changed file paths and changed symbols from the PR diff to prefer context from the files being edited, while still allowing architecture docs and review rules to contribute broader guidance.
+
+Use `openrabbit index --health` to confirm Qdrant is reachable and list the available collections before reviewing. When repository context is loaded, `openrabbit review` prints compact context provenance under `Context sources:` so you can see which indexed files influenced the run.
 
 The embedding model is downloaded once by FastEmbed when indexing or real RAG retrieval first needs it. OpenRabbit checks Qdrant for an existing RAG index before loading embeddings during review, so a machine without Qdrant or without an index should not trigger an embedding download just to fall back to diff-only mode.
 

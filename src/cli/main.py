@@ -19,7 +19,7 @@ from cli import logging as orlog
 from cli.commands.ask import render_answer, run_ask_blocking
 from cli.commands.describe import render_description, run_describe_blocking
 from cli.commands.improve import render_improvements, run_improve_blocking
-from cli.commands.index import run_index_blocking
+from cli.commands.index import run_index_blocking, run_qdrant_health_check_blocking
 from cli.commands.init import InitConflict, run_init
 from cli.commands.install_model import InstallResult, run_install_model
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
@@ -179,16 +179,38 @@ def index(
         "--qdrant-port",
         help="Qdrant server port.",
     ),
+    health: bool = typer.Option(
+        False,
+        "--health",
+        help="Check Qdrant connectivity and list collections without indexing.",
+    ),
 ) -> None:
     """Scan the current repository and rebuild the RAG index."""
     workspace = workspace.resolve()
+    if health:
+        health_result = run_qdrant_health_check_blocking(
+            qdrant_host=qdrant_host,
+            qdrant_port=qdrant_port,
+        )
+        if health_result.ok:
+            collections = (
+                ", ".join(health_result.collections) if health_result.collections else "none"
+            )
+            _console.print(f"[green]{health_result.message}[/green]")
+            _console.print(f"  Collections: {collections}")
+            return
+        _err.print(f"[red]{health_result.message}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR)
     try:
-        result = run_index_blocking(workspace, qdrant_host=qdrant_host, qdrant_port=qdrant_port)
+        index_result = run_index_blocking(
+            workspace, qdrant_host=qdrant_host, qdrant_port=qdrant_port
+        )
     except Exception as exc:
         _err.print(f"[red]Indexing failed: {exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
     _console.print(
-        f"[green]Indexed {result.chunks_indexed} chunks from {result.files_scanned} files.[/green]"
+        f"[green]Indexed {index_result.chunks_indexed} chunks from "
+        f"{index_result.files_scanned} files.[/green]"
     )
 
 
