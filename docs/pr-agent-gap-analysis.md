@@ -76,13 +76,12 @@ Recommended tasks:
 
 ### 3. Improvement and fix-suggestion command now has a first pass
 
-PR-Agent's `/improve` proposes code improvements. OpenRabbit now has a read-only `openrabbit improve` command that proposes small fixes for changed lines, grounds suggestions to changed files and changed new-side lines, and prints them locally.
+PR-Agent's `/improve` proposes code improvements. OpenRabbit now has `openrabbit improve`, which proposes small fixes for changed lines, grounds suggestions to changed files and changed new-side lines, and stays read-only unless `--publish` is passed.
 
 Recommended tasks:
 
-- Add optional patch or GitHub suggested-change formatting.
-- Add optional publishing as review comments when enabled.
 - Add quality benchmarks for over-suggestion and false-positive rates.
+- Expand suggestion quality checks beyond the current grounded/actionable filters.
 
 ### 4. Interactive ask command now has a first pass
 

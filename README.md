@@ -318,10 +318,14 @@ openrabbit --quiet ask --pr 42 --repo owner/repo "What files should I inspect fi
 
 ### `openrabbit improve`
 
-Fetches one PR, loads indexed repository context and local PR memory when available, and prints read-only improvement suggestions for changed lines. Suggestions are grounded to changed files and changed new-side lines before they are shown. The command uses the same configured model provider as `openrabbit review`, but it never applies patches, pushes commits, or posts comments.
+Fetches one PR, loads indexed repository context and local PR memory when available, and prints improvement suggestions for changed lines. Suggestions are grounded to changed files and changed new-side lines before they are shown. The command uses the same configured model provider as `openrabbit review`, but it never applies patches or pushes commits.
+
+By default, `improve` is read-only. Add `--publish` only when you want OpenRabbit to post grounded, actionable suggestions to the pull request. Suggestions with concrete replacement snippets become GitHub suggestion blocks on changed lines. Broader actionable suggestions are grouped into the review body, and non-actionable TODO/comment-only advice is dropped.
 
 ```bash
 openrabbit improve --pr 42 --repo owner/repo
+openrabbit improve --pr 42 --repo owner/repo --dry-run
+openrabbit improve --pr 42 --repo owner/repo --publish
 openrabbit --quiet improve --pr 42 --repo owner/repo
 ```
 

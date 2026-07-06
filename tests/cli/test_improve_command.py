@@ -7,12 +7,15 @@ from pathlib import Path
 
 import httpx
 import respx
+from typer.testing import CliRunner
 
 from cli.commands.improve import ImprovementSuggestion, render_improvements, run_improve
+from cli.main import app
 from configs import load_settings
 from rag.retriever import RetrievalResult
 
 _BASE = "https://api.github.com"
+_RUNNER = CliRunner()
 
 
 def _pr_json() -> dict[str, object]:
@@ -176,6 +179,145 @@ async def test_run_improve_passes_loaded_context(scaffold_repo: Path) -> None:
     assert summary["context_loaded"] is True
 
 
+@respx.mock
+async def test_run_improve_dry_run_does_not_publish(scaffold_repo: Path) -> None:
+    _mock_pr()
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> list[ImprovementSuggestion]:
+        return [
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=1,
+                title="Validate query",
+                reason="The changed search path accepts a new query value.",
+                suggestion="Guard against an empty query before returning.",
+                fix="if not query:\n    return []",
+            )
+        ]
+
+    published: list[dict[str, object]] = []
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_improve(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publisher=fake_publisher,
+    )
+
+    assert summary["publish_status"] == "dry_run"
+    assert summary["published_inline_count"] == 0
+    assert summary["published_summary_count"] == 0
+    assert published == []
+
+
+@respx.mock
+async def test_run_improve_publish_posts_inline_and_summary_suggestions(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> list[ImprovementSuggestion]:
+        return [
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=1,
+                title="Validate query",
+                reason="The changed search path accepts a new query value.",
+                suggestion="Guard against an empty query before returning.",
+                fix="if not query:\n    return []",
+            ),
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=2,
+                title="Normalize query",
+                reason="The returned value should be normalized consistently.",
+                suggestion="Strip surrounding whitespace before using the query.",
+            ),
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=2,
+                title="Add TODO",
+                reason="A TODO comment would remind maintainers to revisit this later.",
+                suggestion="Add a TODO comment above this return.",
+                fix="# TODO: revisit search behavior",
+            ),
+        ]
+
+    published: list[dict[str, object]] = []
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_improve(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+        publisher=fake_publisher,
+    )
+
+    assert summary["publish_status"] == "posted"
+    assert summary["published_inline_count"] == 1
+    assert summary["published_summary_count"] == 1
+    assert summary["dropped_actionability_count"] == 1
+    assert len(published) == 1
+    assert published[0]["head_sha"] == "abcdef0123456789" + "0" * 24
+
+    inline = published[0]["inline_suggestions"]
+    summary_suggestions = published[0]["summary_suggestions"]
+    assert len(inline) == 1
+    assert "```suggestion" in inline[0].body
+    assert inline[0].path == "src/search.py"
+    assert inline[0].line == 1
+    assert len(summary_suggestions) == 1
+    assert summary_suggestions[0].title == "Normalize query"
+
+
+def test_cli_improve_accepts_publish_flags(scaffold_repo: Path) -> None:
+    dry = _RUNNER.invoke(
+        app,
+        [
+            "improve",
+            "--pr",
+            "42",
+            "--workspace",
+            str(scaffold_repo),
+            "--repo",
+            "o/r",
+            "--dry-run",
+        ],
+    )
+    publish = _RUNNER.invoke(
+        app,
+        [
+            "improve",
+            "--pr",
+            "42",
+            "--workspace",
+            str(scaffold_repo),
+            "--repo",
+            "o/r",
+            "--publish",
+        ],
+    )
+
+    assert dry.exit_code != 2
+    assert publish.exit_code != 2
+
+
 def test_render_improvements_prints_sections() -> None:
     summary = {
         "repo": "o/r",
@@ -190,6 +332,10 @@ def test_render_improvements_prints_sections() -> None:
         "context_loaded": True,
         "suggestions_count": 1,
         "dropped_suggestions_count": 2,
+        "dropped_actionability_count": 0,
+        "publish_status": "dry_run",
+        "published_inline_count": 0,
+        "published_summary_count": 0,
         "suggestions": [
             {
                 "file": "src/search.py",
@@ -210,6 +356,7 @@ def test_render_improvements_prints_sections() -> None:
     assert "Suggestions:  1" in text
     assert "Dropped:      2 ungrounded" in text
     assert "Context:      loaded" in text
+    assert "Published:    no (dry run)" in text
     assert "Improvement suggestions:" in text
     assert "Validate query (src/search.py:1)" in text
     assert "Fix:" in text
