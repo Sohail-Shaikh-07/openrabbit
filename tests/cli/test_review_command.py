@@ -675,7 +675,14 @@ async def test_run_review_passes_loaded_context_to_agent_runner(scaffold_repo: P
     respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
     respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(return_value=httpx.Response(200, json=[]))
     respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(return_value=httpx.Response(200, json=[]))
-    retrieval = RetrievalResult(security=[{"score": 0.9, "payload": {"name": "rule"}}])
+    retrieval = RetrievalResult(
+        security=[
+            {
+                "score": 0.9,
+                "payload": {"name": "rule", "source_path": ".openrabbit/security.md"},
+            }
+        ]
+    )
     captured: list[object] = []
 
     async def fake_context_loader(_payload: object) -> RetrievalResult:
@@ -699,6 +706,15 @@ async def test_run_review_passes_loaded_context_to_agent_runner(scaffold_repo: P
 
     assert captured == [retrieval]
     assert summary["context_loaded"] is True
+    assert summary["context_provenance"] == [
+        {
+            "dimension": "security",
+            "source_path": ".openrabbit/security.md",
+            "name": "rule",
+            "kind": "",
+            "score": 0.9,
+        }
+    ]
 
 
 @respx.mock
@@ -851,3 +867,46 @@ def test_render_summary_prints_findings() -> None:
     assert "Published:    yes" in text
     assert "[HIGH] Missing guard" in text
     assert "src/a.py:2" in text
+
+
+def test_render_summary_prints_context_provenance() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 7,
+        "title": "Hello",
+        "state": "open",
+        "head_sha": "abcdef012345",
+        "files_changed": 1,
+        "binary_files": 0,
+        "hunks": 1,
+        "commits": 1,
+        "findings_count": 0,
+        "dropped_findings_count": 0,
+        "context_loaded": True,
+        "context_provenance": [
+            {
+                "dimension": "security",
+                "source_path": ".openrabbit/security.md",
+                "name": "security rules",
+                "kind": "section",
+                "score": 0.91,
+            },
+            {
+                "dimension": "architecture",
+                "source_path": "docs/architecture.md",
+                "name": "request flow",
+                "kind": "section",
+                "score": 0.82,
+            },
+        ],
+        "publish_status": "no_findings",
+        "findings": [],
+    }
+    out = io.StringIO()
+    render_summary(summary, out)
+
+    text = out.getvalue()
+    assert "Context:      loaded" in text
+    assert "Context sources:" in text
+    assert "security .openrabbit/security.md" in text
+    assert "architecture docs/architecture.md" in text

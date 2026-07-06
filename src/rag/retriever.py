@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -82,6 +83,25 @@ class RetrievalResult:
             AgentDimension.tests: self.tests,
         }
 
+    def provenance(self) -> list[dict[str, Any]]:
+        """Return compact source provenance for retrieved context."""
+        rows: list[dict[str, Any]] = []
+        for dimension, hits in self.as_dict().items():
+            for hit in hits:
+                payload = hit.get("payload", {})
+                if not isinstance(payload, dict):
+                    payload = {}
+                rows.append(
+                    {
+                        "dimension": str(dimension),
+                        "source_path": str(payload.get("source_path", "")),
+                        "name": str(payload.get("name", "")),
+                        "kind": str(payload.get("kind", "")),
+                        "score": hit.get("score"),
+                    }
+                )
+        return rows
+
 
 # ---------------------------------------------------------------------------
 # ContextRetriever
@@ -133,11 +153,12 @@ class ContextRetriever:
                 )
                 return RetrievalResult()
             query_vec = await self._build_query_vector(pr)
+            changed_paths = _changed_paths_from_pr(pr)
             results = await asyncio.gather(
-                self._fetch_security(query_vec),
-                self._fetch_architecture(query_vec),
-                self._fetch_performance(query_vec),
-                self._fetch_tests(query_vec),
+                self._fetch_security(query_vec, changed_paths),
+                self._fetch_architecture(query_vec, changed_paths),
+                self._fetch_performance(query_vec, changed_paths),
+                self._fetch_tests(query_vec, changed_paths),
             )
             return RetrievalResult(
                 security=results[0],
@@ -170,32 +191,58 @@ class ContextRetriever:
         embedded = await self._engine.aencode([query_chunk])
         return embedded[0].vector
 
-    async def _fetch_security(self, query_vec: Any) -> list[dict[str, Any]]:
+    async def _fetch_security(
+        self, query_vec: Any, changed_paths: list[str]
+    ) -> list[dict[str, Any]]:
         """Rules + source functions."""
         rules, funcs = await asyncio.gather(
             self._store.search(COLLECTION_RULES, query_vec, top_k=self._top_k),
-            self._store.search(COLLECTION_FUNCTIONS, query_vec, top_k=self._top_k),
+            self._store.search(
+                COLLECTION_FUNCTIONS,
+                query_vec,
+                top_k=self._top_k,
+                filter=_path_filter(changed_paths),
+            ),
         )
         return _dedup(rules + funcs)
 
-    async def _fetch_architecture(self, query_vec: Any) -> list[dict[str, Any]]:
+    async def _fetch_architecture(
+        self, query_vec: Any, changed_paths: list[str]
+    ) -> list[dict[str, Any]]:
         """Docs + source functions."""
         docs, funcs = await asyncio.gather(
             self._store.search(COLLECTION_DOCS, query_vec, top_k=self._top_k),
-            self._store.search(COLLECTION_FUNCTIONS, query_vec, top_k=self._top_k),
+            self._store.search(
+                COLLECTION_FUNCTIONS,
+                query_vec,
+                top_k=self._top_k,
+                filter=_path_filter(changed_paths),
+            ),
         )
         return _dedup(docs + funcs)
 
-    async def _fetch_performance(self, query_vec: Any) -> list[dict[str, Any]]:
+    async def _fetch_performance(
+        self, query_vec: Any, changed_paths: list[str]
+    ) -> list[dict[str, Any]]:
         """Source functions only."""
-        funcs = await self._store.search(COLLECTION_FUNCTIONS, query_vec, top_k=self._top_k)
+        funcs = await self._store.search(
+            COLLECTION_FUNCTIONS,
+            query_vec,
+            top_k=self._top_k,
+            filter=_path_filter(changed_paths),
+        )
         return _dedup(funcs)
 
-    async def _fetch_tests(self, query_vec: Any) -> list[dict[str, Any]]:
+    async def _fetch_tests(self, query_vec: Any, changed_paths: list[str]) -> list[dict[str, Any]]:
         """Reviews + source functions."""
         reviews, funcs = await asyncio.gather(
             self._store.search(COLLECTION_REVIEWS, query_vec, top_k=self._top_k),
-            self._store.search(COLLECTION_FUNCTIONS, query_vec, top_k=self._top_k),
+            self._store.search(
+                COLLECTION_FUNCTIONS,
+                query_vec,
+                top_k=self._top_k,
+                filter=_path_filter(changed_paths),
+            ),
         )
         return _dedup(reviews + funcs)
 
@@ -241,6 +288,7 @@ def _query_text_from_pr(pr: Any) -> str:
         parts.append(body)
 
     files = getattr(pr, "files", None)
+    symbols: set[str] = set()
     if isinstance(files, list):
         for file_ in files:
             path = str(getattr(file_, "path", "") or "").strip()
@@ -254,5 +302,47 @@ def _query_text_from_pr(pr: Any) -> str:
                     text = str(getattr(line, "text", "") or "").strip()
                     if text:
                         parts.append(text)
+                        symbols.update(_symbols_from_line(text))
+
+    if symbols:
+        parts.append("changed symbols: " + " ".join(sorted(symbols)))
 
     return " ".join(parts)
+
+
+def _changed_paths_from_pr(pr: Any) -> list[str]:
+    files = getattr(pr, "files", None)
+    if not isinstance(files, list):
+        return []
+    paths = []
+    for file_ in files:
+        path = str(getattr(file_, "path", "") or "").strip()
+        if path:
+            paths.append(path)
+    return paths
+
+
+def _path_filter(changed_paths: list[str]) -> dict[str, Any] | None:
+    if not changed_paths:
+        return None
+    return {
+        "should": [
+            {"key": "source_path", "match": {"value": path}}
+            for path in dict.fromkeys(changed_paths)
+        ]
+    }
+
+
+_PY_SYMBOL_RE = re.compile(r"^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
+_JS_SYMBOL_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)"
+)
+
+
+def _symbols_from_line(text: str) -> set[str]:
+    symbols: set[str] = set()
+    for pattern in (_PY_SYMBOL_RE, _JS_SYMBOL_RE):
+        match = pattern.match(text)
+        if match:
+            symbols.add(match.group(1))
+    return symbols

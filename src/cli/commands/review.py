@@ -222,6 +222,7 @@ async def run_review(
         "published_findings_count": 0 if dry_run else len(publish_ranked),
         "dropped_findings_count": dropped_findings_count,
         "context_loaded": context_loaded,
+        "context_provenance": _context_provenance(retrieval_result),
         "findings": _serialize_ranked_findings(ranked, memory_comparison),
         "comments_posted": comments_posted,
         "publish_status": publish_status,
@@ -256,6 +257,21 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
+    raw_provenance = summary.get("context_provenance")
+    provenance = raw_provenance if isinstance(raw_provenance, list) else []
+    if provenance:
+        print("  Context sources:", file=out)
+        for item in provenance[:5]:
+            if not isinstance(item, dict):
+                continue
+            dimension = str(item.get("dimension", "")).strip()
+            source_path = str(item.get("source_path", "")).strip()
+            name = str(item.get("name", "")).strip()
+            score = item.get("score")
+            score_text = f", score={score:.2f}" if isinstance(score, int | float) else ""
+            label = f"{dimension} {source_path}".strip()
+            detail = f" ({name}{score_text})" if name or score_text else ""
+            print(f"    - {label}{detail}", file=out)
     publish_status = summary.get("publish_status")
     if publish_status == "posted":
         print("  Published:    yes", file=out)
@@ -331,6 +347,26 @@ def _serialize_ranked_findings(
         )
         for rf in ranked
     ]
+
+
+def _context_provenance(retrieval_result: Any | None) -> list[dict[str, object]]:
+    if retrieval_result is None:
+        return []
+    provenance = getattr(retrieval_result, "provenance", None)
+    if not callable(provenance):
+        return []
+    try:
+        rows = provenance()
+    except Exception as exc:
+        _log.warning(
+            "review.context_provenance_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return []
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
 
 
 def _memory_status_counts(memory_comparison: FindingComparison | None) -> dict[str, int]:

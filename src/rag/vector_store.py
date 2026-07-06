@@ -242,12 +242,19 @@ def _build_filter(filter_dict: dict[str, Any]) -> Any:
     """Convert a plain filter dict into a Qdrant ``Filter`` object."""
     from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-    must_conditions = []
-    for condition in filter_dict.get("must", []):
-        key = condition["key"]
-        match_value = condition["match"]["value"]
-        must_conditions.append(FieldCondition(key=key, match=MatchValue(value=match_value)))
-    return Filter(must=must_conditions) if must_conditions else None
+    def build_conditions(conditions: list[dict[str, Any]]) -> list[FieldCondition]:
+        built = []
+        for condition in conditions:
+            key = condition["key"]
+            match_value = condition["match"]["value"]
+            built.append(FieldCondition(key=key, match=MatchValue(value=match_value)))
+        return built
+
+    must_conditions = build_conditions(filter_dict.get("must", []))
+    should_conditions = build_conditions(filter_dict.get("should", []))
+    if must_conditions or should_conditions:
+        return Filter(must=must_conditions or None, should=should_conditions or None)
+    return None
 
 
 async def _query_nearest(
