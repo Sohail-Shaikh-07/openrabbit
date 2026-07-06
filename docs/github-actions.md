@@ -109,6 +109,8 @@ openrabbit review --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
 
 If Qdrant is unavailable, reviews still run in diff-only mode.
 
+OpenRabbit checks for an existing RAG index before loading the embedding model during review, so runners without Qdrant do not need to download embedding weights just to complete a diff-only review.
+
 ## Troubleshooting
 
 `no GitHub token found`

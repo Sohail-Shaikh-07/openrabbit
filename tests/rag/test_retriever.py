@@ -58,6 +58,7 @@ def _mock_engine(dim: int = 384) -> MagicMock:
 def _mock_store(hits: list[dict] | None = None) -> MagicMock:
     store = MagicMock()
     store.search = AsyncMock(return_value=hits or [])
+    store.has_any_collection = AsyncMock(return_value=True)
     return store
 
 
@@ -152,6 +153,7 @@ async def test_retrieve_returns_hits_from_store() -> None:
 @pytest.mark.asyncio
 async def test_retrieve_falls_back_gracefully_when_store_raises() -> None:
     store = MagicMock()
+    store.has_any_collection = AsyncMock(return_value=True)
     store.search = AsyncMock(side_effect=Exception("qdrant down"))
     retriever = ContextRetriever(engine=_mock_engine(), store=store)
     pr = _make_pr_payload()
@@ -163,6 +165,22 @@ async def test_retrieve_falls_back_gracefully_when_store_raises() -> None:
     assert result.architecture == []
     assert result.performance == []
     assert result.tests == []
+
+
+@pytest.mark.asyncio
+async def test_retrieve_skips_embedding_when_rag_collections_are_missing() -> None:
+    engine = _mock_engine()
+    store = _mock_store()
+    store.has_any_collection.return_value = False
+    retriever = ContextRetriever(engine=engine, store=store)
+    pr = _make_pr_payload()
+
+    result = await retriever.retrieve(pr)
+
+    store.has_any_collection.assert_awaited_once()
+    engine.aencode.assert_not_awaited()
+    store.search.assert_not_awaited()
+    assert result == RetrievalResult()
 
 
 @pytest.mark.asyncio

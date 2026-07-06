@@ -51,8 +51,15 @@ def _async_qdrant_mock() -> MagicMock:
     client.create_collection = AsyncMock(return_value=True)
     client.upsert = AsyncMock(return_value=MagicMock(status="completed"))
     client.search = AsyncMock(return_value=[])
+    client.query_points = AsyncMock(return_value=MagicMock(points=[]))
     client.close = AsyncMock()
     return client
+
+
+def _collection(name: str) -> MagicMock:
+    collection = MagicMock()
+    collection.name = name
+    return collection
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +170,7 @@ async def test_search_returns_list_of_dicts() -> None:
     hit.id = "abc"
     hit.score = 0.95
     hit.payload = {"name": "my_func", "kind": "function", "source_path": "src/foo.py"}
-    mock_client.search.return_value = [hit]
+    mock_client.query_points.return_value = MagicMock(points=[hit])
     store = VectorStore(client=mock_client)
 
     query = np.ones(VECTOR_SIZE, dtype="float32")
@@ -182,9 +189,10 @@ async def test_search_passes_top_k_to_qdrant() -> None:
 
     await store.search(COLLECTION_DOCS, query, top_k=10)
 
-    call_kwargs = mock_client.search.call_args.kwargs
+    call_kwargs = mock_client.query_points.call_args.kwargs
     assert call_kwargs["limit"] == 10
     assert call_kwargs["collection_name"] == COLLECTION_DOCS
+    assert call_kwargs["query"] == pytest.approx(query.tolist())
 
 
 @pytest.mark.asyncio
@@ -196,8 +204,63 @@ async def test_search_with_filter_passes_filter_to_qdrant() -> None:
 
     await store.search(COLLECTION_FUNCTIONS, query, top_k=5, filter=flt)
 
-    call_kwargs = mock_client.search.call_args.kwargs
+    call_kwargs = mock_client.query_points.call_args.kwargs
     assert call_kwargs["query_filter"] is not None
+
+
+@pytest.mark.asyncio
+async def test_search_uses_current_qdrant_query_points_api() -> None:
+    mock_client = _async_qdrant_mock()
+    del mock_client.search
+    hit = MagicMock()
+    hit.id = "abc"
+    hit.score = 0.95
+    hit.payload = {"name": "my_func"}
+    mock_client.query_points.return_value = MagicMock(points=[hit])
+    store = VectorStore(client=mock_client)
+
+    results = await store.search(COLLECTION_FUNCTIONS, np.ones(VECTOR_SIZE, dtype="float32"))
+
+    mock_client.query_points.assert_awaited_once()
+    assert results == [{"id": "abc", "score": 0.95, "payload": {"name": "my_func"}}]
+
+
+# ---------------------------------------------------------------------------
+# VectorStore collection preflight
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_collections_returns_collection_names() -> None:
+    mock_client = _async_qdrant_mock()
+    mock_client.get_collections.return_value = MagicMock(
+        collections=[_collection(COLLECTION_FUNCTIONS), _collection(COLLECTION_DOCS)]
+    )
+    store = VectorStore(client=mock_client)
+
+    names = await store.list_collections()
+
+    assert names == {COLLECTION_FUNCTIONS, COLLECTION_DOCS}
+
+
+@pytest.mark.asyncio
+async def test_has_any_collection_detects_expected_collection() -> None:
+    mock_client = _async_qdrant_mock()
+    mock_client.get_collections.return_value = MagicMock(
+        collections=[_collection(COLLECTION_FUNCTIONS)]
+    )
+    store = VectorStore(client=mock_client)
+
+    assert await store.has_any_collection((COLLECTION_FUNCTIONS, COLLECTION_RULES)) is True
+
+
+@pytest.mark.asyncio
+async def test_has_any_collection_returns_false_when_index_is_missing() -> None:
+    mock_client = _async_qdrant_mock()
+    mock_client.get_collections.return_value = MagicMock(collections=[])
+    store = VectorStore(client=mock_client)
+
+    assert await store.has_any_collection((COLLECTION_FUNCTIONS, COLLECTION_RULES)) is False
 
 
 # ---------------------------------------------------------------------------

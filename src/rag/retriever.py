@@ -39,6 +39,12 @@ from rag.vector_store import (
 logger = logging.getLogger(__name__)
 
 _TOP_K = 10
+_RETRIEVAL_COLLECTIONS = (
+    COLLECTION_DOCS,
+    COLLECTION_FUNCTIONS,
+    COLLECTION_REVIEWS,
+    COLLECTION_RULES,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +127,11 @@ class ContextRetriever:
             empty and a warning is logged.
         """
         try:
+            if not await self._store.has_any_collection(_RETRIEVAL_COLLECTIONS):
+                logger.info(
+                    "RAG index is unavailable; continuing review with diff only",
+                )
+                return RetrievalResult()
             query_vec = await self._build_query_vector(pr)
             results = await asyncio.gather(
                 self._fetch_security(query_vec),
@@ -134,11 +145,12 @@ class ContextRetriever:
                 performance=results[2],
                 tests=results[3],
             )
-        except Exception:
+        except Exception as exc:
             logger.warning(
-                "RAG retrieval failed; continuing review with diff only",
-                exc_info=True,
+                "RAG retrieval failed; continuing review with diff only: %s",
+                exc,
             )
+            logger.debug("RAG retrieval traceback", exc_info=True)
             return RetrievalResult()
 
     # ------------------------------------------------------------------
