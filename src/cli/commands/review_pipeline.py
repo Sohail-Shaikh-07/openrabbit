@@ -29,6 +29,7 @@ async def run_agent_review(
     settings: Settings | None = None,
     agents: list[BaseReviewAgent] | None = None,
     retrieval_result: Any | None = None,
+    pr_history: Any | None = None,
     env: dict[str, str] | None = None,
     ranker: CommentRanker | None = None,
 ) -> ReviewPipelineResult:
@@ -41,6 +42,7 @@ async def run_agent_review(
     state: ReviewState = {
         "pr_payload": pr_payload,
         "retrieval_result": retrieval_result,
+        "pr_history": pr_history,
         "agent_results": [],
         "error": None,
     }

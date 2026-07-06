@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Protocol, TextIO
 
 from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
@@ -18,6 +18,10 @@ from cli.logging import get_logger
 from configs.settings import Settings
 from github_ import GitHubAuthError, GitHubClient, PullRequestParser, RepositoryHandle
 from github_.publisher import GitHubPublisher
+from memory.fingerprints import fingerprint_finding
+from memory.history import PullRequestHistory
+from memory.models import FindingComparison, FindingStatus, PullRequestMemoryHistory
+from memory.store import SQLitePullRequestMemory
 from ranking.ranker import RankedFinding
 
 _log = get_logger(__name__)
@@ -26,6 +30,23 @@ _log = get_logger(__name__)
 AgentRunner = Callable[..., Awaitable[ReviewPipelineResult]]
 ReviewPublisher = Callable[..., Awaitable[None]]
 ContextLoader = Callable[[Any], Awaitable[Any]]
+
+
+class MemoryStore(Protocol):
+    """Minimal local memory interface used by the review command."""
+
+    def record_review(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        head_sha: str,
+        findings: list[Any],
+        context_loaded: bool,
+        comments_posted: bool,
+    ) -> Any: ...
+
+    def load_history(self, repo: str, pr_number: int) -> PullRequestMemoryHistory: ...
 
 
 async def run_review(
@@ -39,6 +60,7 @@ async def run_review(
     agent_runner: AgentRunner | None = None,
     publisher: ReviewPublisher | None = None,
     context_loader: ContextLoader | None = None,
+    memory_store: MemoryStore | None = None,
 ) -> dict[str, object]:
     """Fetch, review, optionally publish, and return a summary dict.
 
@@ -58,6 +80,30 @@ async def run_review(
     ranked: list[RankedFinding] = []
     dropped_findings_count = 0
     retrieval_result: Any | None = None
+    memory_enabled = settings.memory.enabled
+    memory_comparison: FindingComparison | None = None
+    memory_error: str | None = None
+    memory_store_for_run: MemoryStore | None = None
+    pr_history: PullRequestHistory | None = None
+
+    if memory_enabled:
+        try:
+            memory_store_for_run = memory_store or SQLitePullRequestMemory(
+                settings.resolved_memory_path()
+            )
+            local_history = memory_store_for_run.load_history(handle.full_name, payload.number)
+            pr_history = PullRequestHistory.from_payload(
+                repo=handle.full_name,
+                payload=payload,
+                local=local_history,
+            )
+        except Exception as exc:
+            memory_error = type(exc).__name__
+            _log.warning(
+                "review.memory_load_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
 
     if run_agents:
         loader = context_loader or _load_review_context
@@ -72,7 +118,11 @@ async def run_review(
             retrieval_result = None
         runner = agent_runner or run_agent_review
         pipeline_result = await runner(
-            payload, settings=settings, retrieval_result=retrieval_result, env=env
+            payload,
+            settings=settings,
+            retrieval_result=retrieval_result,
+            pr_history=pr_history,
+            env=env,
         )
         ranked = pipeline_result.ranked_findings
         dropped_findings_count = pipeline_result.dropped_findings_count
@@ -93,6 +143,30 @@ async def run_review(
         comments_posted = True
         publish_status = "posted"
 
+    if memory_enabled:
+        try:
+            store = (
+                memory_store_for_run
+                or memory_store
+                or SQLitePullRequestMemory(settings.resolved_memory_path())
+            )
+            write = store.record_review(
+                repo=handle.full_name,
+                pr_number=payload.number,
+                head_sha=payload.head_sha,
+                findings=[rf.finding for rf in ranked],
+                context_loaded=context_loaded,
+                comments_posted=comments_posted,
+            )
+            memory_comparison = write.comparison
+        except Exception as exc:
+            memory_error = type(exc).__name__
+            _log.warning(
+                "review.memory_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
     return {
         "repo": handle.full_name,
         "number": payload.number,
@@ -107,9 +181,12 @@ async def run_review(
         "findings_count": len(ranked),
         "dropped_findings_count": dropped_findings_count,
         "context_loaded": context_loaded,
-        "findings": [_serialize_ranked_finding(rf) for rf in ranked],
+        "findings": _serialize_ranked_findings(ranked, memory_comparison),
         "comments_posted": comments_posted,
         "publish_status": publish_status,
+        "memory_enabled": memory_enabled,
+        "memory_status_counts": _memory_status_counts(memory_comparison),
+        "memory_error": memory_error,
     }
 
 
@@ -142,6 +219,12 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
         print("  Published:    no findings to post", file=out)
     elif publish_status == "dry_run":
         print("  Published:    no (dry run)", file=out)
+    memory_enabled = summary.get("memory_enabled")
+    if isinstance(memory_enabled, bool):
+        print(f"  Memory:       {'enabled' if memory_enabled else 'disabled'}", file=out)
+    memory_error = summary.get("memory_error")
+    if isinstance(memory_error, str) and memory_error:
+        print(f"  Memory error: {memory_error}", file=out)
     if findings:
         print("", file=out)
         print("Model findings:", file=out)
@@ -164,10 +247,43 @@ def run_review_blocking(
     return asyncio.run(run_review(settings, number=number, repo=repo, env=env, dry_run=dry_run))
 
 
-def _serialize_ranked_finding(ranked: RankedFinding) -> dict[str, object]:
+def _serialize_ranked_finding(
+    ranked: RankedFinding,
+    *,
+    memory_status: FindingStatus | None = None,
+) -> dict[str, object]:
     finding = ranked.finding.as_dict()
     finding["score"] = ranked.score
+    if memory_status is not None:
+        finding["memory_status"] = memory_status.value
     return finding
+
+
+def _serialize_ranked_findings(
+    ranked: list[RankedFinding],
+    memory_comparison: FindingComparison | None,
+) -> list[dict[str, object]]:
+    statuses: dict[str, FindingStatus] = {}
+    if memory_comparison is not None:
+        statuses = {record.fingerprint: record.status for record in memory_comparison.current}
+    return [
+        _serialize_ranked_finding(
+            rf,
+            memory_status=statuses.get(fingerprint_finding(rf.finding)),
+        )
+        for rf in ranked
+    ]
+
+
+def _memory_status_counts(memory_comparison: FindingComparison | None) -> dict[str, int]:
+    if memory_comparison is None:
+        return {}
+    counts: dict[str, int] = {}
+    for record in memory_comparison.current:
+        counts[record.status.value] = counts.get(record.status.value, 0) + 1
+    if memory_comparison.resolved:
+        counts[FindingStatus.POSSIBLY_FIXED.value] = len(memory_comparison.resolved)
+    return counts
 
 
 async def _load_review_context(pr_payload: Any) -> Any:

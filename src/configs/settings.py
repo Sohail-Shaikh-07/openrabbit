@@ -16,10 +16,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from configs.schema import (
     GithubSettings,
+    MemorySettings,
     ModelSettings,
     PollingSettings,
     RepositorySettings,
@@ -50,6 +51,8 @@ class Settings(BaseModel):
     polling: PollingSettings = PollingSettings()
     github: GithubSettings = GithubSettings()
     repository: RepositorySettings = RepositorySettings()
+    memory: MemorySettings = MemorySettings()
+    _config_dir: Path | None = PrivateAttr(default=None)
 
     def resolved_github_token(self, env: dict[str, str] | None = None) -> str | None:
         """Return the GitHub token using the documented precedence rules.
@@ -75,6 +78,17 @@ class Settings(BaseModel):
         if token:
             return token
         return _persistent_windows_env(self.model.api_key_env)
+
+    def resolved_memory_path(self) -> Path:
+        """Return the SQLite path used for local PR memory."""
+        if self.memory.path:
+            raw = Path(self.memory.path).expanduser()
+            if raw.is_absolute():
+                return raw
+            base = self._config_dir or Path.cwd() / CONFIG_SUBDIR
+            return (base / raw).resolve()
+        base = self._config_dir or Path.cwd() / CONFIG_SUBDIR
+        return base / "state" / "openrabbit.db"
 
 
 def find_config_file(start: Path) -> Path:
@@ -156,7 +170,12 @@ def load_settings(
     overrides = _env_overrides(env_map)
     _reject_inline_model_secrets(overrides)
     merged = _deep_merge(raw, overrides)
-    return Settings.model_validate(merged)
+    settings = Settings.model_validate(merged)
+    if repo_config_path is not None:
+        settings._config_dir = repo_config_path.parent
+    elif user_config_path is not None:
+        settings._config_dir = user_config_path.parent
+    return settings
 
 
 def _find_repo_config_file(start: Path, *, user_config_path: Path | None) -> Path | None:

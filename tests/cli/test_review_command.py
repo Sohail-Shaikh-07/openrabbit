@@ -14,6 +14,7 @@ from cli.commands.review import render_summary, run_review
 from cli.commands.review_pipeline import ReviewPipelineResult
 from configs import load_settings
 from github_ import GitHubAPIError
+from memory.store import SQLitePullRequestMemory
 from rag.retriever import RetrievalResult
 from ranking.ranker import RankedFinding
 
@@ -149,6 +150,83 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
     assert summary["findings"][0]["score"] == 2.7
     assert summary["comments_posted"] is False
     assert summary["publish_status"] == "dry_run"
+
+
+@respx.mock
+async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "filename": "src/a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "changes": 1,
+                    "patch": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+    finding = Finding(
+        severity=Severity.high,
+        category="security",
+        file="src/a.py",
+        line=2,
+        confidence=0.9,
+        title="SQL injection in query builder",
+        reason="Raw SQL is built from input.",
+        suggestion="Use bind parameters.",
+    )
+    captured_history: list[object] = []
+
+    async def fake_runner(*_args: object, **_kwargs: object) -> ReviewPipelineResult:
+        captured_history.append(_kwargs.get("pr_history"))
+        return ReviewPipelineResult(
+            agent_results=[],
+            ranked_findings=[RankedFinding(finding=finding, score=2.7)],
+        )
+
+    settings = load_settings(scaffold_repo, env={})
+    store = SQLitePullRequestMemory(scaffold_repo / ".openrabbit" / "state" / "test.db")
+
+    first = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=_empty_context_loader,
+        dry_run=True,
+        memory_store=store,
+    )
+    second = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=_empty_context_loader,
+        dry_run=True,
+        memory_store=store,
+    )
+
+    first_history = captured_history[0]
+    second_history = captured_history[1]
+    assert first["memory_enabled"] is True
+    assert first_history is not None
+    assert second_history is not None
+    assert first_history.local.last_reviewed_sha is None
+    assert second_history.local.last_reviewed_sha == "abcdef0123456789" + "0" * 24
+    assert first["memory_status_counts"] == {"new": 1}
+    assert first["findings"][0]["memory_status"] == "new"
+    assert second["memory_status_counts"] == {"still_present": 1}
+    assert second["findings"][0]["memory_status"] == "still_present"
 
 
 @respx.mock

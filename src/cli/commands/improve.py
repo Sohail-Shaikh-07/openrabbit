@@ -20,6 +20,7 @@ from agents.prompting import (
     NO_PROJECT_CONTEXT,
     REVIEW_DISCIPLINE,
     collect_context,
+    collect_history_context,
     format_changed_line_evidence,
     format_prompt_diff,
 )
@@ -28,6 +29,8 @@ from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
 from github_ import GitHubClient, PullRequestParser, RepositoryHandle
+from memory.history import PullRequestHistory
+from memory.store import SQLitePullRequestMemory
 from ranking.grounding import DiffGroundingIndex, build_diff_grounding_index
 
 _log = get_logger(__name__)
@@ -78,6 +81,9 @@ Pull request:
 
 Project context:
 {project_context}
+
+PR history context:
+{history_context}
 
 {changed_line_evidence}
 
@@ -139,6 +145,7 @@ async def run_improve(
         payload,
         settings=settings,
         retrieval_result=retrieval_result,
+        pr_history=_load_local_history(settings, handle.full_name, payload),
         env=env,
     )
     result = _ground_suggestions(raw_suggestions, payload)
@@ -218,10 +225,11 @@ async def _generate_improvements(
     *,
     settings: Settings,
     retrieval_result: Any | None,
+    pr_history: PullRequestHistory | None = None,
     env: dict[str, str] | None,
 ) -> list[ImprovementSuggestion]:
     client = _build_improve_client(settings, env=env)
-    prompt = _build_prompt(pr_payload, retrieval_result)
+    prompt = _build_prompt(pr_payload, retrieval_result, pr_history)
     raw = await client.generate(prompt)
     return _parse_suggestions(raw)
 
@@ -233,8 +241,16 @@ def _build_improve_client(settings: Settings, *, env: dict[str, str] | None) -> 
     return build_llm_client(settings.model, api_key=api_key)
 
 
-def _build_prompt(pr_payload: Any, retrieval_result: Any | None) -> str:
-    state: ReviewState = {"pr_payload": pr_payload, "retrieval_result": retrieval_result}
+def _build_prompt(
+    pr_payload: Any,
+    retrieval_result: Any | None,
+    pr_history: PullRequestHistory | None = None,
+) -> str:
+    state: ReviewState = {
+        "pr_payload": pr_payload,
+        "retrieval_result": retrieval_result,
+        "pr_history": pr_history,
+    }
     pr = pr_payload.pull_request
     hunk_total = sum(len(f.hunks) for f in pr_payload.files)
     binary_count = sum(1 for f in pr_payload.files if f.is_binary)
@@ -255,10 +271,31 @@ def _build_prompt(pr_payload: Any, retrieval_result: Any | None) -> str:
         binary_files=binary_count,
         hunks=hunk_total,
         project_context=project_context,
+        history_context=collect_history_context(state),
         changed_line_evidence=format_changed_line_evidence(pr_payload),
         diff=format_prompt_diff(pr_payload),
         review_discipline=REVIEW_DISCIPLINE,
     )
+
+
+def _load_local_history(
+    settings: Settings,
+    repo: str,
+    pr_payload: Any,
+) -> PullRequestHistory | None:
+    if not settings.memory.enabled:
+        return None
+    try:
+        store = SQLitePullRequestMemory(settings.resolved_memory_path())
+        local = store.load_history(repo, int(getattr(pr_payload, "number", 0) or 0))
+        return PullRequestHistory.from_payload(repo=repo, payload=pr_payload, local=local)
+    except Exception as exc:
+        _log.warning(
+            "improve.memory_load_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return None
 
 
 def _parse_suggestions(raw: str) -> list[ImprovementSuggestion]:

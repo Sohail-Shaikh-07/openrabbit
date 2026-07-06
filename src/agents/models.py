@@ -133,6 +133,9 @@ class ReviewState(TypedDict, total=False):
     retrieval_result: Any
     """The :class:`~rag.retriever.RetrievalResult` for this PR."""
 
+    pr_history: Any
+    """The :class:`~memory.history.PullRequestHistory` for this PR."""
+
     agent_results: list[AgentResult]
     """Accumulated results from all review agents."""
 

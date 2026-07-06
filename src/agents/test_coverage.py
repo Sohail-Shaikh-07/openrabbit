@@ -18,6 +18,7 @@ from agents.prompting import (
     JSON_RESPONSE_CONTRACT,
     REVIEW_DISCIPLINE,
     collect_context,
+    collect_history_context,
     format_changed_line_evidence,
     format_prompt_diff,
 )
@@ -41,6 +42,9 @@ Coverage classes to consider:
 
 Existing test context:
 {test_context}
+
+PR history context:
+{history_context}
 
 {changed_line_evidence}
 
@@ -73,6 +77,7 @@ class TestCoverageAgent(BaseReviewAgent):
             changed_line_evidence = format_changed_line_evidence(state.get("pr_payload"))
             prompt = _PROMPT_TEMPLATE.format(
                 test_context=test_context,
+                history_context=collect_history_context(state),
                 changed_line_evidence=changed_line_evidence,
                 diff=diff,
                 review_discipline=REVIEW_DISCIPLINE,

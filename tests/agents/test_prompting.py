@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from agents.prompting import (
+    collect_history_context,
     estimate_prompt_tokens,
     format_changed_line_evidence,
     format_prompt_diff,
@@ -184,3 +185,16 @@ def test_format_prompt_diff_summarizes_binary_files() -> None:
 
     assert "assets/logo.png" in diff
     assert "binary, renamed-without-patch, or too-large patch omitted by GitHub" in diff
+
+
+def test_collect_history_context_formats_pr_history() -> None:
+    history = SimpleNamespace(
+        local=SimpleNamespace(last_reviewed_sha="abc123", previous_findings=[]),
+        commit_shas=[],
+        conversation=[],
+    )
+
+    text = collect_history_context({"pr_history": history})
+
+    assert "PR history:" in text
+    assert "Last reviewed SHA: abc123" in text

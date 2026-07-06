@@ -25,6 +25,9 @@ def test_run_init_creates_all_templates(tmp_path: Path) -> None:
     assert result.overwritten == []
     for name, content in TEMPLATES.items():
         assert (scaffold / name).read_text(encoding="utf-8") == content
+    assert (scaffold / ".gitignore").read_text(
+        encoding="utf-8"
+    ) == "state/\nmemory/\ncache/\n*.db\n"
 
 
 def test_run_init_refuses_to_overwrite_without_force(tmp_path: Path) -> None:
