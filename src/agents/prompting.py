@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from agents.models import ReviewState
+from memory.history import PullRequestHistory, format_history_context
 
 REVIEW_DISCIPLINE = """Review discipline:
 - Prioritize high-signal findings that a senior maintainer would act on before merge.
@@ -120,6 +121,14 @@ def collect_context(state: ReviewState, *dimensions: str) -> str:
             items.extend(value)
 
     return format_context(items)
+
+
+def collect_history_context(state: ReviewState) -> str:
+    """Return formatted PR memory and conversation context."""
+    history = state.get("pr_history")
+    if isinstance(history, PullRequestHistory):
+        return format_history_context(history)
+    return format_history_context(history)
 
 
 def format_changed_line_evidence(

@@ -119,3 +119,24 @@ class GithubSettings(BaseModel):
         if not value.strip():
             raise ValueError("token_env must be a non-empty environment variable name")
         return value
+
+
+class MemorySettings(BaseModel):
+    """Local PR memory settings.
+
+    Memory is local-first and stores only derived review metadata. The default
+    path is resolved beside the repository config by :class:`Settings`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    path: str | None = None
+
+    @field_validator("path")
+    @classmethod
+    def _normalise_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None

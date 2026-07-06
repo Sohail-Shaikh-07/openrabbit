@@ -13,9 +13,12 @@ from dataclasses import dataclass
 from github_.client import GitHubClient
 from github_.models import (
     Branch,
+    IssueComment,
     PullRequest,
     PullRequestCommit,
     PullRequestFile,
+    PullRequestReview,
+    PullRequestReviewComment,
     PullRequestState,
     PullRequestSummary,
     Repository,
@@ -68,6 +71,15 @@ class RepositoryHandle:
 
     async def list_pull_commits(self, number: int) -> list[PullRequestCommit]:
         return await self.client.list_pull_commits(self.owner, self.repo, number)
+
+    async def list_pull_reviews(self, number: int) -> list[PullRequestReview]:
+        return await self.client.list_pull_reviews(self.owner, self.repo, number)
+
+    async def list_pull_review_comments(self, number: int) -> list[PullRequestReviewComment]:
+        return await self.client.list_pull_review_comments(self.owner, self.repo, number)
+
+    async def list_issue_comments(self, number: int) -> list[IssueComment]:
+        return await self.client.list_issue_comments(self.owner, self.repo, number)
 
     async def create_review(
         self,

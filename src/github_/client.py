@@ -25,9 +25,12 @@ from cli.logging import get_logger
 from configs.settings import Settings
 from github_.models import (
     Branch,
+    IssueComment,
     PullRequest,
     PullRequestCommit,
     PullRequestFile,
+    PullRequestReview,
+    PullRequestReviewComment,
     PullRequestState,
     PullRequestSummary,
     Repository,
@@ -68,6 +71,9 @@ _PR_SUMMARIES = TypeAdapter(list[PullRequestSummary])
 _PR_FILES = TypeAdapter(list[PullRequestFile])
 _PR_COMMITS = TypeAdapter(list[PullRequestCommit])
 _BRANCHES = TypeAdapter(list[Branch])
+_PR_REVIEWS = TypeAdapter(list[PullRequestReview])
+_PR_REVIEW_COMMENTS = TypeAdapter(list[PullRequestReviewComment])
+_ISSUE_COMMENTS = TypeAdapter(list[IssueComment])
 
 
 class GitHubClient:
@@ -208,6 +214,48 @@ class GitHubClient:
             params={"per_page": per_page},
         )
         return _PR_COMMITS.validate_python(pages)
+
+    async def list_pull_reviews(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        *,
+        per_page: int = 100,
+    ) -> list[PullRequestReview]:
+        pages = await self._get_paginated(
+            f"/repos/{owner}/{repo}/pulls/{number}/reviews",
+            params={"per_page": per_page},
+        )
+        return _PR_REVIEWS.validate_python(pages)
+
+    async def list_pull_review_comments(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        *,
+        per_page: int = 100,
+    ) -> list[PullRequestReviewComment]:
+        pages = await self._get_paginated(
+            f"/repos/{owner}/{repo}/pulls/{number}/comments",
+            params={"per_page": per_page},
+        )
+        return _PR_REVIEW_COMMENTS.validate_python(pages)
+
+    async def list_issue_comments(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        *,
+        per_page: int = 100,
+    ) -> list[IssueComment]:
+        pages = await self._get_paginated(
+            f"/repos/{owner}/{repo}/issues/{number}/comments",
+            params={"per_page": per_page},
+        )
+        return _ISSUE_COMMENTS.validate_python(pages)
 
     async def create_review(
         self,

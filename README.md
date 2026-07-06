@@ -15,6 +15,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
+| PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, PR conversation models |
 | RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
@@ -173,6 +174,7 @@ This creates:
   security_rules.md
   review_examples.md
   ignore.txt
+  .gitignore
 ```
 
 A minimal config:
@@ -199,6 +201,11 @@ github:
 
 repository:
   target: owner/repo
+
+memory:
+  enabled: true
+  # Local SQLite memory is stored under .openrabbit/state by default.
+  # path: state/openrabbit.db
 ```
 
 For the official OpenAI API, use `provider: openai` and put the API model in `model_name`. You do not need `base_model` for API providers:
@@ -232,6 +239,8 @@ OpenRabbit loads configuration in layers:
 4. `OPENRABBIT_...` environment overrides
 
 Use the user config for repeated local defaults such as model provider, model name, polling interval, or `github.token_env`. Keep repository-specific review rules in the repo config. Do not store token values or model API keys in either config file; store secrets in environment variables and reference their names.
+
+OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md).
 
 Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 
@@ -279,13 +288,15 @@ openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 
 Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
 
+Each review records local structured memory when `memory.enabled` is true. The summary includes memory state, and each finding can be tagged as `new` or `still_present` based on prior OpenRabbit runs for the same PR.
+
 Review agents receive changed-line evidence before the full diff. For larger pull requests, OpenRabbit rebuilds a compact diff from parsed GitHub hunks, prioritizes risky and code-heavy files, keeps prompts within a deterministic token budget, and includes an omission note when content is left out.
 
 Today, `model.provider: ollama`, `model.provider: openai`, and `model.provider: openai-compatible` are implemented. The model layer uses a shared provider contract so more runtimes can plug into the same review-agent pipeline.
 
 ### `openrabbit describe`
 
-Fetches one PR, loads indexed repository context when available, and prints a read-only summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`, but it never publishes comments or mutates the pull request.
+Fetches one PR, loads indexed repository context and local PR memory when available, and prints a read-only summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`, but it never publishes comments or mutates the pull request.
 
 ```bash
 openrabbit describe --pr 42 --repo owner/repo
@@ -294,7 +305,7 @@ openrabbit --quiet describe --pr 42 --repo owner/repo
 
 ### `openrabbit ask`
 
-Fetches one PR, loads indexed repository context when available, and answers a focused question about the pull request. The answer is separated into direct answer, evidence, uncertainty, and follow-up checks. The command uses the same configured model provider as `openrabbit review`, but it never posts comments or mutates the pull request.
+Fetches one PR, loads indexed repository context and local PR memory when available, and answers a focused question about the pull request. The answer is separated into direct answer, evidence, uncertainty, and follow-up checks. The command uses the same configured model provider as `openrabbit review`, but it never posts comments or mutates the pull request.
 
 ```bash
 openrabbit ask --pr 42 --repo owner/repo "Does this change add enough test coverage?"
@@ -303,7 +314,7 @@ openrabbit --quiet ask --pr 42 --repo owner/repo "What files should I inspect fi
 
 ### `openrabbit improve`
 
-Fetches one PR, loads indexed repository context when available, and prints read-only improvement suggestions for changed lines. Suggestions are grounded to changed files and changed new-side lines before they are shown. The command uses the same configured model provider as `openrabbit review`, but it never applies patches, pushes commits, or posts comments.
+Fetches one PR, loads indexed repository context and local PR memory when available, and prints read-only improvement suggestions for changed lines. Suggestions are grounded to changed files and changed new-side lines before they are shown. The command uses the same configured model provider as `openrabbit review`, but it never applies patches, pushes commits, or posts comments.
 
 ```bash
 openrabbit improve --pr 42 --repo owner/repo
@@ -354,6 +365,7 @@ src/
   cli/           Typer entry point and subcommands
   configs/       YAML and environment configuration
   github_/       GitHub REST client, PR parser, polling, publisher
+  memory/        Local PR memory, fingerprints, history formatting
   rag/           Repository scanner, chunker, embeddings, Qdrant store
   agents/        Local multi-agent review pipeline
   ranking/       Changed-line grounding, deduplication, scoring

@@ -1,0 +1,321 @@
+"""SQLite-backed local memory store for PR reviews."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from agents.models import Finding
+from memory.fingerprints import fingerprint_finding
+from memory.models import (
+    FindingComparison,
+    FindingMemoryRecord,
+    FindingStatus,
+    PullRequestMemoryHistory,
+    ReviewMemoryWrite,
+    finding_payload,
+)
+
+
+class SQLitePullRequestMemory:
+    """Persist structured PR review memory in a local SQLite database."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialise()
+
+    def load_history(self, repo: str, pr_number: int) -> PullRequestMemoryHistory:
+        """Return stored memory for ``repo`` PR ``pr_number``."""
+        with self._connect() as con:
+            last_reviewed_sha = con.execute(
+                """
+                SELECT head_sha
+                FROM review_runs
+                WHERE repo = ? AND pr_number = ?
+                ORDER BY reviewed_at DESC, id DESC
+                LIMIT 1
+                """,
+                (repo, pr_number),
+            ).fetchone()
+            rows = con.execute(
+                """
+                SELECT *
+                FROM findings
+                WHERE repo = ? AND pr_number = ?
+                ORDER BY last_seen_at DESC, id DESC
+                """,
+                (repo, pr_number),
+            ).fetchall()
+
+        return PullRequestMemoryHistory(
+            repo=repo,
+            pr_number=pr_number,
+            last_reviewed_sha=str(last_reviewed_sha["head_sha"]) if last_reviewed_sha else None,
+            previous_findings=[_record_from_row(row) for row in rows],
+        )
+
+    def compare_with_history(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        head_sha: str,
+        current_findings: Iterable[Finding],
+    ) -> FindingComparison:
+        """Compare current findings to stored memory without writing a run."""
+        history = self.load_history(repo, pr_number)
+        previous = {record.fingerprint: record for record in history.previous_findings}
+        current_records: list[FindingMemoryRecord] = []
+        seen: set[str] = set()
+        now = _now()
+
+        for finding in current_findings:
+            fingerprint = fingerprint_finding(finding)
+            seen.add(fingerprint)
+            old = previous.get(fingerprint)
+            status = FindingStatus.STILL_PRESENT if old else FindingStatus.NEW
+            current_records.append(
+                _record_from_finding(
+                    finding,
+                    fingerprint=fingerprint,
+                    status=status,
+                    first_seen_sha=old.first_seen_sha if old else head_sha,
+                    last_seen_sha=head_sha,
+                    first_seen_at=old.first_seen_at if old else now,
+                    last_seen_at=now,
+                )
+            )
+
+        resolved = [
+            _replace_status(record, FindingStatus.POSSIBLY_FIXED, head_sha=head_sha, now=now)
+            for fingerprint, record in previous.items()
+            if fingerprint not in seen
+        ]
+        return FindingComparison(current=current_records, resolved=resolved)
+
+    def record_review(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        head_sha: str,
+        findings: Iterable[Finding],
+        context_loaded: bool,
+        comments_posted: bool,
+    ) -> ReviewMemoryWrite:
+        """Persist one review run and its finding comparison."""
+        findings_list = list(findings)
+        comparison = self.compare_with_history(
+            repo=repo,
+            pr_number=pr_number,
+            head_sha=head_sha,
+            current_findings=findings_list,
+        )
+        now = _now()
+        with self._connect() as con:
+            cursor = con.execute(
+                """
+                INSERT INTO review_runs
+                    (repo, pr_number, head_sha, reviewed_at, context_loaded, comments_posted)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    repo,
+                    pr_number,
+                    head_sha,
+                    _dump_dt(now),
+                    int(context_loaded),
+                    int(comments_posted),
+                ),
+            )
+            review_id = int(cursor.lastrowid or 0)
+            for record in comparison.current:
+                _upsert_finding(con, repo, pr_number, record)
+            con.commit()
+        return ReviewMemoryWrite(review_id=review_id, comparison=comparison)
+
+    def _initialise(self) -> None:
+        with self._connect() as con:
+            con.executescript("""
+                CREATE TABLE IF NOT EXISTS review_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    repo TEXT NOT NULL,
+                    pr_number INTEGER NOT NULL,
+                    head_sha TEXT NOT NULL,
+                    reviewed_at TEXT NOT NULL,
+                    context_loaded INTEGER NOT NULL,
+                    comments_posted INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_review_runs_pr
+                    ON review_runs(repo, pr_number, reviewed_at);
+
+                CREATE TABLE IF NOT EXISTS findings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    repo TEXT NOT NULL,
+                    pr_number INTEGER NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    line INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    suggestion TEXT NOT NULL,
+                    first_seen_sha TEXT NOT NULL,
+                    last_seen_sha TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    UNIQUE(repo, pr_number, fingerprint)
+                );
+                """)
+            con.commit()
+
+    def _connect(self) -> sqlite3.Connection:
+        con = sqlite3.connect(self.path)
+        con.row_factory = sqlite3.Row
+        return con
+
+
+def _upsert_finding(
+    con: sqlite3.Connection,
+    repo: str,
+    pr_number: int,
+    record: FindingMemoryRecord,
+) -> None:
+    con.execute(
+        """
+        INSERT INTO findings (
+            repo, pr_number, fingerprint, status, title, category, severity,
+            file, line, reason, suggestion, first_seen_sha, last_seen_sha,
+            first_seen_at, last_seen_at, payload_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(repo, pr_number, fingerprint) DO UPDATE SET
+            status = excluded.status,
+            title = excluded.title,
+            category = excluded.category,
+            severity = excluded.severity,
+            file = excluded.file,
+            line = excluded.line,
+            reason = excluded.reason,
+            suggestion = excluded.suggestion,
+            last_seen_sha = excluded.last_seen_sha,
+            last_seen_at = excluded.last_seen_at,
+            payload_json = excluded.payload_json
+        """,
+        (
+            repo,
+            pr_number,
+            record.fingerprint,
+            record.status.value,
+            record.title,
+            record.category,
+            record.severity,
+            record.file,
+            record.line,
+            record.reason,
+            record.suggestion,
+            record.first_seen_sha,
+            record.last_seen_sha,
+            _dump_dt(record.first_seen_at),
+            _dump_dt(record.last_seen_at),
+            json.dumps(record.payload, sort_keys=True),
+        ),
+    )
+
+
+def _record_from_finding(
+    finding: Finding,
+    *,
+    fingerprint: str,
+    status: FindingStatus,
+    first_seen_sha: str,
+    last_seen_sha: str,
+    first_seen_at: datetime,
+    last_seen_at: datetime,
+) -> FindingMemoryRecord:
+    return FindingMemoryRecord(
+        fingerprint=fingerprint,
+        status=status,
+        title=finding.title,
+        category=finding.category,
+        severity=finding.severity.name,
+        file=finding.file,
+        line=finding.line,
+        reason=finding.reason,
+        suggestion=finding.suggestion,
+        first_seen_sha=first_seen_sha,
+        last_seen_sha=last_seen_sha,
+        first_seen_at=first_seen_at,
+        last_seen_at=last_seen_at,
+        payload=finding_payload(finding),
+    )
+
+
+def _record_from_row(row: sqlite3.Row) -> FindingMemoryRecord:
+    return FindingMemoryRecord(
+        fingerprint=str(row["fingerprint"]),
+        status=FindingStatus(str(row["status"])),
+        title=str(row["title"]),
+        category=str(row["category"]),
+        severity=str(row["severity"]),
+        file=str(row["file"]),
+        line=int(row["line"]),
+        reason=str(row["reason"]),
+        suggestion=str(row["suggestion"]),
+        first_seen_sha=str(row["first_seen_sha"]),
+        last_seen_sha=str(row["last_seen_sha"]),
+        first_seen_at=_load_dt(str(row["first_seen_at"])),
+        last_seen_at=_load_dt(str(row["last_seen_at"])),
+        payload=_load_json(str(row["payload_json"])),
+    )
+
+
+def _replace_status(
+    record: FindingMemoryRecord,
+    status: FindingStatus,
+    *,
+    head_sha: str,
+    now: datetime,
+) -> FindingMemoryRecord:
+    return FindingMemoryRecord(
+        fingerprint=record.fingerprint,
+        status=status,
+        title=record.title,
+        category=record.category,
+        severity=record.severity,
+        file=record.file,
+        line=record.line,
+        reason=record.reason,
+        suggestion=record.suggestion,
+        first_seen_sha=record.first_seen_sha,
+        last_seen_sha=head_sha,
+        first_seen_at=record.first_seen_at,
+        last_seen_at=now,
+        payload=record.payload,
+    )
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _dump_dt(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat()
+
+
+def _load_dt(value: str) -> datetime:
+    return datetime.fromisoformat(value)
+
+
+def _load_json(value: str) -> dict[str, Any]:
+    loaded = json.loads(value)
+    return loaded if isinstance(loaded, dict) else {}

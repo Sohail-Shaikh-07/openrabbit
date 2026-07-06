@@ -35,7 +35,15 @@ def _write_user_config(home: Path, body: str) -> Path:
 def test_defaults_match_init_template(scaffold_repo: Path) -> None:
     settings = load_settings(scaffold_repo, env={})
 
-    assert settings == Settings()
+    assert settings.model_dump() == Settings().model_dump()
+
+
+def test_load_settings_resolves_memory_path_under_openrabbit_state(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
+
+    assert (
+        settings.resolved_memory_path() == scaffold_repo / ".openrabbit" / "state" / "openrabbit.db"
+    )
 
 
 def test_load_settings_walks_up_from_subdir(tmp_path: Path) -> None:

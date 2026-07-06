@@ -145,3 +145,40 @@ class Review(_APIObject):
     state: str
     html_url: str
     submitted_at: datetime | None = None
+
+
+class PullRequestReview(_APIObject):
+    """A review already present on a pull request."""
+
+    id: int
+    user: User
+    body: str | None = None
+    state: str
+    commit_id: str | None = None
+    html_url: str
+    submitted_at: datetime | None = None
+
+
+class PullRequestReviewComment(_APIObject):
+    """An inline review comment already present on a pull request."""
+
+    id: int
+    user: User
+    body: str
+    path: str
+    line: int | None = None
+    commit_id: str | None = None
+    html_url: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class IssueComment(_APIObject):
+    """A top-level issue/PR conversation comment."""
+
+    id: int
+    user: User
+    body: str
+    html_url: str
+    created_at: datetime
+    updated_at: datetime

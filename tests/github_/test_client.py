@@ -231,3 +231,67 @@ async def test_create_review_sends_payload() -> None:
     assert review.id == 99
     assert "looks good" in str(captured["body"])
     assert "src/a.py" in str(captured["body"])
+
+
+@respx.mock
+async def test_list_pull_conversation_sources_returns_typed_objects() -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/1/reviews").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 10,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "Please fix the query.",
+                    "state": "COMMENTED",
+                    "commit_id": "a" * 40,
+                    "submitted_at": "2026-01-01T00:00:00Z",
+                    "html_url": "https://github.com/o/r/pull/1#pullrequestreview-10",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/1/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 20,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "This line is unsafe.",
+                    "path": "src/a.py",
+                    "line": 2,
+                    "commit_id": "a" * 40,
+                    "created_at": "2026-01-01T00:01:00Z",
+                    "updated_at": "2026-01-01T00:02:00Z",
+                    "html_url": "https://github.com/o/r/pull/1#discussion_r20",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 30,
+                    "user": {"login": "author", "id": 3},
+                    "body": "Fixed in the latest commit.",
+                    "created_at": "2026-01-01T00:03:00Z",
+                    "updated_at": "2026-01-01T00:04:00Z",
+                    "html_url": "https://github.com/o/r/pull/1#issuecomment-30",
+                }
+            ],
+        )
+    )
+
+    async with _client() as client:
+        reviews = await client.list_pull_reviews("o", "r", 1)
+        review_comments = await client.list_pull_review_comments("o", "r", 1)
+        issue_comments = await client.list_issue_comments("o", "r", 1)
+
+    assert reviews[0].body == "Please fix the query."
+    assert reviews[0].user.login == "reviewer"
+    assert review_comments[0].path == "src/a.py"
+    assert review_comments[0].line == 2
+    assert issue_comments[0].body == "Fixed in the latest commit."

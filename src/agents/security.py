@@ -24,6 +24,7 @@ from agents.prompting import (
     JSON_RESPONSE_CONTRACT,
     REVIEW_DISCIPLINE,
     collect_context,
+    collect_history_context,
     format_changed_line_evidence,
     format_prompt_diff,
 )
@@ -53,6 +54,9 @@ Security review rules:
 
 Project security context:
 {project_context}
+
+PR history context:
+{history_context}
 
 {changed_line_evidence}
 
@@ -86,6 +90,7 @@ class SecurityAgent(BaseReviewAgent):
             prompt = _PROMPT_TEMPLATE.format(
                 diff=diff,
                 project_context=project_context,
+                history_context=collect_history_context(state),
                 changed_line_evidence=changed_line_evidence,
                 review_discipline=REVIEW_DISCIPLINE,
                 json_contract=JSON_RESPONSE_CONTRACT,

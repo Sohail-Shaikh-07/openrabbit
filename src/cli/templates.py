@@ -47,6 +47,18 @@ github:
 repository:
   # Default repository OpenRabbit watches when --repo is not passed.
   # target: owner/repo
+
+memory:
+  enabled: true
+  # Local SQLite memory is stored under .openrabbit/state by default.
+  # path: state/openrabbit.db
+"""
+
+GITIGNORE: Final[str] = """\
+state/
+memory/
+cache/
+*.db
 """
 
 ARCHITECTURE_MD: Final[str] = """\
@@ -142,4 +154,5 @@ TEMPLATES: Final[dict[str, str]] = {
     "security_rules.md": SECURITY_RULES_MD,
     "review_examples.md": REVIEW_EXAMPLES_MD,
     "ignore.txt": IGNORE_TXT,
+    ".gitignore": GITIGNORE,
 }
