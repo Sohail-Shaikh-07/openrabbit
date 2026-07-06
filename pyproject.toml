@@ -28,6 +28,7 @@ packages = [
     { include = "models", from = "src" },
     { include = "rag", from = "src" },
     { include = "ranking", from = "src" },
+    { include = "review_controls", from = "src" },
 ]
 include = [
     { path = "src/benchmarks/corpora/*.jsonl", format = ["sdist", "wheel"] },
@@ -111,7 +112,7 @@ ignore = ["E501"]  # line length handled by black
 "src/cli/**" = ["B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "api", "benchmarks", "cli", "configs", "finetuning", "github_", "memory", "models", "rag", "ranking"]
+known-first-party = ["agents", "api", "benchmarks", "cli", "configs", "finetuning", "github_", "memory", "models", "rag", "ranking", "review_controls"]
 
 [tool.black]
 line-length = 100
