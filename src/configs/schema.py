@@ -7,7 +7,26 @@ variables prefixed with ``OPENRABBIT_`` override individual fields using a
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class PathInstruction(BaseModel):
+    """Path-specific review guidance."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    instructions: str
+
+    @field_validator("path", "instructions")
+    @classmethod
+    def _non_empty_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("path instructions must be non-empty")
+        return stripped
 
 
 class ReviewSettings(BaseModel):
@@ -21,6 +40,18 @@ class ReviewSettings(BaseModel):
     bug: bool = True
     test_coverage: bool = True
     style: bool = False
+    profile: Literal["chill", "assertive"] = "assertive"
+    path_include: list[str] = Field(default_factory=list)
+    path_exclude: list[str] = Field(default_factory=list)
+    path_instructions: list[PathInstruction] = Field(default_factory=list)
+    max_files: int = Field(default=80, ge=1, le=500)
+    max_changed_lines: int = Field(default=4000, ge=1, le=50000)
+    include_generated: bool = False
+
+    @field_validator("path_include", "path_exclude")
+    @classmethod
+    def _normalise_path_patterns(cls, values: list[str]) -> list[str]:
+        return [value.strip() for value in values if value.strip()]
 
 
 class ModelSettings(BaseModel):

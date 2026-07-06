@@ -12,6 +12,7 @@ from agents.models import AgentResult, ReviewState
 from configs.settings import Settings
 from ranking.grounding import filter_grounded_findings
 from ranking.ranker import CommentRanker, RankedFinding
+from review_controls import apply_review_controls
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,11 @@ class ReviewPipelineResult:
     agent_results: list[AgentResult]
     ranked_findings: list[RankedFinding]
     dropped_findings_count: int = 0
+    skipped_paths: list[dict[str, str]] | None = None
+
+    @property
+    def skipped_paths_count(self) -> int:
+        return len(self.skipped_paths or [])
 
 
 async def run_agent_review(
@@ -39,8 +45,15 @@ async def run_agent_review(
             raise ValueError("settings are required when agents are not provided")
         agents = build_review_agents(settings, env=env)
 
+    effective_payload = pr_payload
+    skipped_paths: list[dict[str, str]] = []
+    if settings is not None:
+        control_result = apply_review_controls(pr_payload, settings.review)
+        effective_payload = control_result.filtered_payload
+        skipped_paths = [item.as_dict() for item in control_result.skipped_paths]
+
     state: ReviewState = {
-        "pr_payload": pr_payload,
+        "pr_payload": effective_payload,
         "retrieval_result": retrieval_result,
         "pr_history": pr_history,
         "agent_results": [],
@@ -50,7 +63,7 @@ async def run_agent_review(
     result = await compiled.ainvoke(state)
     agent_results = list(result.get("agent_results") or [])
     all_findings = [finding for agent_result in agent_results for finding in agent_result.findings]
-    grounding = filter_grounded_findings(all_findings, pr_payload)
+    grounding = filter_grounded_findings(all_findings, effective_payload)
     grounded_result = AgentResult(
         agent="grounded",
         findings=grounding.kept,
@@ -62,4 +75,5 @@ async def run_agent_review(
         agent_results=agent_results,
         ranked_findings=ranked,
         dropped_findings_count=len(grounding.dropped),
+        skipped_paths=skipped_paths,
     )

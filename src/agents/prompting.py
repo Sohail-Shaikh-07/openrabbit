@@ -8,6 +8,7 @@ from typing import Any
 
 from agents.models import ReviewState
 from memory.history import PullRequestHistory, format_history_context
+from review_controls import format_review_control_context
 
 REVIEW_DISCIPLINE = """Review discipline:
 - Prioritize high-signal findings that a senior maintainer would act on before merge.
@@ -201,22 +202,31 @@ def format_prompt_diff(
     diff string, and large diffs are packed deterministically by file priority.
     """
     max_chars = _token_budget_to_chars(max_tokens)
+    control_context = format_review_control_context(pr_payload)
     raw_diff = _raw_diff(pr_payload)
     if raw_diff and len(raw_diff) <= max_chars:
-        return raw_diff
+        return _prepend_control_context(control_context, raw_diff, max_chars=max_chars)
 
     files = getattr(pr_payload, "files", None)
     if isinstance(files, list) and files:
-        return _format_structured_diff(files, max_chars=max_chars)
-
-    if raw_diff:
-        return _truncate_at_line_boundary(
-            raw_diff,
+        return _prepend_control_context(
+            control_context,
+            _format_structured_diff(files, max_chars=max_chars),
             max_chars=max_chars,
-            note="... raw diff omitted to keep the prompt within budget.",
         )
 
-    return NO_DIFF
+    if raw_diff:
+        return _prepend_control_context(
+            control_context,
+            _truncate_at_line_boundary(
+                raw_diff,
+                max_chars=max_chars,
+                note="... raw diff omitted to keep the prompt within budget.",
+            ),
+            max_chars=max_chars,
+        )
+
+    return _prepend_control_context(control_context, NO_DIFF, max_chars=max_chars)
 
 
 def format_context(items: Iterable[Any]) -> str:
@@ -453,6 +463,17 @@ def _truncate_at_line_boundary(text: str, *, max_chars: int, note: str) -> str:
     if boundary > 0:
         head = head[:boundary]
     return f"{head}\n{note}"
+
+
+def _prepend_control_context(control_context: str, body: str, *, max_chars: int) -> str:
+    if not control_context:
+        return body
+    combined = f"{control_context}\n\n{body}"
+    return _truncate_at_line_boundary(
+        combined,
+        max_chars=max_chars,
+        note="... review controls or diff omitted to keep the prompt within budget.",
+    )
 
 
 def _context_item_parts(item: Any) -> tuple[str, str]:

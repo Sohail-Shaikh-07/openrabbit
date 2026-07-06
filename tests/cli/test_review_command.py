@@ -156,6 +156,59 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
 
 
 @respx.mock
+async def test_run_review_returns_skipped_path_summary(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "filename": "src/a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "changes": 1,
+                    "patch": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                },
+                {
+                    "filename": "docs/usage.md",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "changes": 1,
+                    "patch": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                },
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+
+    async def fake_runner(*_args: object, **_kwargs: object) -> ReviewPipelineResult:
+        return ReviewPipelineResult(
+            agent_results=[],
+            ranked_findings=[],
+            skipped_paths=[{"path": "docs/usage.md", "reason": "path_not_included"}],
+        )
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        dry_run=True,
+        agent_runner=fake_runner,
+        context_loader=_empty_context_loader,
+    )
+
+    assert summary["skipped_paths_count"] == 1
+    assert summary["skipped_paths"] == [{"path": "docs/usage.md", "reason": "path_not_included"}]
+
+
+@respx.mock
 async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> None:
     respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
     respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
@@ -910,3 +963,34 @@ def test_render_summary_prints_context_provenance() -> None:
     assert "Context sources:" in text
     assert "security .openrabbit/security.md" in text
     assert "architecture docs/architecture.md" in text
+
+
+def test_render_summary_prints_skipped_paths() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 7,
+        "title": "Hello",
+        "state": "open",
+        "head_sha": "abcdef012345",
+        "files_changed": 3,
+        "binary_files": 0,
+        "hunks": 1,
+        "commits": 1,
+        "findings_count": 0,
+        "dropped_findings_count": 0,
+        "context_loaded": False,
+        "skipped_paths_count": 2,
+        "skipped_paths": [
+            {"path": "docs/usage.md", "reason": "path_not_included"},
+            {"path": "dist/app.js", "reason": "generated"},
+        ],
+        "publish_status": "no_findings",
+        "findings": [],
+    }
+    out = io.StringIO()
+    render_summary(summary, out)
+
+    text = out.getvalue()
+    assert "Skipped:     2 paths" in text
+    assert "docs/usage.md (path_not_included)" in text
+    assert "dist/app.js (generated)" in text

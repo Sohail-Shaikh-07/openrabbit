@@ -187,6 +187,13 @@ review:
   bug: true
   test_coverage: true
   style: false
+  profile: assertive
+  path_include: []
+  path_exclude: []
+  path_instructions: []
+  max_files: 80
+  max_changed_lines: 4000
+  include_generated: false
 
 model:
   provider: ollama
@@ -230,6 +237,17 @@ model:
 The generic name `openai-compatible` still works, but a concrete name such as `openrouter`, `vllm`, or `litellm` is clearer in logs and diagnostics. Any provider other than `ollama` or official `openai` is treated as OpenAI-compatible when `base_url` is set.
 
 `base_model` is mainly useful as local-model/fine-tuning metadata for Ollama and adapter workflows. It is not sent to OpenAI or OpenAI-compatible API providers during review.
+
+Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
+
+Example path-specific guidance:
+
+```yaml
+review:
+  path_instructions:
+    - path: "app/api/**"
+      instructions: "Require explicit authorization checks before mutations."
+```
 
 OpenRabbit loads configuration in layers:
 

@@ -146,6 +146,9 @@ async def run_review(
         )
         ranked = pipeline_result.ranked_findings
         dropped_findings_count = pipeline_result.dropped_findings_count
+        skipped_paths = pipeline_result.skipped_paths or []
+    else:
+        skipped_paths = []
 
     context_loaded = _has_retrieval_context(retrieval_result)
     if memory_enabled and memory_store_for_run is not None:
@@ -221,6 +224,8 @@ async def run_review(
         "findings_count": len(ranked),
         "published_findings_count": 0 if dry_run else len(publish_ranked),
         "dropped_findings_count": dropped_findings_count,
+        "skipped_paths_count": len(skipped_paths),
+        "skipped_paths": skipped_paths,
         "context_loaded": context_loaded,
         "context_provenance": _context_provenance(retrieval_result),
         "findings": _serialize_ranked_findings(ranked, memory_comparison),
@@ -254,6 +259,18 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     dropped = summary.get("dropped_findings_count")
     if isinstance(dropped, int) and dropped > 0:
         print(f"  Dropped:      {dropped} ungrounded", file=out)
+    skipped_count = summary.get("skipped_paths_count")
+    raw_skipped = summary.get("skipped_paths")
+    skipped_paths = raw_skipped if isinstance(raw_skipped, list) else []
+    if isinstance(skipped_count, int) and skipped_count > 0:
+        noun = "path" if skipped_count == 1 else "paths"
+        print(f"  Skipped:     {skipped_count} {noun}", file=out)
+        for item in skipped_paths[:5]:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path", "")).strip()
+            reason = str(item.get("reason", "")).strip()
+            print(f"    - {path} ({reason})", file=out)
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
