@@ -339,6 +339,19 @@ openrabbit start --workspace . --repo owner/repo
 
 The first poll seeds state without reviewing every already-open PR. After that, new PRs and changed head SHAs trigger the same review-and-publish path as `openrabbit review`. Same-SHA updates, such as label or description changes, are logged and skipped.
 
+While `openrabbit start` is running, OpenRabbit also listens for new PR comments addressed to it:
+
+```text
+@openrabbit review
+@openrabbit full review
+@openrabbit improve
+@openrabbit ask what changed in the search path?
+@openrabbit pause
+@openrabbit resume
+```
+
+Comment commands are only handled by the polling service. They are not active during one-off CLI commands. Pause state and the last processed comment cursor are stored locally under `.openrabbit/commands.json`; paused PRs skip automatic review until `@openrabbit resume` is received.
+
 ### `openrabbit install-model`
 
 Downloads a PEFT/LoRA adapter package from Hugging Face into `~/.openrabbit/models/`.

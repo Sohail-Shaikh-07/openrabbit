@@ -278,6 +278,21 @@ class GitHubClient:
         )
         return Review.model_validate(data)
 
+    async def create_issue_comment(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        *,
+        body: str,
+    ) -> IssueComment:
+        data = await self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/issues/{number}/comments",
+            json={"body": body},
+        )
+        return IssueComment.model_validate(data)
+
     # -------- HTTP plumbing --------
 
     async def _get(self, path: str, *, params: Mapping[str, Any] | None = None) -> Any:

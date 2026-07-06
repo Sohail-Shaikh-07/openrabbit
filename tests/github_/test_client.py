@@ -234,6 +234,33 @@ async def test_create_review_sends_payload() -> None:
 
 
 @respx.mock
+async def test_create_issue_comment_sends_payload() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode()
+        return httpx.Response(
+            200,
+            json={
+                "id": 77,
+                "user": {"login": "openrabbit", "id": 42},
+                "body": "answer body",
+                "html_url": "https://github.com/o/r/pull/1#issuecomment-77",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+
+    respx.post(f"{_BASE}/repos/o/r/issues/1/comments").mock(side_effect=handler)
+
+    async with _client() as client:
+        comment = await client.create_issue_comment("o", "r", 1, body="answer body")
+
+    assert comment.id == 77
+    assert "answer body" in str(captured["body"])
+
+
+@respx.mock
 async def test_list_pull_conversation_sources_returns_typed_objects() -> None:
     respx.get(f"{_BASE}/repos/o/r/pulls/1/reviews").mock(
         return_value=httpx.Response(
