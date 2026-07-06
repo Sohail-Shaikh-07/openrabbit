@@ -22,7 +22,7 @@ from cli.commands.improve import render_improvements, run_improve_blocking
 from cli.commands.index import run_index_blocking
 from cli.commands.init import InitConflict, run_init
 from cli.commands.install_model import InstallResult, run_install_model
-from cli.commands.review import render_summary, run_review_blocking
+from cli.commands.review import ReviewMode, render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
 from github_ import GitHubAPIError, GitHubAuthError
@@ -212,6 +212,12 @@ def review(
         "--dry-run",
         help="Print the review summary without posting comments to GitHub.",
     ),
+    mode: ReviewMode = typer.Option(
+        ReviewMode.INCREMENTAL,
+        "--mode",
+        case_sensitive=False,
+        help="Review publish mode: incremental posts only new findings; full reposts all findings.",
+    ),
 ) -> None:
     """Run a one-off review of a pull request and publish findings unless dry-run."""
     workspace = workspace.resolve()
@@ -222,7 +228,11 @@ def review(
             number=pr,
             repo=repo,
             dry_run=dry_run,
+            mode=mode,
         )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
     except StartError as exc:
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None

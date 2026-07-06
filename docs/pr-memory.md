@@ -78,6 +78,19 @@ Statuses:
 - `possibly_fixed`: seen before but missing from the current review
 - `stale`: reserved for future re-review cleanup
 
+## Incremental Re-Review
+
+`openrabbit review` supports two modes:
+
+```bash
+openrabbit review --pr 42 --repo owner/repo --mode incremental
+openrabbit review --pr 42 --repo owner/repo --mode full
+```
+
+`incremental` is the default. It still runs the review and records all current findings, but it only publishes findings whose memory status is `new`. Findings marked `still_present` remain visible in the local summary and memory database, but OpenRabbit does not repost them as duplicate GitHub comments.
+
+`full` publishes every grounded finding from the current run. Use this when you intentionally want to refresh all review comments.
+
 ## Why SQLite First
 
 SQLite is the first memory backend because it is local, portable, inspectable, and has no service dependency. Graph and vector memory are intentionally future plugin layers. They should enrich retrieval later without becoming required for the core review loop.

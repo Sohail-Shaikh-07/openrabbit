@@ -8,10 +8,12 @@ comments when not running in dry-run mode.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, TextIO
 
+from agents.models import Finding
 from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -32,6 +34,13 @@ ReviewPublisher = Callable[..., Awaitable[None]]
 ContextLoader = Callable[[Any], Awaitable[Any]]
 
 
+class ReviewMode(StrEnum):
+    """Controls whether review publishing is full or incremental."""
+
+    FULL = "full"
+    INCREMENTAL = "incremental"
+
+
 class MemoryStore(Protocol):
     """Minimal local memory interface used by the review command."""
 
@@ -41,12 +50,21 @@ class MemoryStore(Protocol):
         repo: str,
         pr_number: int,
         head_sha: str,
-        findings: list[Any],
+        findings: Iterable[Finding],
         context_loaded: bool,
         comments_posted: bool,
     ) -> Any: ...
 
     def load_history(self, repo: str, pr_number: int) -> PullRequestMemoryHistory: ...
+
+    def compare_with_history(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        head_sha: str,
+        current_findings: Iterable[Finding],
+    ) -> FindingComparison: ...
 
 
 async def run_review(
@@ -56,6 +74,7 @@ async def run_review(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     dry_run: bool = False,
+    mode: ReviewMode | str = ReviewMode.INCREMENTAL,
     run_agents: bool = True,
     agent_runner: AgentRunner | None = None,
     publisher: ReviewPublisher | None = None,
@@ -68,6 +87,7 @@ async def run_review(
     keeps the function trivially testable without scraping stdout.
     """
     target = resolve_target_repo(settings, repo)
+    review_mode = _coerce_review_mode(mode)
     client = GitHubClient.from_settings(settings, env=env)
     try:
         handle = RepositoryHandle.from_full_name(target, client)
@@ -128,20 +148,39 @@ async def run_review(
         dropped_findings_count = pipeline_result.dropped_findings_count
 
     context_loaded = _has_retrieval_context(retrieval_result)
+    if memory_enabled and memory_store_for_run is not None:
+        try:
+            memory_comparison = memory_store_for_run.compare_with_history(
+                repo=handle.full_name,
+                pr_number=payload.number,
+                head_sha=payload.head_sha,
+                current_findings=[rf.finding for rf in ranked],
+            )
+        except Exception as exc:
+            memory_error = type(exc).__name__
+            _log.warning(
+                "review.memory_compare_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
+    publish_ranked = _publishable_ranked(ranked, mode=review_mode, comparison=memory_comparison)
     comments_posted = False
     publish_status = "dry_run" if dry_run else "no_findings"
-    if not dry_run and ranked:
+    if not dry_run and publish_ranked:
         await _publish_review(
             settings,
             env=env,
             handle=handle,
             pr_number=payload.number,
-            ranked=ranked,
+            ranked=publish_ranked,
             head_sha=payload.head_sha,
             publisher=publisher,
         )
         comments_posted = True
         publish_status = "posted"
+    elif not dry_run and ranked and review_mode is ReviewMode.INCREMENTAL:
+        publish_status = "no_new_findings"
 
     if memory_enabled:
         try:
@@ -178,7 +217,9 @@ async def run_review(
         "hunks": hunk_total,
         "commits": len(payload.commits),
         "dry_run": dry_run,
+        "mode": review_mode.value,
         "findings_count": len(ranked),
+        "published_findings_count": 0 if dry_run else len(publish_ranked),
         "dropped_findings_count": dropped_findings_count,
         "context_loaded": context_loaded,
         "findings": _serialize_ranked_findings(ranked, memory_comparison),
@@ -203,6 +244,9 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     )
     print(f"  Hunks:        {summary['hunks']}", file=out)
     print(f"  Commits:      {summary['commits']}", file=out)
+    mode = summary.get("mode")
+    if isinstance(mode, str):
+        print(f"  Mode:         {mode}", file=out)
     raw_findings = summary.get("findings")
     findings = raw_findings if isinstance(raw_findings, list) else []
     print(f"  Findings:     {len(findings)}", file=out)
@@ -217,6 +261,8 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
         print("  Published:    yes", file=out)
     elif publish_status == "no_findings":
         print("  Published:    no findings to post", file=out)
+    elif publish_status == "no_new_findings":
+        print("  Published:    no new findings to post", file=out)
     elif publish_status == "dry_run":
         print("  Published:    no (dry run)", file=out)
     memory_enabled = summary.get("memory_enabled")
@@ -242,9 +288,21 @@ def run_review_blocking(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     dry_run: bool = False,
+    mode: ReviewMode | str = ReviewMode.INCREMENTAL,
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
-    return asyncio.run(run_review(settings, number=number, repo=repo, env=env, dry_run=dry_run))
+    return asyncio.run(
+        run_review(settings, number=number, repo=repo, env=env, dry_run=dry_run, mode=mode)
+    )
+
+
+def _coerce_review_mode(mode: ReviewMode | str) -> ReviewMode:
+    if isinstance(mode, ReviewMode):
+        return mode
+    try:
+        return ReviewMode(str(mode).strip().lower())
+    except ValueError as exc:
+        raise ValueError("mode must be 'full' or 'incremental'") from exc
 
 
 def _serialize_ranked_finding(
@@ -284,6 +342,21 @@ def _memory_status_counts(memory_comparison: FindingComparison | None) -> dict[s
     if memory_comparison.resolved:
         counts[FindingStatus.POSSIBLY_FIXED.value] = len(memory_comparison.resolved)
     return counts
+
+
+def _publishable_ranked(
+    ranked: list[RankedFinding],
+    *,
+    mode: ReviewMode,
+    comparison: FindingComparison | None,
+) -> list[RankedFinding]:
+    if mode is ReviewMode.FULL or comparison is None:
+        return list(ranked)
+
+    publishable_fingerprints = {
+        record.fingerprint for record in comparison.current if record.status is FindingStatus.NEW
+    }
+    return [rf for rf in ranked if fingerprint_finding(rf.finding) in publishable_fingerprints]
 
 
 async def _load_review_context(pr_payload: Any) -> Any:
