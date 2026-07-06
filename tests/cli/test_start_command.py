@@ -12,7 +12,10 @@ import respx
 from cli.commands.init import run_init
 from cli.commands.start import StartError, resolve_target_repo, run_start
 from configs import RepositorySettings, Settings, load_settings
-from github_ import FileStateStore, PollState, SeenPullRequest
+from github_ import FileStateStore, GitHubClient, PollEvent, PollState, SeenPullRequest
+from github_.models import PullRequestSummary
+from github_.pr_commands import InMemoryCommandStateStore
+from github_.repository import RepositoryHandle
 
 _BASE = "https://api.github.com"
 
@@ -40,6 +43,26 @@ def _pr_summary(
 def _seed_state(scaffold_repo: Path, *prs: SeenPullRequest) -> None:
     FileStateStore(scaffold_repo / ".openrabbit" / "state.json").save(
         PollState(pull_requests={pr.number: pr for pr in prs})
+    )
+
+
+def _issue_comment(comment_id: int, body: str) -> dict[str, Any]:
+    return {
+        "id": comment_id,
+        "user": {"login": "alice", "id": 1},
+        "body": body,
+        "html_url": f"https://github.com/o/r/pull/1#issuecomment-{comment_id}",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+    }
+
+
+def _event(kind: str, number: int = 1) -> PollEvent:
+    return PollEvent(
+        kind=kind,  # type: ignore[arg-type]
+        pull_request=PullRequestSummary.model_validate(
+            _pr_summary(number, updated_at="2026-01-03T00:00:00Z", head_sha="a" * 40)
+        ),
     )
 
 
@@ -225,6 +248,109 @@ async def test_run_start_skips_same_head_sha_update(
         )
 
     assert reviewed == []
+
+
+@respx.mock
+async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Path) -> None:
+    from cli.commands.start import build_review_handler
+
+    respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                _issue_comment(10, "@openrabbit review"),
+                _issue_comment(11, "@openrabbit full review"),
+                _issue_comment(12, "@openrabbit improve"),
+                _issue_comment(13, "@openrabbit ask what changed?"),
+            ],
+        )
+    )
+    review_calls: list[dict[str, object]] = []
+    improve_calls: list[dict[str, object]] = []
+    ask_calls: list[dict[str, object]] = []
+    replies: list[str] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        review_calls.append(kwargs)
+        return {"findings_count": 0, "comments_posted": False}
+
+    async def fake_improve_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        improve_calls.append(kwargs)
+        return {"suggestions_count": 1, "publish_status": "posted"}
+
+    async def fake_ask_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        ask_calls.append(kwargs)
+        return {"answer": {"answer": "It updates search."}}
+
+    async def fake_reply_publisher(**kwargs: object) -> None:
+        replies.append(str(kwargs["body"]))
+
+    settings = load_settings(scaffold_repo, env={})
+    command_store = InMemoryCommandStateStore()
+    handler = build_review_handler(
+        settings,
+        env={"GITHUB_TOKEN": "tkn"},
+        review_runner=fake_review_runner,
+        improve_runner=fake_improve_runner,
+        ask_runner=fake_ask_runner,
+        command_store=command_store,
+        issue_comment_publisher=fake_reply_publisher,
+    )
+    client = GitHubClient(token="tkn")
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+
+    try:
+        await handler(_event("pull_request_updated"), handle)
+    finally:
+        await client.aclose()
+
+    assert [call.get("mode") for call in review_calls] == ["incremental", "full"]
+    assert improve_calls[0]["publish"] is True
+    assert ask_calls[0]["question"] == "what changed?"
+    assert "It updates search." in replies[0]
+    assert command_store.load().last_seen_comment_id(1) == 13
+
+
+@respx.mock
+async def test_start_command_listener_respects_pause_and_resume(scaffold_repo: Path) -> None:
+    from cli.commands.start import build_review_handler
+
+    settings = load_settings(scaffold_repo, env={})
+    command_store = InMemoryCommandStateStore()
+    reviewed: list[int] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        reviewed.append(int(kwargs["number"]))
+        return {"findings_count": 0, "comments_posted": False}
+
+    handler = build_review_handler(
+        settings,
+        env={"GITHUB_TOKEN": "tkn"},
+        review_runner=fake_review_runner,
+        command_store=command_store,
+    )
+    client = GitHubClient(token="tkn")
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+
+    try:
+        respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+            return_value=httpx.Response(200, json=[_issue_comment(20, "@openrabbit pause")])
+        )
+        await handler(_event("pull_request_updated"), handle)
+        await handler(_event("commit_pushed"), handle)
+        assert reviewed == []
+        assert command_store.load().is_paused(1)
+
+        respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+            return_value=httpx.Response(200, json=[_issue_comment(21, "@openrabbit resume")])
+        )
+        await handler(_event("pull_request_updated"), handle)
+        await handler(_event("commit_pushed"), handle)
+    finally:
+        await client.aclose()
+
+    assert reviewed == [1]
+    assert not command_store.load().is_paused(1)
 
 
 @respx.mock

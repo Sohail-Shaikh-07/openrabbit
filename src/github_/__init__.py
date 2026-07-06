@@ -32,6 +32,15 @@ from github_.models import (
 )
 from github_.polling import EventKind, Handler, PollEvent, PollingService
 from github_.pr import ParsedFile, PullRequestParser, PullRequestPayload
+from github_.pr_commands import (
+    CommandKind,
+    CommandState,
+    CommandStateStore,
+    FileCommandStateStore,
+    InMemoryCommandStateStore,
+    PullRequestCommand,
+    parse_openrabbit_command,
+)
 from github_.repository import RepositoryHandle
 from github_.state import (
     FileStateStore,
@@ -45,16 +54,21 @@ __all__ = [
     "DEFAULT_BASE_URL",
     "Branch",
     "BranchCommit",
+    "CommandKind",
+    "CommandState",
+    "CommandStateStore",
     "CommitAuthor",
     "CommitInfo",
     "DiffLine",
     "EventKind",
+    "FileCommandStateStore",
     "FileStateStore",
     "GitHubAPIError",
     "GitHubAuthError",
     "GitHubClient",
     "Handler",
     "Hunk",
+    "InMemoryCommandStateStore",
     "InMemoryStateStore",
     "IssueComment",
     "Label",
@@ -64,6 +78,7 @@ __all__ = [
     "PollState",
     "PollingService",
     "PullRequest",
+    "PullRequestCommand",
     "PullRequestCommit",
     "PullRequestFile",
     "PullRequestParser",
@@ -81,5 +96,6 @@ __all__ = [
     "SeenPullRequest",
     "StateStore",
     "User",
+    "parse_openrabbit_command",
     "parse_patch",
 ]
