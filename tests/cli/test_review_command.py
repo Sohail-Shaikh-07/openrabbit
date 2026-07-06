@@ -8,10 +8,12 @@ from pathlib import Path
 
 import httpx
 import respx
+from typer.testing import CliRunner
 
 from agents.models import Finding, Severity
 from cli.commands.review import render_summary, run_review
 from cli.commands.review_pipeline import ReviewPipelineResult
+from cli.main import app
 from configs import load_settings
 from github_ import GitHubAPIError
 from memory.store import SQLitePullRequestMemory
@@ -19,6 +21,7 @@ from rag.retriever import RetrievalResult
 from ranking.ranker import RankedFinding
 
 _BASE = "https://api.github.com"
+_RUNNER = CliRunner()
 
 
 def _pr_json() -> dict[str, object]:
@@ -227,6 +230,158 @@ async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> No
     assert first["findings"][0]["memory_status"] == "new"
     assert second["memory_status_counts"] == {"still_present": 1}
     assert second["findings"][0]["memory_status"] == "still_present"
+
+
+@respx.mock
+async def test_run_review_incremental_mode_suppresses_repeated_publish(
+    scaffold_repo: Path,
+) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "filename": "src/a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "changes": 1,
+                    "patch": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+    finding = Finding(
+        severity=Severity.high,
+        category="security",
+        file="src/a.py",
+        line=2,
+        confidence=0.9,
+        title="SQL injection in query builder",
+        reason="Raw SQL is built from input.",
+        suggestion="Use bind parameters.",
+    )
+
+    async def fake_runner(*_args: object, **_kwargs: object) -> ReviewPipelineResult:
+        return ReviewPipelineResult(
+            agent_results=[],
+            ranked_findings=[RankedFinding(finding=finding, score=2.7)],
+        )
+
+    published: list[dict[str, object]] = []
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+    store = SQLitePullRequestMemory(scaffold_repo / ".openrabbit" / "state" / "test.db")
+
+    first = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        publisher=fake_publisher,
+        context_loader=_empty_context_loader,
+        memory_store=store,
+        mode="incremental",
+    )
+    second = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        publisher=fake_publisher,
+        context_loader=_empty_context_loader,
+        memory_store=store,
+        mode="incremental",
+    )
+
+    assert first["publish_status"] == "posted"
+    assert second["publish_status"] == "no_new_findings"
+    assert second["comments_posted"] is False
+    assert second["published_findings_count"] == 0
+    assert len(published) == 1
+
+
+@respx.mock
+async def test_run_review_full_mode_reposts_repeated_findings(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "filename": "src/a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "changes": 1,
+                    "patch": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+    finding = Finding(
+        severity=Severity.high,
+        category="security",
+        file="src/a.py",
+        line=2,
+        confidence=0.9,
+        title="SQL injection in query builder",
+        reason="Raw SQL is built from input.",
+        suggestion="Use bind parameters.",
+    )
+
+    async def fake_runner(*_args: object, **_kwargs: object) -> ReviewPipelineResult:
+        return ReviewPipelineResult(
+            agent_results=[],
+            ranked_findings=[RankedFinding(finding=finding, score=2.7)],
+        )
+
+    published: list[dict[str, object]] = []
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+    store = SQLitePullRequestMemory(scaffold_repo / ".openrabbit" / "state" / "test.db")
+
+    await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        publisher=fake_publisher,
+        context_loader=_empty_context_loader,
+        memory_store=store,
+        mode="full",
+    )
+    second = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        publisher=fake_publisher,
+        context_loader=_empty_context_loader,
+        memory_store=store,
+        mode="full",
+    )
+
+    assert second["publish_status"] == "posted"
+    assert second["published_findings_count"] == 1
+    assert len(published) == 2
 
 
 @respx.mock
@@ -619,6 +774,8 @@ def test_render_summary_prints_every_field() -> None:
         "dropped_findings_count": 0,
         "context_loaded": False,
         "findings": [],
+        "mode": "incremental",
+        "published_findings_count": 0,
         "publish_status": "no_findings",
     }
     out = io.StringIO()
@@ -632,6 +789,26 @@ def test_render_summary_prints_every_field() -> None:
     assert "Commits:" in text
     assert "Context:      diff only" in text
     assert "no findings to post" in text
+
+
+def test_cli_review_accepts_mode_flag(scaffold_repo: Path) -> None:
+    result = _RUNNER.invoke(
+        app,
+        [
+            "review",
+            "--pr",
+            "42",
+            "--workspace",
+            str(scaffold_repo),
+            "--repo",
+            "o/r",
+            "--mode",
+            "full",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code != 2
 
 
 def test_render_summary_prints_findings() -> None:

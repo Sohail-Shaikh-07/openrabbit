@@ -282,6 +282,8 @@ Fetches one PR, loads indexed repository context when available, runs the enable
 ```bash
 openrabbit review --pr 42 --repo owner/repo --dry-run
 openrabbit review --pr 42 --repo owner/repo
+openrabbit review --pr 42 --repo owner/repo --mode full
+openrabbit review --pr 42 --repo owner/repo --mode incremental
 openrabbit --quiet review --pr 42 --repo owner/repo --dry-run
 openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 ```
@@ -289,6 +291,8 @@ openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
 
 Each review records local structured memory when `memory.enabled` is true. The summary includes memory state, and each finding can be tagged as `new` or `still_present` based on prior OpenRabbit runs for the same PR.
+
+`--mode incremental` is the default. It publishes only new findings and suppresses repeat comments for findings that are still present from an earlier OpenRabbit run. `--mode full` reruns and republishes all grounded findings, which is useful when you intentionally want a fresh full review.
 
 Review agents receive changed-line evidence before the full diff. For larger pull requests, OpenRabbit rebuilds a compact diff from parsed GitHub hunks, prioritizes risky and code-heavy files, keeps prompts within a deterministic token budget, and includes an omission note when content is left out.
 
