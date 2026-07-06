@@ -225,6 +225,15 @@ repository:
   target: owner/repo
 ```
 
+OpenRabbit loads configuration in layers:
+
+1. Built-in defaults
+2. User defaults from `~/.openrabbit/config.yml`, when present
+3. Repository config from `.openrabbit/config.yml` or legacy `.codereviewer/config.yml`
+4. `OPENRABBIT_...` environment overrides
+
+Use the user config for repeated local defaults such as model provider, model name, polling interval, or `github.token_env`. Keep repository-specific review rules in the repo config. Do not store token values or model API keys in either config file; store secrets in environment variables and reference their names.
+
 Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 
 ```bash

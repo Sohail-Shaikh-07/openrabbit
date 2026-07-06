@@ -167,6 +167,17 @@ OpenRabbit reads GitHub tokens in this order:
 2. The variable named by `github.token_env`, default `GITHUB_TOKEN`
 3. On Windows, persistent User or Machine environment variables
 
+## Config Layers
+
+OpenRabbit merges config in this order:
+
+1. Built-in defaults
+2. User defaults from `~/.openrabbit/config.yml`, when present
+3. Repository config from `.openrabbit/config.yml` or legacy `.codereviewer/config.yml`
+4. `OPENRABBIT_...` environment overrides
+
+Use `~/.openrabbit/config.yml` for repeated local defaults such as provider choice, model name, base URL, polling interval, and token environment variable names. Use repository config for repo-specific review behavior. Do not store API key values in any config file.
+
 ## Environment Overrides
 
 Any config value can be overridden with `OPENRABBIT_` environment variables. Use double underscores for nested fields:

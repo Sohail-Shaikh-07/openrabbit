@@ -11,12 +11,21 @@ from configs import (
     ConfigNotFoundError,
     Settings,
     find_config_file,
+    find_user_config_file,
     load_settings,
 )
 
 
 def _write_config(tmp_path: Path, body: str, subdir: str = ".openrabbit") -> Path:
     scaffold = tmp_path / subdir
+    scaffold.mkdir()
+    config = scaffold / "config.yml"
+    config.write_text(body, encoding="utf-8")
+    return config
+
+
+def _write_user_config(home: Path, body: str) -> Path:
+    scaffold = home / ".openrabbit"
     scaffold.mkdir()
     config = scaffold / "config.yml"
     config.write_text(body, encoding="utf-8")
@@ -50,6 +59,95 @@ def test_env_overrides_typed_values(tmp_path: Path) -> None:
 
     assert settings.polling.interval_seconds == 30
     assert settings.review.style is True
+
+
+def test_user_config_loads_when_repo_config_missing(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    home.mkdir()
+    workspace.mkdir()
+    _write_user_config(
+        home,
+        "polling:\n  interval_seconds: 45\nrepository:\n  target: owner/repo\n",
+    )
+
+    settings = load_settings(workspace, env={}, home=home)
+
+    assert settings.polling.interval_seconds == 45
+    assert settings.repository.target == "owner/repo"
+
+
+def test_repo_config_overrides_user_config(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    home.mkdir()
+    repo.mkdir()
+    _write_user_config(home, "polling:\n  interval_seconds: 45\nreview:\n  style: true\n")
+    _write_config(repo, "polling:\n  interval_seconds: 30\n")
+
+    settings = load_settings(repo, env={}, home=home)
+
+    assert settings.polling.interval_seconds == 30
+    assert settings.review.style is True
+
+
+def test_env_overrides_user_and_repo_config(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    home.mkdir()
+    repo.mkdir()
+    _write_user_config(home, "polling:\n  interval_seconds: 45\n")
+    _write_config(repo, "polling:\n  interval_seconds: 30\n")
+
+    settings = load_settings(
+        repo,
+        env={"OPENRABBIT_POLLING__INTERVAL_SECONDS": "15"},
+        home=home,
+    )
+
+    assert settings.polling.interval_seconds == 15
+
+
+def test_repo_search_does_not_double_load_user_config(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    nested = home / "projects" / "repo"
+    home.mkdir()
+    nested.mkdir(parents=True)
+    _write_user_config(home, "polling:\n  interval_seconds: 45\n")
+
+    settings = load_settings(nested, env={}, home=home)
+
+    assert settings.polling.interval_seconds == 45
+
+
+def test_find_user_config_file_returns_optional_home_config(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    config = _write_user_config(home, "polling:\n  interval_seconds: 45\n")
+
+    assert find_user_config_file(home) == config
+
+
+def test_find_user_config_file_returns_none_when_missing(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+
+    assert find_user_config_file(home) is None
+
+
+def test_user_config_rejects_inline_model_secrets(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    home.mkdir()
+    workspace.mkdir()
+    _write_user_config(home, "model:\n  provider: openai\n  api_key: sk-secret-value\n")
+
+    with pytest.raises(ValueError) as exc:
+        load_settings(workspace, env={}, home=home)
+
+    message = str(exc.value)
+    assert "model.api_key" in message
+    assert "sk-secret-value" not in message
 
 
 def test_github_token_resolution_prefers_explicit_override(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 Two entry points:
 
-- :func:`load_settings` reads ``<repo>/.openrabbit/config.yml`` and merges
+- :func:`load_settings` reads layered OpenRabbit config and merges
   environment variables.
 - :class:`Settings` is the Pydantic root model; instantiate it directly with
   a dict (mostly for testing).
@@ -29,6 +29,7 @@ from configs.schema import (
 CONFIG_SUBDIR = ".openrabbit"
 LEGACY_CONFIG_SUBDIR = ".codereviewer"
 CONFIG_FILENAME = "config.yml"
+USER_CONFIG_DIR = ".openrabbit"
 ENV_PREFIX = "OPENRABBIT_"
 ENV_DELIMITER = "__"
 _MODEL_SECRET_KEY_MARKERS = ("api_key", "secret", "token", "password", "credential")
@@ -96,22 +97,41 @@ def find_config_file(start: Path) -> Path:
     raise ConfigNotFoundError(
         f"No {CONFIG_SUBDIR}/{CONFIG_FILENAME} or "
         f"{LEGACY_CONFIG_SUBDIR}/{CONFIG_FILENAME} found in {start} or any parent. "
-        "Run `openrabbit init` first."
+        f"Run `openrabbit init` first, or create ~/{USER_CONFIG_DIR}/{CONFIG_FILENAME} "
+        "for user-level defaults."
     )
+
+
+def find_user_config_file(home: Path | None = None) -> Path | None:
+    """Return the optional user-level config file."""
+    root = (home or Path.home()).resolve()
+    candidate = root / USER_CONFIG_DIR / CONFIG_FILENAME
+    return candidate if candidate.is_file() else None
 
 
 def load_settings(
     start: Path | None = None,
     *,
     env: dict[str, str] | None = None,
+    home: Path | None = None,
 ) -> Settings:
-    """Load and validate settings from disk and the environment.
+    """Load and validate layered settings from disk and the environment.
+
+    Precedence, from weakest to strongest:
+
+    1. Schema defaults.
+    2. Optional user config at ``~/.openrabbit/config.yml``.
+    3. Repository config at ``.openrabbit/config.yml`` or legacy
+       ``.codereviewer/config.yml`` found by walking up from ``start``.
+    4. ``OPENRABBIT_...`` environment overrides.
 
     Args:
         start: Directory to begin the upward search from. Defaults to the
             current working directory.
         env: Environment mapping. Defaults to :data:`os.environ`. Passed in
             during tests to avoid global state.
+        home: Home directory used to locate the optional user config. Defaults
+            to :func:`Path.home`. Passed in during tests to avoid global state.
 
     Returns:
         A validated :class:`Settings` instance.
@@ -119,13 +139,43 @@ def load_settings(
     env_map = env if env is not None else dict(os.environ)
     start = start or Path.cwd()
 
-    config_path = find_config_file(start)
-    raw = _read_yaml(config_path)
-    _reject_inline_model_secrets(raw)
+    user_config_path = find_user_config_file(home)
+    user_raw = _read_optional_config(user_config_path)
+
+    repo_config_path = _find_repo_config_file(start, user_config_path=user_config_path)
+    if repo_config_path is None and user_config_path is None:
+        raise ConfigNotFoundError(
+            f"No {CONFIG_SUBDIR}/{CONFIG_FILENAME}, "
+            f"{LEGACY_CONFIG_SUBDIR}/{CONFIG_FILENAME}, or "
+            f"~/{USER_CONFIG_DIR}/{CONFIG_FILENAME} found. "
+            "Run `openrabbit init` first."
+        )
+    repo_raw = _read_optional_config(repo_config_path)
+
+    raw = _deep_merge(user_raw, repo_raw)
     overrides = _env_overrides(env_map)
     _reject_inline_model_secrets(overrides)
     merged = _deep_merge(raw, overrides)
     return Settings.model_validate(merged)
+
+
+def _find_repo_config_file(start: Path, *, user_config_path: Path | None) -> Path | None:
+    try:
+        config_path = find_config_file(start)
+    except ConfigNotFoundError:
+        return None
+
+    if user_config_path is not None and _same_path(config_path, user_config_path):
+        return None
+    return config_path
+
+
+def _read_optional_config(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    raw = _read_yaml(path)
+    _reject_inline_model_secrets(raw)
+    return raw
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -182,6 +232,10 @@ def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, An
         else:
             out[key] = value
     return out
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return left.resolve() == right.resolve()
 
 
 def _reject_inline_model_secrets(config: dict[str, Any]) -> None:
