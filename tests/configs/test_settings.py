@@ -69,6 +69,43 @@ def test_env_overrides_typed_values(tmp_path: Path) -> None:
     assert settings.review.style is True
 
 
+def test_review_controls_load_from_config(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        """
+review:
+  profile: chill
+  path_include:
+    - "src/**"
+  path_exclude:
+    - "src/generated/**"
+  max_files: 12
+  max_changed_lines: 500
+  include_generated: false
+  path_instructions:
+    - path: "src/api/**"
+      instructions: "Require explicit authorization checks."
+""",
+    )
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.review.profile == "chill"
+    assert settings.review.path_include == ["src/**"]
+    assert settings.review.path_exclude == ["src/generated/**"]
+    assert settings.review.max_files == 12
+    assert settings.review.max_changed_lines == 500
+    assert settings.review.include_generated is False
+    assert settings.review.path_instructions[0].path == "src/api/**"
+
+
+def test_review_profile_rejects_unknown_value(tmp_path: Path) -> None:
+    _write_config(tmp_path, "review:\n  profile: noisy\n")
+
+    with pytest.raises(ValueError, match="profile"):
+        load_settings(tmp_path, env={})
+
+
 def test_user_config_loads_when_repo_config_missing(tmp_path: Path) -> None:
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"

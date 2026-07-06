@@ -93,15 +93,17 @@ Recommended tasks:
 - Add optional PR comment publishing when explicitly enabled.
 - Add line-level ask support for a selected file and line.
 
-### 5. Large PR compression now has a first pass
+### 5. Large PR compression and review controls now have a first pass
 
 OpenRabbit formats changed-line evidence, rebuilds prompt diffs from parsed GitHub hunks, prioritizes risky and code-heavy files, and includes omission notes when a PR exceeds the prompt budget.
+
+OpenRabbit now also supports repository-level review controls: `chill` and `assertive` profiles, include/exclude path globs, path-specific review instructions, max-file and max-changed-line limits, generated-file defaults, and skipped-path reporting in the review summary.
 
 Recommended tasks:
 
 - Tune token budgets per review agent.
 - Summarize low-risk or oversized files before agent execution.
-- Surface omitted context in the CLI summary for verbose reviews.
+- Expand controls into organization-level defaults once multi-repo config is available.
 
 ### 6. RAG needs deeper and more selective context packing
 
@@ -157,7 +159,7 @@ Recommended tasks:
 | Priority | Task | Why |
 | --- | --- | --- |
 | P0 | Improve RAG context selection and packing | Keeps repository-aware reviews precise as PRs and repos grow |
-| P0 | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
+| Done | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
 | Done | Add PR description command | Fast, visible value for every PR |
 | Done | Add token-aware PR compression | Keeps large real-world PRs inside deterministic prompt budgets |
 | Done | Add improve/fix suggestions | Moves from finding problems to helping resolve them |

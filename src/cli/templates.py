@@ -23,6 +23,15 @@ review:
   bug: true
   test_coverage: true
   style: false
+  # chill reports only clear high-confidence issues. assertive reports broader
+  # concrete risks while still requiring changed-line evidence.
+  profile: assertive
+  path_include: []
+  path_exclude: []
+  path_instructions: []
+  max_files: 80
+  max_changed_lines: 4000
+  include_generated: false
 
 model:
   provider: ollama

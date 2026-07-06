@@ -9,6 +9,8 @@ import pytest
 from agents.base import BaseReviewAgent
 from agents.models import AgentResult, Finding, ReviewState, Severity
 from cli.commands.review_pipeline import run_agent_review
+from configs.schema import ReviewSettings
+from configs.settings import Settings
 from github_.diff import DiffLine, Hunk
 
 
@@ -71,6 +73,17 @@ class UngroundedStubAgent(BaseReviewAgent):
         )
 
 
+class CapturingAgent(BaseReviewAgent):
+    name = "capturing"
+
+    def __init__(self) -> None:
+        self.paths: list[str] = []
+
+    async def run(self, state: ReviewState) -> AgentResult:
+        self.paths = [file_.path for file_ in state["pr_payload"].files]
+        return AgentResult(agent=self.name, findings=[], confidence=0.0, execution_time=0.01)
+
+
 @pytest.mark.asyncio
 async def test_run_agent_review_returns_ranked_findings() -> None:
     pr_payload = MagicMock()
@@ -109,3 +122,51 @@ async def test_run_agent_review_filters_ungrounded_findings_before_ranking() -> 
 
     assert [rf.finding.title for rf in result.ranked_findings] == ["Unsafe raw SQL"]
     assert result.dropped_findings_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_agent_review_applies_review_controls_before_agents() -> None:
+    pr_payload = MagicMock()
+    pr_payload.files = [
+        MagicMock(
+            path="src/app.py",
+            additions=1,
+            deletions=0,
+            changes=1,
+            is_binary=False,
+            hunks=[
+                Hunk(
+                    old_start=1,
+                    old_lines=1,
+                    new_start=1,
+                    new_lines=1,
+                    lines=[DiffLine(kind="addition", text="value = 1")],
+                )
+            ],
+        ),
+        MagicMock(
+            path="docs/usage.md",
+            additions=1,
+            deletions=0,
+            changes=1,
+            is_binary=False,
+            hunks=[
+                Hunk(
+                    old_start=1,
+                    old_lines=1,
+                    new_start=1,
+                    new_lines=1,
+                    lines=[DiffLine(kind="addition", text="docs")],
+                )
+            ],
+        ),
+    ]
+    agent = CapturingAgent()
+    settings = Settings(review=ReviewSettings(path_include=["src/**"]))
+
+    result = await run_agent_review(pr_payload, settings=settings, agents=[agent])
+
+    assert agent.paths == ["src/app.py"]
+    assert result.skipped_paths_count == 1
+    assert result.skipped_paths[0]["path"] == "docs/usage.md"
+    assert result.skipped_paths[0]["reason"] == "path_not_included"

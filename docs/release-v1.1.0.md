@@ -10,6 +10,7 @@ OpenRabbit v1.1.0 hardens the self-hosted review loop and adds the first set of 
 - Added layered config: built-in defaults, optional `~/.openrabbit/config.yml`, repo config, and environment overrides.
 - Added a GitHub Action recipe for configured or self-hosted runner use.
 - Added a packaged v1.1 benchmark corpus for regression and provider comparison checks.
+- Added CodeRabbit-style review controls for profiles, path filters, path-specific instructions, large PR limits, generated-file defaults, and skipped-path reporting.
 
 ## Upgrade Notes
 
