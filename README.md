@@ -264,6 +264,8 @@ openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
 
 Run this after `openrabbit init`, after major documentation or architecture changes, and after large source changes when you want reviews to use fresh repository context. If Qdrant is unavailable or no index exists, reviews continue in diff-only mode and report `Context: diff only`.
 
+The embedding model is downloaded once by FastEmbed when indexing or real RAG retrieval first needs it. OpenRabbit checks Qdrant for an existing RAG index before loading embeddings during review, so a machine without Qdrant or without an index should not trigger an embedding download just to fall back to diff-only mode.
+
 ### `openrabbit review`
 
 Fetches one PR, loads indexed repository context when available, runs the enabled local agents, grounds findings to the diff, prints a ranked summary, and publishes a GitHub review when findings exist.
@@ -336,6 +338,8 @@ This installs the adapter files. To use the adapter with Ollama, create an Ollam
 ```bash
 docker compose up -d qdrant
 ```
+
+If Docker is not installed, `openrabbit review`, `openrabbit describe`, `openrabbit ask`, and `openrabbit improve` still work from the PR diff. Install/start Qdrant and run `openrabbit index` when you want repository-aware RAG context.
 
 Copy `.env.example` to `.env` if you want compose to pass a GitHub token or a custom workspace path into the containerized CLI. The `openrabbit` image packages the CLI, but local source install is still the most direct workflow for reviewing a working repository because `openrabbit init` needs write access to create `.openrabbit/`.
 

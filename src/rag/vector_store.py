@@ -58,6 +58,7 @@ ALL_COLLECTIONS: tuple[str, ...] = (
 
 _DEFAULT_HOST = "localhost"
 _DEFAULT_PORT = 6333
+_DEFAULT_TIMEOUT_SECONDS = 5
 
 
 # ---------------------------------------------------------------------------
@@ -173,14 +174,26 @@ class VectorStore:
         qdrant_filter = _build_filter(filter) if filter else None
         client = self._get_client()
 
-        hits = await client.search(
-            collection_name=collection,
-            query_vector=query_vector.tolist(),
-            limit=top_k,
+        hits = await _query_nearest(
+            client,
+            collection=collection,
+            query_vector=query_vector,
+            top_k=top_k,
             query_filter=qdrant_filter,
         )
 
         return [{"id": h.id, "score": h.score, "payload": h.payload} for h in hits]
+
+    async def list_collections(self) -> set[str]:
+        """Return the names of collections currently available in Qdrant."""
+        client = self._get_client()
+        result = await client.get_collections()
+        return {c.name for c in result.collections}
+
+    async def has_any_collection(self, collections: tuple[str, ...] = ALL_COLLECTIONS) -> bool:
+        """Return whether Qdrant has at least one expected RAG collection."""
+        existing = await self.list_collections()
+        return bool(existing.intersection(collections))
 
     async def close(self) -> None:
         """Release resources held by the underlying Qdrant client."""
@@ -196,7 +209,12 @@ class VectorStore:
         if self._client is None:
             from qdrant_client import AsyncQdrantClient
 
-            self._client = AsyncQdrantClient(host=self._host, port=self._port)
+            self._client = AsyncQdrantClient(
+                host=self._host,
+                port=self._port,
+                timeout=_DEFAULT_TIMEOUT_SECONDS,
+                check_compatibility=False,
+            )
         return self._client
 
 
@@ -230,3 +248,35 @@ def _build_filter(filter_dict: dict[str, Any]) -> Any:
         match_value = condition["match"]["value"]
         must_conditions.append(FieldCondition(key=key, match=MatchValue(value=match_value)))
     return Filter(must=must_conditions) if must_conditions else None
+
+
+async def _query_nearest(
+    client: Any,
+    *,
+    collection: str,
+    query_vector: np.ndarray,
+    top_k: int,
+    query_filter: Any | None,
+) -> list[Any]:
+    """Run a nearest-neighbour query across supported qdrant-client versions."""
+    vector = query_vector.tolist()
+    if hasattr(client, "query_points"):
+        response = await client.query_points(
+            collection_name=collection,
+            query=vector,
+            limit=top_k,
+            query_filter=query_filter,
+        )
+        return list(getattr(response, "points", response))
+
+    if hasattr(client, "search"):
+        return list(
+            await client.search(
+                collection_name=collection,
+                query_vector=vector,
+                limit=top_k,
+                query_filter=query_filter,
+            )
+        )
+
+    raise AttributeError("Qdrant async client does not expose query_points or search")
