@@ -2,7 +2,7 @@
 
 Date: 2026-07-06
 
-This document compares the current OpenRabbit `v1.1.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
+This document compares the current OpenRabbit `v1.2.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
 
 Sources reviewed:
 
