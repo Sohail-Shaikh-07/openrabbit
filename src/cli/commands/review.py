@@ -8,21 +8,21 @@ comments when not running in dry-run mode.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol, TextIO
+from typing import Any, TextIO
 
-from agents.models import Finding
 from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
 from github_ import GitHubAuthError, GitHubClient, PullRequestParser, RepositoryHandle
 from github_.publisher import GitHubPublisher
+from memory.backends import PullRequestMemoryBackend
 from memory.fingerprints import fingerprint_finding
 from memory.history import PullRequestHistory
-from memory.models import FindingComparison, FindingStatus, PullRequestMemoryHistory
+from memory.models import FindingComparison, FindingStatus
 from memory.store import SQLitePullRequestMemory
 from ranking.ranker import RankedFinding
 
@@ -41,32 +41,6 @@ class ReviewMode(StrEnum):
     INCREMENTAL = "incremental"
 
 
-class MemoryStore(Protocol):
-    """Minimal local memory interface used by the review command."""
-
-    def record_review(
-        self,
-        *,
-        repo: str,
-        pr_number: int,
-        head_sha: str,
-        findings: Iterable[Finding],
-        context_loaded: bool,
-        comments_posted: bool,
-    ) -> Any: ...
-
-    def load_history(self, repo: str, pr_number: int) -> PullRequestMemoryHistory: ...
-
-    def compare_with_history(
-        self,
-        *,
-        repo: str,
-        pr_number: int,
-        head_sha: str,
-        current_findings: Iterable[Finding],
-    ) -> FindingComparison: ...
-
-
 async def run_review(
     settings: Settings,
     *,
@@ -79,7 +53,7 @@ async def run_review(
     agent_runner: AgentRunner | None = None,
     publisher: ReviewPublisher | None = None,
     context_loader: ContextLoader | None = None,
-    memory_store: MemoryStore | None = None,
+    memory_store: PullRequestMemoryBackend | None = None,
 ) -> dict[str, object]:
     """Fetch, review, optionally publish, and return a summary dict.
 
@@ -103,7 +77,7 @@ async def run_review(
     memory_enabled = settings.memory.enabled
     memory_comparison: FindingComparison | None = None
     memory_error: str | None = None
-    memory_store_for_run: MemoryStore | None = None
+    memory_store_for_run: PullRequestMemoryBackend | None = None
     pr_history: PullRequestHistory | None = None
 
     if memory_enabled:
