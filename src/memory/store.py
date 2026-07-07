@@ -136,6 +136,8 @@ class SQLitePullRequestMemory:
             review_id = int(cursor.lastrowid or 0)
             for record in comparison.current:
                 _upsert_finding(con, repo, pr_number, record)
+            for record in comparison.resolved:
+                _upsert_finding(con, repo, pr_number, record)
             con.commit()
         return ReviewMemoryWrite(review_id=review_id, comparison=comparison)
 

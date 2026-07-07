@@ -91,6 +91,16 @@ openrabbit review --pr 42 --repo owner/repo --mode full
 
 `full` publishes every grounded finding from the current run. Use this when you intentionally want to refresh all review comments.
 
+## Inspecting Memory
+
+Use the read-only memory command to inspect what OpenRabbit remembers for a PR:
+
+```bash
+openrabbit memory --pr 42 --repo owner/repo
+```
+
+The command prints the configured memory database path, the last reviewed SHA, finding counts by status, and stored finding fingerprints. It does not fetch GitHub data, call a model, create a database, or post anything to the pull request.
+
 ## Why SQLite First
 
 SQLite is the first memory backend because it is local, portable, inspectable, and has no service dependency. Graph and vector memory are intentionally future plugin layers. They should enrich retrieval later without becoming required for the core review loop.

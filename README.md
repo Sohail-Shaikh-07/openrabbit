@@ -321,6 +321,17 @@ Review agents receive changed-line evidence before the full diff. For larger pul
 
 Today, `model.provider: ollama`, `model.provider: openai`, and `model.provider: openai-compatible` are implemented. The model layer uses a shared provider contract so more runtimes can plug into the same review-agent pipeline.
 
+### `openrabbit memory`
+
+Inspects the local SQLite PR memory for a repository pull request. This command is read-only: it does not fetch GitHub data, call a model, create a database, or post anything to the pull request.
+
+```bash
+openrabbit memory --pr 42 --repo owner/repo
+openrabbit memory --workspace /path/to/repo --pr 42 --repo owner/repo
+```
+
+Use this after one or more reviews to see the configured memory path, last reviewed SHA, finding status counts, and stored finding fingerprints.
+
 ### `openrabbit describe`
 
 Fetches one PR, loads indexed repository context and local PR memory when available, and prints a read-only summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`, but it never publishes comments or mutates the pull request.

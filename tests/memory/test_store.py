@@ -80,3 +80,30 @@ def test_classify_current_findings_marks_repeated_and_missing_items(tmp_path: Pa
     assert fixed.current == []
     assert len(fixed.resolved) == 1
     assert fixed.resolved[0].status == FindingStatus.POSSIBLY_FIXED
+
+
+def test_record_review_persists_resolved_finding_status(tmp_path: Path) -> None:
+    store = SQLitePullRequestMemory(tmp_path / "openrabbit.db")
+    store.record_review(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="oldsha",
+        findings=[_finding()],
+        context_loaded=False,
+        comments_posted=True,
+    )
+
+    store.record_review(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="fixedsha",
+        findings=[],
+        context_loaded=False,
+        comments_posted=False,
+    )
+
+    history = store.load_history("owner/repo", 7)
+
+    assert len(history.previous_findings) == 1
+    assert history.previous_findings[0].status == FindingStatus.POSSIBLY_FIXED
+    assert history.previous_findings[0].last_seen_sha == "fixedsha"
