@@ -104,3 +104,13 @@ The command prints the configured memory database path, the last reviewed SHA, f
 ## Why SQLite First
 
 SQLite is the first memory backend because it is local, portable, inspectable, and has no service dependency. Graph and vector memory are intentionally future plugin layers. They should enrich retrieval later without becoming required for the core review loop.
+
+## Backend Contract
+
+Memory backends implement `PullRequestMemoryBackend` from `memory.backends`. The contract is intentionally small:
+
+- `load_history(repo, pr_number)`
+- `compare_with_history(repo, pr_number, head_sha, current_findings)`
+- `record_review(repo, pr_number, head_sha, findings, context_loaded, comments_posted)`
+
+SQLite is the default implementation. Future graph or vector memory adapters should implement the same contract and remain optional, local-first plugin layers.

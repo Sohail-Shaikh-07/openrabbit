@@ -1,5 +1,6 @@
 """Local structured memory for OpenRabbit PR reviews."""
 
+from memory.backends import PullRequestMemoryBackend
 from memory.fingerprints import fingerprint_finding
 from memory.history import ConversationEvent, PullRequestHistory, format_history_context
 from memory.models import (
@@ -17,6 +18,7 @@ __all__ = [
     "FindingMemoryRecord",
     "FindingStatus",
     "PullRequestHistory",
+    "PullRequestMemoryBackend",
     "PullRequestMemoryHistory",
     "ReviewMemoryWrite",
     "SQLitePullRequestMemory",
