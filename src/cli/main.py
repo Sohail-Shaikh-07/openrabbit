@@ -27,6 +27,7 @@ from cli.commands.improve import render_improvements, run_improve_blocking
 from cli.commands.index import run_index_blocking, run_qdrant_health_check_blocking
 from cli.commands.init import InitConflict, run_init
 from cli.commands.install_model import InstallResult, run_install_model
+from cli.commands.memory import render_memory_summary, run_memory_inspect
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
@@ -454,6 +455,42 @@ def eval_command(
     import sys
 
     render_eval_summary(report, sys.stdout)
+
+
+@app.command("memory")
+def memory(
+    pr: int = typer.Option(..., "--pr", help="Pull request number to inspect."),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to inspect, in owner/repo form. Overrides repository.target.",
+    ),
+) -> None:
+    """Inspect local OpenRabbit memory for a pull request."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        summary = run_memory_inspect(
+            settings,  # type: ignore[arg-type]
+            repo=repo,
+            pr_number=pr,
+        )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    render_memory_summary(summary, sys.stdout)
 
 
 @app.command("install-model")
