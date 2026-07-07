@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `review`, `describe`, `ask`, `improve`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `review`, `describe`, `ask`, `improve`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -351,6 +351,18 @@ openrabbit improve --pr 42 --repo owner/repo --dry-run
 openrabbit improve --pr 42 --repo owner/repo --publish
 openrabbit --quiet improve --pr 42 --repo owner/repo
 ```
+
+### `openrabbit eval`
+
+Runs repeatable dry-run reviews over selected pull requests and writes a structured JSON test log plus a Markdown dashboard. By default it evaluates PRs `1,2,3,4,5`, which is the first OpenRabbit regression scenario set used for `testing-openrabbit`.
+
+```bash
+openrabbit eval --repo owner/repo
+openrabbit eval --repo owner/repo --prs 1,2,3,4,5
+openrabbit eval --repo owner/repo --output .openrabbit/reports/review-eval.json
+```
+
+Each run captures the command, PR number, provider, model, context mode, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails.
 
 ### `openrabbit start`
 
