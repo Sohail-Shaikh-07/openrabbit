@@ -118,7 +118,7 @@ Export and prune are repository-level operations. Run them separately so a destr
 
 ## Why SQLite First
 
-SQLite is the first memory backend because it is local, portable, inspectable, and has no service dependency. Graph and vector memory are intentionally future plugin layers. They should enrich retrieval later without becoming required for the core review loop.
+SQLite is the first memory backend because it is local, portable, inspectable, and has no service dependency. Graph and vector memory are intentionally future plugin layers. They should enrich retrieval later without becoming required for the core review loop. The adapter design and future plugin boundaries are documented in [memory-backends.md](memory-backends.md).
 
 ## Backend Contract
 

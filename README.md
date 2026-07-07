@@ -258,7 +258,7 @@ OpenRabbit loads configuration in layers:
 
 Use the user config for repeated local defaults such as model provider, model name, polling interval, or `github.token_env`. Keep repository-specific review rules in the repo config. Do not store token values or model API keys in either config file; store secrets in environment variables and reference their names.
 
-OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md).
+OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md). Future graph and vector memory plugins are planned as optional local-first adapters, documented in [docs/memory-backends.md](docs/memory-backends.md).
 
 Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 
