@@ -18,6 +18,11 @@ from cli import exit_codes
 from cli import logging as orlog
 from cli.commands.ask import render_answer, run_ask_blocking
 from cli.commands.describe import render_description, run_describe_blocking
+from cli.commands.eval import (
+    parse_pr_numbers,
+    render_eval_summary,
+    run_eval_blocking,
+)
 from cli.commands.improve import render_improvements, run_improve_blocking
 from cli.commands.index import run_index_blocking, run_qdrant_health_check_blocking
 from cli.commands.init import InitConflict, run_init
@@ -395,6 +400,60 @@ def improve(
     import sys
 
     render_improvements(summary, sys.stdout)
+
+
+@app.command("eval")
+def eval_command(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to evaluate, in owner/repo form. Overrides repository.target.",
+    ),
+    prs: str = typer.Option(
+        "1,2,3,4,5",
+        "--prs",
+        help="Comma or space separated PR numbers to evaluate.",
+    ),
+    output: Path = typer.Option(
+        Path(".openrabbit/reports/review-eval.json"),
+        "--output",
+        "-o",
+        help="JSON report path.",
+    ),
+    markdown: Path | None = typer.Option(
+        Path(".openrabbit/reports/review-eval.md"),
+        "--markdown",
+        help="Markdown dashboard path. Use an explicit path to override the default.",
+    ),
+) -> None:
+    """Run a local evaluation over selected pull requests and write a test log."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        pr_numbers = parse_pr_numbers(prs)
+        report = run_eval_blocking(
+            settings,  # type: ignore[arg-type]
+            repo=repo,
+            prs=pr_numbers,
+            output=output,
+            markdown=markdown,
+        )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except (GitHubAuthError, GitHubAPIError) as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    render_eval_summary(report, sys.stdout)
 
 
 @app.command("install-model")

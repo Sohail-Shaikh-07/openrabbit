@@ -34,7 +34,7 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
 | RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, and automatic review context loading |
 | Fine-tuning | QLoRA training/evaluation/packaging pipeline for a Qwen2.5-Coder adapter |
-| Benchmarks | Runner, scorer, profiler, and packaged v1.1 regression corpus for review quality evaluation |
+| Benchmarks | Runner, scorer, profiler, packaged v1.1 regression corpus, and PR-based `openrabbit eval` test logs |
 
 ## PR-Agent Capabilities To Learn From
 
@@ -154,6 +154,16 @@ Recommended tasks:
 - Add docs generation for changed public functions/classes.
 - Add similar issue lookup after GitHub issue search is available.
 
+### 11. Quality evidence now has a local PR test log
+
+OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, findings, categories, dropped findings, skipped paths, runtime, and failures.
+
+Recommended tasks:
+
+- Add historical trend comparison across eval reports.
+- Add optional HTML/dashboard rendering after the JSON schema stabilizes.
+- Add expected-finding assertions for curated regression PRs.
+
 ## Recommended Roadmap
 
 | Priority | Task | Why |
@@ -163,6 +173,7 @@ Recommended tasks:
 | Done | Add PR description command | Fast, visible value for every PR |
 | Done | Add token-aware PR compression | Keeps large real-world PRs inside deterministic prompt budgets |
 | Done | Add improve/fix suggestions | Moves from finding problems to helping resolve them |
+| Done | Add local quality test log command | Creates repeatable evidence for review quality gaps |
 | P1 | Add GitHub Action recipe | Removes local manual friction for teams |
 | P2 | Add ask command | Useful for interactive PR exploration |
 | P2 | Expand provider support | Helps teams use their preferred local or hosted runtime |
