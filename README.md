@@ -327,10 +327,13 @@ Inspects the local SQLite PR memory for a repository pull request. This command 
 
 ```bash
 openrabbit memory --pr 42 --repo owner/repo
+openrabbit memory --pr 42 --repo owner/repo --format json
 openrabbit memory --workspace /path/to/repo --pr 42 --repo owner/repo
+openrabbit memory --repo owner/repo --export .openrabbit/reports/memory.json
+openrabbit memory --repo owner/repo --prune-before 2026-01-01
 ```
 
-Use this after one or more reviews to see the configured memory path, last reviewed SHA, finding status counts, and stored finding fingerprints.
+Use this after one or more reviews to see the configured memory path, last reviewed SHA, finding status counts, and stored finding fingerprints. Export writes deterministic secret-safe JSON for local debugging or migration. Prune deletes local memory rows older than the given date.
 
 ### `openrabbit describe`
 

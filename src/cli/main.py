@@ -8,6 +8,7 @@ CLI runner.
 from __future__ import annotations
 
 import logging
+import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -27,7 +28,16 @@ from cli.commands.improve import render_improvements, run_improve_blocking
 from cli.commands.index import run_index_blocking, run_qdrant_health_check_blocking
 from cli.commands.init import InitConflict, run_init
 from cli.commands.install_model import InstallResult, run_install_model
-from cli.commands.memory import render_memory_summary, run_memory_inspect
+from cli.commands.memory import (
+    MemoryOutputFormat,
+    render_memory_export,
+    render_memory_json,
+    render_memory_prune,
+    render_memory_summary,
+    run_memory_export,
+    run_memory_inspect,
+    run_memory_prune,
+)
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
@@ -459,7 +469,7 @@ def eval_command(
 
 @app.command("memory")
 def memory(
-    pr: int = typer.Option(..., "--pr", help="Pull request number to inspect."),
+    pr: int | None = typer.Option(None, "--pr", help="Pull request number to inspect."),
     workspace: Path = typer.Option(
         Path("."),
         "--workspace",
@@ -472,25 +482,62 @@ def memory(
         "-r",
         help="Repository to inspect, in owner/repo form. Overrides repository.target.",
     ),
+    output_format: MemoryOutputFormat = typer.Option(
+        MemoryOutputFormat.TEXT,
+        "--format",
+        case_sensitive=False,
+        help="Output format for inspect/prune/export summaries: text or json.",
+    ),
+    export: Path | None = typer.Option(
+        None,
+        "--export",
+        help="Write repository memory to this JSON path.",
+    ),
+    prune_before: str | None = typer.Option(
+        None,
+        "--prune-before",
+        help="Delete local memory older than this ISO date, for example 2026-01-01.",
+    ),
 ) -> None:
     """Inspect local OpenRabbit memory for a pull request."""
+    if export is not None and prune_before is not None:
+        _err.print("[red]--export and --prune-before must be run separately.[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR)
+    if export is None and prune_before is None and pr is None:
+        _err.print("[red]--pr is required unless --export or --prune-before is used.[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR)
     workspace = workspace.resolve()
     settings = _load_settings_or_exit(workspace)
     try:
-        summary = run_memory_inspect(
-            settings,  # type: ignore[arg-type]
-            repo=repo,
-            pr_number=pr,
-        )
+        if export is not None:
+            summary = run_memory_export(settings, repo=repo, output=export)  # type: ignore[arg-type]
+            if output_format is MemoryOutputFormat.JSON:
+                render_memory_json(summary, sys.stdout)
+            else:
+                render_memory_export(summary, sys.stdout)
+            return
+        if prune_before is not None:
+            summary = run_memory_prune(
+                settings,  # type: ignore[arg-type]
+                repo=repo,
+                prune_before=prune_before,
+            )
+            if output_format is MemoryOutputFormat.JSON:
+                render_memory_json(summary, sys.stdout)
+            else:
+                render_memory_prune(summary, sys.stdout)
+            return
+        summary = run_memory_inspect(settings, repo=repo, pr_number=pr or 0)  # type: ignore[arg-type]
     except ValueError as exc:
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
     except StartError as exc:
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
-    import sys
-
-    render_memory_summary(summary, sys.stdout)
+    if output_format is MemoryOutputFormat.JSON:
+        render_memory_json(summary, sys.stdout)
+    else:
+        render_memory_summary(summary, sys.stdout)
 
 
 @app.command("install-model")
