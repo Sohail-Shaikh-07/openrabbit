@@ -59,6 +59,87 @@ class SQLitePullRequestMemory:
             previous_findings=[_record_from_row(row) for row in rows],
         )
 
+    def export_repo(self, repo: str) -> dict[str, Any]:
+        """Return deterministic, secret-free memory data for one repository."""
+        with self._connect() as con:
+            run_rows = con.execute(
+                """
+                SELECT id, repo, pr_number, head_sha, reviewed_at,
+                       context_loaded, comments_posted
+                FROM review_runs
+                WHERE repo = ?
+                ORDER BY pr_number ASC, reviewed_at ASC, id ASC
+                """,
+                (repo,),
+            ).fetchall()
+            finding_rows = con.execute(
+                """
+                SELECT *
+                FROM findings
+                WHERE repo = ?
+                ORDER BY pr_number ASC, last_seen_at DESC, id DESC
+                """,
+                (repo,),
+            ).fetchall()
+
+        return {
+            "schema_version": 1,
+            "repo": repo,
+            "review_runs": [
+                {
+                    "id": int(row["id"]),
+                    "pr_number": int(row["pr_number"]),
+                    "head_sha": str(row["head_sha"]),
+                    "reviewed_at": str(row["reviewed_at"]),
+                    "context_loaded": bool(row["context_loaded"]),
+                    "comments_posted": bool(row["comments_posted"]),
+                }
+                for row in run_rows
+            ],
+            "findings": [_export_finding_row(row) for row in finding_rows],
+        }
+
+    def prune_before(self, repo: str, cutoff: datetime) -> dict[str, int]:
+        """Delete repository memory rows older than ``cutoff``."""
+        cutoff_text = _dump_dt(cutoff)
+        with self._connect() as con:
+            run_count = int(
+                con.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM review_runs
+                    WHERE repo = ? AND reviewed_at < ?
+                    """,
+                    (repo, cutoff_text),
+                ).fetchone()[0]
+            )
+            finding_count = int(
+                con.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM findings
+                    WHERE repo = ? AND last_seen_at < ?
+                    """,
+                    (repo, cutoff_text),
+                ).fetchone()[0]
+            )
+            con.execute(
+                """
+                DELETE FROM review_runs
+                WHERE repo = ? AND reviewed_at < ?
+                """,
+                (repo, cutoff_text),
+            )
+            con.execute(
+                """
+                DELETE FROM findings
+                WHERE repo = ? AND last_seen_at < ?
+                """,
+                (repo, cutoff_text),
+            )
+            con.commit()
+        return {"review_runs": run_count, "findings": finding_count}
+
     def compare_with_history(
         self,
         *,
@@ -279,6 +360,25 @@ def _record_from_row(row: sqlite3.Row) -> FindingMemoryRecord:
         last_seen_at=_load_dt(str(row["last_seen_at"])),
         payload=_load_json(str(row["payload_json"])),
     )
+
+
+def _export_finding_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "pr_number": int(row["pr_number"]),
+        "fingerprint": str(row["fingerprint"]),
+        "status": str(row["status"]),
+        "title": str(row["title"]),
+        "category": str(row["category"]),
+        "severity": str(row["severity"]),
+        "file": str(row["file"]),
+        "line": int(row["line"]),
+        "reason": str(row["reason"]),
+        "suggestion": str(row["suggestion"]),
+        "first_seen_sha": str(row["first_seen_sha"]),
+        "last_seen_sha": str(row["last_seen_sha"]),
+        "first_seen_at": str(row["first_seen_at"]),
+        "last_seen_at": str(row["last_seen_at"]),
+    }
 
 
 def _replace_status(

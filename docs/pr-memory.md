@@ -97,9 +97,24 @@ Use the read-only memory command to inspect what OpenRabbit remembers for a PR:
 
 ```bash
 openrabbit memory --pr 42 --repo owner/repo
+openrabbit memory --pr 42 --repo owner/repo --format json
 ```
 
 The command prints the configured memory database path, the last reviewed SHA, finding counts by status, and stored finding fingerprints. It does not fetch GitHub data, call a model, create a database, or post anything to the pull request.
+
+To export repository memory to a deterministic JSON file:
+
+```bash
+openrabbit memory --repo owner/repo --export .openrabbit/reports/memory.json
+```
+
+To prune local memory rows older than a date:
+
+```bash
+openrabbit memory --repo owner/repo --prune-before 2026-01-01
+```
+
+Export and prune are repository-level operations. Run them separately so a destructive prune cannot be hidden behind an export command.
 
 ## Why SQLite First
 
