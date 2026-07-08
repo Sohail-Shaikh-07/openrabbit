@@ -14,3 +14,4 @@ Files
 - v1.1.0.txt
 - v1.2.0.txt
 - v1.3.0.txt
+- v1.4.0.txt

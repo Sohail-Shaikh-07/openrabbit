@@ -2,7 +2,7 @@
 
 Date: 2026-07-08
 
-This document compares the current OpenRabbit `v1.3.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
+This document compares the current OpenRabbit `v1.4.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
 
 Sources reviewed:
 
@@ -157,13 +157,12 @@ Recommended tasks:
 
 ### 11. Quality evidence now has a local PR test log
 
-OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, findings, categories, dropped findings, skipped paths, runtime, and failures.
+OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, findings, categories, dropped findings, skipped paths, runtime, and failures. v1.4 adds historical report comparison through `--compare` and expected finding assertions through `--expectations`.
 
 Recommended tasks:
 
-- Add historical trend comparison across eval reports.
 - Add optional HTML/dashboard rendering after the JSON schema stabilizes.
-- Add expected-finding assertions for curated regression PRs.
+- Add hosted quality dashboards after eval reports are stable across more repositories.
 
 ## Recommended Roadmap
 

@@ -2,6 +2,55 @@
 
 All notable changes to OpenRabbit are documented in this file.
 
+## v1.4.0 - 2026-07-08
+
+OpenRabbit v1.4.0 strengthens repository context, automation safety, provider diagnostics, PR exploration output, and release-quality evaluation evidence.
+
+### Context Intelligence
+
+- Improved RAG retrieval planning with changed-file, changed-symbol, directory, guideline, and semantic retrieval reasons.
+- Added deterministic context packing so review prompts prefer directly relevant changed files, scoped guidelines, and nearby code context.
+- Added context-source reasons to verbose review output so users can see why indexed files were included.
+
+### Automation
+
+- Added polling controls for bounded concurrent reviews, review cooldowns, and changed-file skip thresholds.
+- Added structured daemon logs for review started, skipped, completed, and failed events.
+- Hardened the GitHub Actions self-hosted runner recipe with dry-run defaults, Qdrant health checks, pinned release refs, and troubleshooting notes.
+
+### Model Providers
+
+- Added `openrabbit model-health` to verify Ollama, official OpenAI, and OpenAI-compatible providers before running a full PR review.
+- Added provider setup documentation for health checks, missing API keys, invalid base URLs, stopped local servers, and empty model responses.
+- Clarified that future local serving adapters belong behind extension points, while current runtime providers use the shared LLM client factory.
+
+### PR Exploration
+
+- Added `--format text|markdown|json` to `openrabbit describe`.
+- Added `--format text|markdown|json` to `openrabbit ask`.
+- Added deterministic JSON output for scripts and Markdown output for reports or future safe publish flows.
+
+### Evaluation
+
+- Added `openrabbit eval --compare` to compare current PR regression logs against a previous JSON report.
+- Added `openrabbit eval --expectations` for expected min/max finding counts and category assertions.
+- Added JSON and Markdown report sections for trend deltas and assertion results.
+
+### Documentation
+
+- Updated README coverage for provider health checks, structured describe/ask output, GitHub Actions, and eval comparison/assertions.
+- Added v1.4 release notes and plain-text changelog archive entry.
+- Updated PR-Agent gap analysis and GitHub Actions examples for the v1.4 release.
+
+### Release Notes
+
+- Package version is `1.4.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- SQLite remains the only required memory backend.
+- Qdrant remains optional for RAG context and reviews still fall back to diff-only mode when unavailable.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.
+
 ## v1.3.0 - 2026-07-08
 
 OpenRabbit v1.3.0 adds local memory maintenance and the first CodeRabbit-style knowledge sources while keeping the platform local-first and service-light.
