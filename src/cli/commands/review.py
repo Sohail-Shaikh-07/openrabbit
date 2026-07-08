@@ -184,6 +184,7 @@ async def run_review(
                 error_type=type(exc).__name__,
             )
 
+    context_provenance = _context_provenance(retrieval_result)
     return {
         "repo": handle.full_name,
         "number": payload.number,
@@ -202,11 +203,15 @@ async def run_review(
         "skipped_paths_count": len(skipped_paths),
         "skipped_paths": skipped_paths,
         "context_loaded": context_loaded,
-        "context_provenance": _context_provenance(retrieval_result),
+        "context_provenance": context_provenance,
         "findings": _serialize_ranked_findings(ranked, memory_comparison),
         "comments_posted": comments_posted,
         "publish_status": publish_status,
         "memory_enabled": memory_enabled,
+        "memory_context": _memory_context_label(memory_enabled, pr_history, memory_error),
+        "learning_count": len(pr_history.learnings) if pr_history is not None else 0,
+        "guideline_sources": _guideline_sources(context_provenance),
+        "linked_issue_count": len(payload.linked_issues),
         "memory_status_counts": _memory_status_counts(memory_comparison),
         "memory_error": memory_error,
     }
@@ -370,6 +375,34 @@ def _memory_status_counts(memory_comparison: FindingComparison | None) -> dict[s
     if memory_comparison.resolved:
         counts[FindingStatus.POSSIBLY_FIXED.value] = len(memory_comparison.resolved)
     return counts
+
+
+def _memory_context_label(
+    enabled: bool,
+    history: PullRequestHistory | None,
+    error: str | None,
+) -> str:
+    if not enabled:
+        return "disabled"
+    if error:
+        return "error"
+    if history is not None:
+        return "loaded"
+    return "unavailable"
+
+
+def _guideline_sources(provenance: list[dict[str, object]]) -> list[str]:
+    sources: list[str] = []
+    seen: set[str] = set()
+    for row in provenance:
+        if row.get("rule_source") != "repository_guideline":
+            continue
+        source = str(row.get("guideline_path") or row.get("source_path") or "").strip()
+        if not source or source in seen:
+            continue
+        seen.add(source)
+        sources.append(source)
+    return sources
 
 
 def _load_repo_learnings(

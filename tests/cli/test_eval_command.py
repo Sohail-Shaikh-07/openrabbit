@@ -52,6 +52,10 @@ async def test_run_eval_writes_json_and_markdown_reports(
             "dropped_findings_count": 1 if number == 1 else 0,
             "skipped_paths_count": 2 if number == 2 else 0,
             "context_loaded": number == 1,
+            "memory_context": "loaded" if number == 1 else "disabled",
+            "learning_count": 2 if number == 1 else 0,
+            "guideline_sources": ["AGENTS.md"] if number == 1 else [],
+            "linked_issue_count": 1 if number == 1 else 0,
         }
 
     report = await run_eval(
@@ -70,8 +74,15 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["provider"] == settings.model.provider
     assert data["totals"]["prs"] == 2
     assert data["totals"]["findings"] == 2
+    assert data["totals"]["learnings"] == 2
+    assert data["totals"]["linked_issues"] == 1
+    assert data["totals"]["guideline_sources"] == ["AGENTS.md"]
     assert data["runs"][0]["command"] == "openrabbit review --pr 1 --repo o/r --dry-run"
     assert data["runs"][0]["context_mode"] == "loaded"
+    assert data["runs"][0]["memory_context"] == "loaded"
+    assert data["runs"][0]["learning_count"] == 2
+    assert data["runs"][0]["guideline_sources"] == ["AGENTS.md"]
+    assert data["runs"][0]["linked_issue_count"] == 1
     assert data["runs"][0]["categories"] == {"security": 1, "tests": 1}
     assert data["runs"][1]["skipped_paths_count"] == 2
     assert report["output_path"] == str(output)
@@ -97,6 +108,10 @@ async def test_run_eval_records_failures(scaffold_repo: Path, tmp_path: Path) ->
     assert report["totals"]["failures"] == 1
     assert report["runs"][0]["failure"] == "GitHub unavailable"
     assert report["runs"][0]["findings_count"] == 0
+    assert report["runs"][0]["memory_context"] == "unknown"
+    assert report["runs"][0]["learning_count"] == 0
+    assert report["runs"][0]["guideline_sources"] == []
+    assert report["runs"][0]["linked_issue_count"] == 0
 
 
 def test_eval_cli_command_exists() -> None:

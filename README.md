@@ -390,7 +390,7 @@ openrabbit eval --repo owner/repo --prs 1,2,3,4,5
 openrabbit eval --repo owner/repo --output .openrabbit/reports/review-eval.json
 ```
 
-Each run captures the command, PR number, provider, model, context mode, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails.
+Each run captures the command, PR number, provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails.
 
 ### `openrabbit start`
 
