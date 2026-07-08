@@ -17,8 +17,18 @@ from rich.console import Console
 
 from cli import exit_codes
 from cli import logging as orlog
-from cli.commands.ask import render_answer, run_ask_blocking
-from cli.commands.describe import render_description, run_describe_blocking
+from cli.commands.ask import (
+    render_answer,
+    render_answer_json,
+    render_answer_markdown,
+    run_ask_blocking,
+)
+from cli.commands.describe import (
+    render_description,
+    render_description_json,
+    render_description_markdown,
+    run_describe_blocking,
+)
 from cli.commands.eval import (
     parse_pr_numbers,
     render_eval_summary,
@@ -41,6 +51,7 @@ from cli.commands.memory import (
     run_memory_prune,
 )
 from cli.commands.model_health import run_model_health_check_blocking
+from cli.commands.output import OutputFormat
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
@@ -320,6 +331,12 @@ def describe(
         "-r",
         help="Repository to describe, in owner/repo form. Overrides repository.target.",
     ),
+    output_format: OutputFormat = typer.Option(
+        OutputFormat.TEXT,
+        "--format",
+        case_sensitive=False,
+        help="Output format: text, markdown, or json.",
+    ),
 ) -> None:
     """Generate a read-only summary and walkthrough of a pull request."""
     workspace = workspace.resolve()
@@ -338,7 +355,12 @@ def describe(
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
     import sys
 
-    render_description(summary, sys.stdout)
+    if output_format is OutputFormat.JSON:
+        render_description_json(summary, sys.stdout)
+    elif output_format is OutputFormat.MARKDOWN:
+        render_description_markdown(summary, sys.stdout)
+    else:
+        render_description(summary, sys.stdout)
 
 
 @app.command()
@@ -356,6 +378,12 @@ def ask(
         "--repo",
         "-r",
         help="Repository to ask about, in owner/repo form. Overrides repository.target.",
+    ),
+    output_format: OutputFormat = typer.Option(
+        OutputFormat.TEXT,
+        "--format",
+        case_sensitive=False,
+        help="Output format: text, markdown, or json.",
     ),
 ) -> None:
     """Ask an evidence-based question about a pull request."""
@@ -379,7 +407,12 @@ def ask(
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
     import sys
 
-    render_answer(summary, sys.stdout)
+    if output_format is OutputFormat.JSON:
+        render_answer_json(summary, sys.stdout)
+    elif output_format is OutputFormat.MARKDOWN:
+        render_answer_markdown(summary, sys.stdout)
+    else:
+        render_answer(summary, sys.stdout)
 
 
 @app.command()

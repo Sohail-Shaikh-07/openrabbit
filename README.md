@@ -369,6 +369,8 @@ Fetches one PR, loads indexed repository context and local PR memory when availa
 
 ```bash
 openrabbit describe --pr 42 --repo owner/repo
+openrabbit describe --pr 42 --repo owner/repo --format markdown
+openrabbit describe --pr 42 --repo owner/repo --format json
 openrabbit --quiet describe --pr 42 --repo owner/repo
 ```
 
@@ -378,6 +380,8 @@ Fetches one PR, loads indexed repository context and local PR memory when availa
 
 ```bash
 openrabbit ask --pr 42 --repo owner/repo "Does this change add enough test coverage?"
+openrabbit ask --pr 42 --repo owner/repo --format markdown "What files should I inspect first?"
+openrabbit ask --pr 42 --repo owner/repo --format json "What files should I inspect first?"
 openrabbit --quiet ask --pr 42 --repo owner/repo "What files should I inspect first?"
 ```
 
