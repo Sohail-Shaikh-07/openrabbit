@@ -1,0 +1,60 @@
+OpenRabbit v1.3.0 - 2026-07-08
+===============================
+
+OpenRabbit v1.3.0 adds local memory maintenance and the first CodeRabbit-style knowledge sources while keeping the platform local-first and service-light.
+
+Memory Maintenance
+------------------
+
+- Added memory export for deterministic, secret-safe repository memory snapshots.
+- Added memory pruning by date for local SQLite review runs and findings.
+- Added `openrabbit memory --learnings` to inspect active local repository learnings.
+- Added explicit `@openrabbit learn ...` support in polling mode so maintainers can store durable review instructions.
+
+Memory Backend Design
+---------------------
+
+- Added memory backend extension documentation for future graph and vector memory plugins.
+- Kept SQLite as the only required runtime memory backend.
+- Documented adapter boundaries so graph/vector stores can enrich memory later without becoming mandatory services.
+
+Repository Knowledge
+--------------------
+
+- Added automatic guideline detection for `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`, `.windsurfrules`, and `.rules/**`.
+- Added path-local guideline scope metadata so prompt context can show where repository rules apply.
+- Preserved `.openrabbit/*` rules and legacy `.codereviewer/*` rule indexing.
+- Added prompt labels and provenance metadata for repository guideline context.
+
+Linked Issue Context
+--------------------
+
+- Added GitHub linked issue parsing from PR title, PR body, commit messages, and head branch metadata.
+- Added compact linked issue context with title, state, labels, URL, and body preview.
+- Included linked issue context in review, describe, ask, and improve prompts.
+- Continued reviews when linked issue lookup fails, logging a warning instead of failing PR parsing.
+
+Evaluation
+----------
+
+- Extended `openrabbit eval` JSON and Markdown reports with v1.3 context fields: memory context, active learning count, guideline sources, and linked issue count.
+- Added totals for learnings, linked issues, and unique guideline sources.
+- Added regression coverage for memory maintenance, learnings, guideline detection, linked issue context, and eval context fields.
+
+Documentation
+-------------
+
+- Added repository guideline documentation.
+- Added memory backend design documentation.
+- Updated README coverage for local learnings, guideline detection, linked issue context, and v1.3 eval fields.
+- Added v1.3 release notes and plain-text changelog archive entry.
+
+Release Notes
+-------------
+
+- Package version is `1.3.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- SQLite remains the only required memory backend.
+- Graph/vector memory, MCP, web search, Jira/Linear, SAST, dashboards, and autofix remain planned for later phases.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.
