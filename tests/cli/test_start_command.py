@@ -16,6 +16,7 @@ from github_ import FileStateStore, GitHubClient, PollEvent, PollState, SeenPull
 from github_.models import PullRequestSummary
 from github_.pr_commands import InMemoryCommandStateStore
 from github_.repository import RepositoryHandle
+from memory.store import SQLitePullRequestMemory
 
 _BASE = "https://api.github.com"
 
@@ -262,6 +263,7 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
                 _issue_comment(11, "@openrabbit full review"),
                 _issue_comment(12, "@openrabbit improve"),
                 _issue_comment(13, "@openrabbit ask what changed?"),
+                _issue_comment(14, "@openrabbit learn Prefer bind parameters for SQL."),
             ],
         )
     )
@@ -308,7 +310,9 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
     assert improve_calls[0]["publish"] is True
     assert ask_calls[0]["question"] == "what changed?"
     assert "It updates search." in replies[0]
-    assert command_store.load().last_seen_comment_id(1) == 13
+    assert command_store.load().last_seen_comment_id(1) == 14
+    store = SQLitePullRequestMemory(settings.resolved_memory_path())
+    assert store.list_learnings("o/r")[0].instruction == "Prefer bind parameters for SQL."
 
 
 @respx.mock

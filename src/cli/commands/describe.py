@@ -256,7 +256,13 @@ def _load_local_history(
     try:
         store = SQLitePullRequestMemory(settings.resolved_memory_path())
         local = store.load_history(repo, int(getattr(pr_payload, "number", 0) or 0))
-        return PullRequestHistory.from_payload(repo=repo, payload=pr_payload, local=local)
+        learnings = store.list_learnings(repo) if settings.memory.learnings_enabled else []
+        return PullRequestHistory.from_payload(
+            repo=repo,
+            payload=pr_payload,
+            local=local,
+            learnings=learnings,
+        )
     except Exception as exc:
         _log.warning(
             "describe.memory_load_failed",

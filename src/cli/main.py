@@ -32,10 +32,12 @@ from cli.commands.memory import (
     MemoryOutputFormat,
     render_memory_export,
     render_memory_json,
+    render_memory_learnings,
     render_memory_prune,
     render_memory_summary,
     run_memory_export,
     run_memory_inspect,
+    run_memory_learnings,
     run_memory_prune,
 )
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
@@ -498,12 +500,22 @@ def memory(
         "--prune-before",
         help="Delete local memory older than this ISO date, for example 2026-01-01.",
     ),
+    learnings: bool = typer.Option(
+        False,
+        "--learnings",
+        help="Inspect active repository learnings instead of one PR.",
+    ),
 ) -> None:
     """Inspect local OpenRabbit memory for a pull request."""
     if export is not None and prune_before is not None:
         _err.print("[red]--export and --prune-before must be run separately.[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR)
-    if export is None and prune_before is None and pr is None:
+    if learnings and (export is not None or prune_before is not None or pr is not None):
+        _err.print(
+            "[red]--learnings must be run separately from --pr, --export, and --prune-before.[/red]"
+        )
+        raise typer.Exit(code=exit_codes.USER_ERROR)
+    if export is None and prune_before is None and not learnings and pr is None:
         _err.print("[red]--pr is required unless --export or --prune-before is used.[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR)
     workspace = workspace.resolve()
@@ -526,6 +538,13 @@ def memory(
                 render_memory_json(summary, sys.stdout)
             else:
                 render_memory_prune(summary, sys.stdout)
+            return
+        if learnings:
+            summary = run_memory_learnings(settings, repo=repo)  # type: ignore[arg-type]
+            if output_format is MemoryOutputFormat.JSON:
+                render_memory_json(summary, sys.stdout)
+            else:
+                render_memory_learnings(summary, sys.stdout)
             return
         summary = run_memory_inspect(settings, repo=repo, pr_number=pr or 0)  # type: ignore[arg-type]
     except ValueError as exc:

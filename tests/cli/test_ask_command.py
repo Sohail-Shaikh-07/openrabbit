@@ -11,6 +11,7 @@ import respx
 
 from cli.commands.ask import AnswerEvidence, PullRequestAnswer, render_answer, run_ask
 from configs import load_settings
+from memory.store import SQLitePullRequestMemory
 from rag.retriever import RetrievalResult
 
 _BASE = "https://api.github.com"
@@ -128,6 +129,33 @@ async def test_run_ask_passes_loaded_context(scaffold_repo: Path) -> None:
 
     assert captured == [retrieval]
     assert summary["context_loaded"] is True
+
+
+@respx.mock
+async def test_run_ask_passes_active_learnings(scaffold_repo: Path) -> None:
+    _mock_pr()
+    captured: list[object] = []
+    settings = load_settings(scaffold_repo, env={})
+    store = SQLitePullRequestMemory(settings.resolved_memory_path())
+    store.add_learning(repo="o/r", instruction="Prefer bind parameters for raw SQL.")
+
+    async def fake_generator(*_args: object, **kwargs: object) -> PullRequestAnswer:
+        captured.append(kwargs.get("pr_history"))
+        return PullRequestAnswer(answer="Use the local learning.")
+
+    await run_ask(
+        settings,
+        number=42,
+        question="Any repo-specific guidance?",
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+    )
+
+    assert captured
+    history = captured[0]
+    assert history.learnings[0].instruction == "Prefer bind parameters for raw SQL."
 
 
 async def test_run_ask_rejects_empty_question(scaffold_repo: Path) -> None:

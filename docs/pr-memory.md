@@ -48,6 +48,7 @@ memory:
   enabled: true
   # Local SQLite memory is stored under .openrabbit/state by default.
   # path: state/openrabbit.db
+  learnings_enabled: true
 ```
 
 To disable memory:
@@ -66,6 +67,14 @@ memory:
 ```
 
 Relative paths are resolved from `.openrabbit/`.
+
+To disable explicit learning while keeping finding memory:
+
+```yaml
+memory:
+  enabled: true
+  learnings_enabled: false
+```
 
 ## Finding Status
 
@@ -98,6 +107,7 @@ Use the read-only memory command to inspect what OpenRabbit remembers for a PR:
 ```bash
 openrabbit memory --pr 42 --repo owner/repo
 openrabbit memory --pr 42 --repo owner/repo --format json
+openrabbit memory --learnings --repo owner/repo
 ```
 
 The command prints the configured memory database path, the last reviewed SHA, finding counts by status, and stored finding fingerprints. It does not fetch GitHub data, call a model, create a database, or post anything to the pull request.
@@ -115,6 +125,18 @@ openrabbit memory --repo owner/repo --prune-before 2026-01-01
 ```
 
 Export and prune are repository-level operations. Run them separately so a destructive prune cannot be hidden behind an export command.
+
+## Local Review Learnings
+
+When `openrabbit start` is running, maintainers can teach repository-specific review preferences with an explicit PR comment command:
+
+```text
+@openrabbit learn Prefer SQLAlchemy bind parameters for any raw SQL in repositories.
+```
+
+OpenRabbit stores the instruction locally with the repository, source PR, source comment, author, timestamp, and active flag. Active learnings are included in the `PR history context` used by `review`, `describe`, `ask`, and `improve`.
+
+Learnings are treated as instructions, not findings. OpenRabbit does not infer permanent learnings from ordinary human comments.
 
 ## Why SQLite First
 

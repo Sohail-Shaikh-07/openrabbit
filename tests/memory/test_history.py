@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from memory.history import ConversationEvent, PullRequestHistory, format_history_context
-from memory.models import FindingMemoryRecord, FindingStatus, PullRequestMemoryHistory
+from memory.models import (
+    FindingMemoryRecord,
+    FindingStatus,
+    LearningMemoryRecord,
+    PullRequestMemoryHistory,
+)
 
 
 def _record(status: FindingStatus) -> FindingMemoryRecord:
@@ -49,6 +54,19 @@ def test_format_history_context_summarizes_local_memory_and_conversation() -> No
                 created_at=datetime(2026, 1, 2, tzinfo=UTC),
             )
         ],
+        learnings=[
+            LearningMemoryRecord(
+                id=1,
+                repo="owner/repo",
+                scope="repository",
+                instruction="Prefer SQLAlchemy bind parameters for raw SQL.",
+                source_pr_number=7,
+                source_comment_id=123,
+                source_url="https://github.com/owner/repo/pull/7#issuecomment-123",
+                author="alice",
+                created_at=datetime(2026, 1, 2, tzinfo=UTC),
+            )
+        ],
     )
 
     text = format_history_context(history)
@@ -58,6 +76,8 @@ def test_format_history_context_summarizes_local_memory_and_conversation() -> No
     assert "still_present" in text
     assert "alice" in text
     assert "Fixed the query" in text
+    assert "Active repository learnings" in text
+    assert "Prefer SQLAlchemy bind parameters" in text
 
 
 def test_pull_request_history_from_payload_collects_commit_shas() -> None:

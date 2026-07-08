@@ -89,6 +89,7 @@ def run_memory_export(
         "output_path": str(output),
         "review_runs": len(_list_value(payload.get("review_runs"))),
         "findings": len(_list_value(payload.get("findings"))),
+        "learnings": len(_list_value(payload.get("learnings"))),
     }
 
 
@@ -111,6 +112,42 @@ def run_memory_prune(
         "memory_path": str(memory_path),
         "prune_before": cutoff.date().isoformat(),
         "deleted": deleted,
+    }
+
+
+def run_memory_learnings(
+    settings: Settings,
+    *,
+    repo: str | None,
+) -> dict[str, object]:
+    """Return active local learnings for one repository."""
+    target_repo = resolve_target_repo(settings, repo)
+    memory_path = settings.resolved_memory_path()
+    learnings: list[dict[str, object]] = []
+    if memory_path.is_file():
+        store = SQLitePullRequestMemory(memory_path)
+        learnings = [
+            {
+                "id": record.id,
+                "scope": record.scope,
+                "instruction": record.instruction,
+                "source_pr_number": record.source_pr_number,
+                "source_comment_id": record.source_comment_id,
+                "source_url": record.source_url,
+                "author": record.author,
+                "created_at": record.created_at.isoformat(),
+                "active": record.active,
+            }
+            for record in store.list_learnings(target_repo, active_only=True)
+        ]
+    return {
+        "repo": target_repo,
+        "memory_enabled": settings.memory.enabled,
+        "learnings_enabled": settings.memory.learnings_enabled,
+        "memory_path": str(memory_path),
+        "memory_database_exists": memory_path.is_file(),
+        "learnings_count": len(learnings),
+        "learnings": learnings,
     }
 
 
@@ -169,6 +206,7 @@ def render_memory_export(summary: dict[str, object], out: TextIO) -> None:
     print(f"  Output:      {summary.get('output_path')}", file=out)
     print(f"  Runs:        {summary.get('review_runs', 0)}", file=out)
     print(f"  Findings:    {summary.get('findings', 0)}", file=out)
+    print(f"  Learnings:   {summary.get('learnings', 0)}", file=out)
 
 
 def render_memory_prune(summary: dict[str, object], out: TextIO) -> None:
@@ -181,6 +219,37 @@ def render_memory_prune(summary: dict[str, object], out: TextIO) -> None:
     print(f"  Prune before:  {summary.get('prune_before')}", file=out)
     print(f"  Runs deleted:  {deleted_map.get('review_runs', 0)}", file=out)
     print(f"  Findings del:  {deleted_map.get('findings', 0)}", file=out)
+
+
+def render_memory_learnings(summary: dict[str, object], out: TextIO) -> None:
+    """Print active local learnings."""
+    print("OpenRabbit memory learnings", file=out)
+    print(f"  Repo:        {summary.get('repo')}", file=out)
+    print(f"  Memory:      {_enabled_text(summary.get('memory_enabled'))}", file=out)
+    print(f"  Learnings:   {_enabled_text(summary.get('learnings_enabled'))}", file=out)
+    print(f"  Database:    {summary.get('memory_path')}", file=out)
+    if summary.get("memory_database_exists") is not True:
+        print("", file=out)
+        print("No local memory has been recorded for this workspace yet.", file=out)
+        return
+
+    raw_learnings = summary.get("learnings")
+    learnings = raw_learnings if isinstance(raw_learnings, list) else []
+    if not learnings:
+        print("", file=out)
+        print("No active learnings stored for this repository.", file=out)
+        return
+
+    print("", file=out)
+    print("Active learnings:", file=out)
+    for item in learnings:
+        if not isinstance(item, dict):
+            continue
+        source = ""
+        pr_number = item.get("source_pr_number")
+        if isinstance(pr_number, int):
+            source = f" from PR #{pr_number}"
+        print(f"  - #{item.get('id')}{source}: {item.get('instruction')}", file=out)
 
 
 def render_memory_json(summary: dict[str, object], out: TextIO) -> None:

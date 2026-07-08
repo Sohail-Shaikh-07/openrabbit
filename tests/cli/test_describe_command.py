@@ -10,6 +10,7 @@ import respx
 
 from cli.commands.describe import PullRequestDescription, render_description, run_describe
 from configs import load_settings
+from memory.store import SQLitePullRequestMemory
 from rag.retriever import RetrievalResult
 
 _BASE = "https://api.github.com"
@@ -128,6 +129,32 @@ async def test_run_describe_passes_loaded_context(scaffold_repo: Path) -> None:
 
     assert captured == [retrieval]
     assert summary["context_loaded"] is True
+
+
+@respx.mock
+async def test_run_describe_passes_active_learnings(scaffold_repo: Path) -> None:
+    _mock_pr()
+    captured: list[object] = []
+    settings = load_settings(scaffold_repo, env={})
+    store = SQLitePullRequestMemory(settings.resolved_memory_path())
+    store.add_learning(repo="o/r", instruction="Prefer repository-layer SQL access.")
+
+    async def fake_generator(*_args: object, **kwargs: object) -> PullRequestDescription:
+        captured.append(kwargs.get("pr_history"))
+        return PullRequestDescription(summary="Summary")
+
+    await run_describe(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+    )
+
+    assert captured
+    history = captured[0]
+    assert history.learnings[0].instruction == "Prefer repository-layer SQL access."
 
 
 def test_render_description_prints_sections() -> None:

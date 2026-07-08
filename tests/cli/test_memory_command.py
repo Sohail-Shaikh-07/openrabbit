@@ -12,6 +12,7 @@ from cli.commands.memory import (
     render_memory_summary,
     run_memory_export,
     run_memory_inspect,
+    run_memory_learnings,
     run_memory_prune,
 )
 from cli.main import app
@@ -108,6 +109,7 @@ def test_run_memory_export_writes_repository_json(scaffold_repo: Path, tmp_path:
     assert summary["output_path"] == str(output)
     assert summary["review_runs"] == 1
     assert summary["findings"] == 1
+    assert summary["learnings"] == 0
     assert payload["repo"] == "owner/repo"
     assert payload["findings"][0]["title"] == "SQL Injection vulnerability"
     assert "payload_json" not in payload["findings"][0]
@@ -195,6 +197,38 @@ def test_memory_cli_exports_json(scaffold_repo: Path, tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert output.is_file()
     assert "OpenRabbit memory export" in result.output
+
+
+def test_memory_cli_lists_active_learnings(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
+    store = SQLitePullRequestMemory(settings.resolved_memory_path())
+    store.add_learning(
+        repo="owner/repo",
+        instruction="Prefer bind parameters for raw SQL.",
+        source_pr_number=7,
+        source_comment_id=123,
+        author="alice",
+    )
+
+    summary = run_memory_learnings(settings, repo="owner/repo")
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "--workspace",
+            str(scaffold_repo),
+            "--repo",
+            "owner/repo",
+            "--learnings",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert summary["learnings_count"] == 1
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["learnings"][0]["instruction"] == "Prefer bind parameters for raw SQL."
 
 
 def test_memory_cli_prunes_with_json_summary(scaffold_repo: Path) -> None:

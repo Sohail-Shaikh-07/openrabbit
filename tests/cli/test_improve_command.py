@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from cli.commands.improve import ImprovementSuggestion, render_improvements, run_improve
 from cli.main import app
 from configs import load_settings
+from memory.store import SQLitePullRequestMemory
 from rag.retriever import RetrievalResult
 
 _BASE = "https://api.github.com"
@@ -177,6 +178,32 @@ async def test_run_improve_passes_loaded_context(scaffold_repo: Path) -> None:
 
     assert captured == [retrieval]
     assert summary["context_loaded"] is True
+
+
+@respx.mock
+async def test_run_improve_passes_active_learnings(scaffold_repo: Path) -> None:
+    _mock_pr()
+    captured: list[object] = []
+    settings = load_settings(scaffold_repo, env={})
+    store = SQLitePullRequestMemory(settings.resolved_memory_path())
+    store.add_learning(repo="o/r", instruction="Prefer concrete replacements over TODOs.")
+
+    async def fake_generator(*_args: object, **kwargs: object) -> list[ImprovementSuggestion]:
+        captured.append(kwargs.get("pr_history"))
+        return []
+
+    await run_improve(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+    )
+
+    assert captured
+    history = captured[0]
+    assert history.learnings[0].instruction == "Prefer concrete replacements over TODOs."
 
 
 @respx.mock

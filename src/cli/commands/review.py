@@ -90,6 +90,7 @@ async def run_review(
                 repo=handle.full_name,
                 payload=payload,
                 local=local_history,
+                learnings=_load_repo_learnings(settings, memory_store_for_run, handle.full_name),
             )
         except Exception as exc:
             memory_error = type(exc).__name__
@@ -369,6 +370,18 @@ def _memory_status_counts(memory_comparison: FindingComparison | None) -> dict[s
     if memory_comparison.resolved:
         counts[FindingStatus.POSSIBLY_FIXED.value] = len(memory_comparison.resolved)
     return counts
+
+
+def _load_repo_learnings(
+    settings: Settings,
+    store: PullRequestMemoryBackend,
+    repo: str,
+) -> list[Any]:
+    if not settings.memory.learnings_enabled:
+        return []
+    if isinstance(store, SQLitePullRequestMemory):
+        return store.list_learnings(repo)
+    return []
 
 
 def _publishable_ranked(

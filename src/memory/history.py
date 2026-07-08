@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from memory.models import PullRequestMemoryHistory
+from memory.models import LearningMemoryRecord, PullRequestMemoryHistory
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,7 @@ class PullRequestHistory:
     commit_shas: list[str] = field(default_factory=list)
     local: PullRequestMemoryHistory | None = None
     conversation: list[ConversationEvent] = field(default_factory=list)
+    learnings: list[LearningMemoryRecord] = field(default_factory=list)
 
     @classmethod
     def from_payload(
@@ -43,6 +44,7 @@ class PullRequestHistory:
         payload: Any,
         local: PullRequestMemoryHistory | None = None,
         conversation: list[ConversationEvent] | None = None,
+        learnings: list[LearningMemoryRecord] | None = None,
     ) -> PullRequestHistory:
         commits = getattr(payload, "commits", None)
         commit_shas = (
@@ -61,6 +63,7 @@ class PullRequestHistory:
             commit_shas=commit_shas,
             local=local,
             conversation=list(conversation or []),
+            learnings=list(learnings or []),
         )
 
 
@@ -84,6 +87,18 @@ def format_history_context(history: Any | None, *, max_events: int = 8) -> str:
             f"- Previous finding [{record.status.value}] {record.title} "
             f"({location}, first seen {record.first_seen_sha[:12]})"
         )
+
+    raw_learnings = getattr(history, "learnings", [])
+    active_learnings = [
+        learning for learning in raw_learnings if getattr(learning, "active", False)
+    ]
+    if active_learnings:
+        lines.append("Active repository learnings:")
+    for learning in active_learnings[:8]:
+        source = ""
+        if learning.source_pr_number is not None:
+            source = f" (from PR #{learning.source_pr_number})"
+        lines.append(f"- Learning{source}: {learning.instruction}")
 
     for event in history.conversation[:max_events]:
         body = " ".join(event.body.split())

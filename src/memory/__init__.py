@@ -7,6 +7,7 @@ from memory.models import (
     FindingComparison,
     FindingMemoryRecord,
     FindingStatus,
+    LearningMemoryRecord,
     PullRequestMemoryHistory,
     ReviewMemoryWrite,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "FindingComparison",
     "FindingMemoryRecord",
     "FindingStatus",
+    "LearningMemoryRecord",
     "PullRequestHistory",
     "PullRequestMemoryBackend",
     "PullRequestMemoryHistory",
