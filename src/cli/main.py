@@ -499,6 +499,16 @@ def eval_command(
         "--markdown",
         help="Markdown dashboard path. Use an explicit path to override the default.",
     ),
+    compare: Path | None = typer.Option(
+        None,
+        "--compare",
+        help="Previous eval JSON report to compare against.",
+    ),
+    expectations: Path | None = typer.Option(
+        None,
+        "--expectations",
+        help="JSON file with expected finding assertions.",
+    ),
 ) -> None:
     """Run a local evaluation over selected pull requests and write a test log."""
     workspace = workspace.resolve()
@@ -511,6 +521,8 @@ def eval_command(
             prs=pr_numbers,
             output=output,
             markdown=markdown,
+            compare=compare,
+            expectations=expectations,
         )
     except ValueError as exc:
         _err.print(f"[red]{exc}[/red]")

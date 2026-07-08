@@ -406,9 +406,31 @@ Runs repeatable dry-run reviews over selected pull requests and writes a structu
 openrabbit eval --repo owner/repo
 openrabbit eval --repo owner/repo --prs 1,2,3,4,5
 openrabbit eval --repo owner/repo --output .openrabbit/reports/review-eval.json
+openrabbit eval --repo owner/repo --compare .openrabbit/reports/previous-eval.json
+openrabbit eval --repo owner/repo --expectations .openrabbit/eval-expectations.json
 ```
 
-Each run captures the command, PR number, provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails.
+Each run captures the command, PR number, provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails. `--compare` adds trend deltas against a previous JSON report. `--expectations` checks minimum or maximum finding counts and category counts for curated regression PRs.
+
+Example expectations file:
+
+```json
+{
+  "expectations": [
+    {
+      "pr": 1,
+      "min_findings": 1,
+      "categories": {
+        "security": 1
+      }
+    },
+    {
+      "pr": 2,
+      "max_findings": 0
+    }
+  ]
+}
+```
 
 ### `openrabbit start`
 

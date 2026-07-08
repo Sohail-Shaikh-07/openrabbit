@@ -44,6 +44,8 @@ async def run_eval(
     prs: list[int] | None,
     output: Path,
     markdown: Path | None,
+    compare: Path | None = None,
+    expectations: Path | None = None,
     env: dict[str, str] | None = None,
     review_runner: ReviewRunner | None = None,
 ) -> dict[str, object]:
@@ -112,6 +114,19 @@ async def run_eval(
         "runs": runs,
     }
 
+    if compare is not None:
+        report["comparison"] = _compare_reports(
+            report,
+            baseline=_load_json_object(compare),
+            baseline_path=compare,
+        )
+    if expectations is not None:
+        report["assertions"] = _assert_expectations(
+            report,
+            expectations=_load_expectations(expectations),
+            expectations_path=expectations,
+        )
+
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -133,9 +148,21 @@ def run_eval_blocking(
     prs: list[int] | None,
     output: Path,
     markdown: Path | None,
+    compare: Path | None = None,
+    expectations: Path | None = None,
 ) -> dict[str, object]:
     """Synchronous wrapper for Typer."""
-    return asyncio.run(run_eval(settings, repo=repo, prs=prs, output=output, markdown=markdown))
+    return asyncio.run(
+        run_eval(
+            settings,
+            repo=repo,
+            prs=prs,
+            output=output,
+            markdown=markdown,
+            compare=compare,
+            expectations=expectations,
+        )
+    )
 
 
 def render_eval_summary(report: dict[str, object], out: TextIO) -> None:
@@ -150,6 +177,16 @@ def render_eval_summary(report: dict[str, object], out: TextIO) -> None:
     markdown = report.get("markdown_path")
     if markdown:
         print(f"  Markdown:  {markdown}", file=out)
+    assertions = _object_dict(report.get("assertions"))
+    if assertions:
+        print(
+            f"  Assertions: {assertions.get('passed', 0)} passed, "
+            f"{assertions.get('failed', 0)} failed",
+            file=out,
+        )
+    comparison = _object_dict(report.get("comparison"))
+    if comparison:
+        print(f"  Compared:  {comparison.get('baseline_path')}", file=out)
 
 
 def _run_record_from_summary(
@@ -257,7 +294,272 @@ def _markdown_report(report: dict[str, object]) -> str:
                     failure=str(run.get("failure") or ""),
                 )
             )
+    comparison = _object_dict(report.get("comparison"))
+    if comparison:
+        lines.extend(_markdown_comparison(comparison))
+    assertions = _object_dict(report.get("assertions"))
+    if assertions:
+        lines.extend(_markdown_assertions(assertions))
     return "\n".join(lines) + "\n"
+
+
+def _load_json_object(path: Path) -> dict[str, object]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"could not read JSON file {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"could not parse JSON file {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"JSON file must contain an object: {path}")
+    return {str(key): value for key, value in data.items()}
+
+
+def _load_expectations(path: Path) -> list[dict[str, object]]:
+    data = _load_json_object(path)
+    raw = data.get("expectations")
+    if not isinstance(raw, list):
+        raise ValueError("expectations file must contain an expectations list")
+    expectations: list[dict[str, object]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("each expectation must be an object")
+        expectations.append({str(key): value for key, value in item.items()})
+    return expectations
+
+
+def _compare_reports(
+    report: dict[str, object],
+    *,
+    baseline: dict[str, object],
+    baseline_path: Path,
+) -> dict[str, object]:
+    current_totals = _object_dict(report.get("totals"))
+    baseline_totals = _object_dict(baseline.get("totals"))
+    current_runs = _runs_by_pr(report)
+    baseline_runs = _runs_by_pr(baseline)
+    pr_numbers = sorted(set(current_runs) | set(baseline_runs))
+    return {
+        "baseline_path": str(baseline_path.resolve()),
+        "baseline_generated_at": str(baseline.get("generated_at", "")),
+        "totals_delta": {
+            "findings": _coerce_int(current_totals.get("findings"))
+            - _coerce_int(baseline_totals.get("findings")),
+            "failures": _coerce_int(current_totals.get("failures"))
+            - _coerce_int(baseline_totals.get("failures")),
+            "dropped_findings": _coerce_int(current_totals.get("dropped_findings"))
+            - _coerce_int(baseline_totals.get("dropped_findings")),
+            "skipped_paths": _coerce_int(current_totals.get("skipped_paths"))
+            - _coerce_int(baseline_totals.get("skipped_paths")),
+            "runtime_ms": round(
+                _coerce_float(current_totals.get("runtime_ms"))
+                - _coerce_float(baseline_totals.get("runtime_ms")),
+                2,
+            ),
+        },
+        "runs": [
+            _run_delta(pr_number, current_runs.get(pr_number), baseline_runs.get(pr_number))
+            for pr_number in pr_numbers
+        ],
+    }
+
+
+def _assert_expectations(
+    report: dict[str, object],
+    *,
+    expectations: list[dict[str, object]],
+    expectations_path: Path,
+) -> dict[str, object]:
+    runs = _runs_by_pr(report)
+    items = [_assert_one_expectation(expectation, runs) for expectation in expectations]
+    failed = sum(1 for item in items if not item.get("passed"))
+    return {
+        "expectations_path": str(expectations_path.resolve()),
+        "passed": len(items) - failed,
+        "failed": failed,
+        "items": items,
+    }
+
+
+def _assert_one_expectation(
+    expectation: dict[str, object],
+    runs: dict[int, dict[str, object]],
+) -> dict[str, object]:
+    pr_number = _coerce_int(expectation.get("pr"))
+    if pr_number <= 0:
+        raise ValueError("each expectation requires a positive pr number")
+    run = runs.get(pr_number)
+    checks: list[dict[str, object]] = []
+    if run is None:
+        checks.append(
+            {
+                "name": "run_present",
+                "passed": False,
+                "expected": True,
+                "actual": False,
+            }
+        )
+        return {"pr": pr_number, "passed": False, "checks": checks}
+
+    if "min_findings" in expectation:
+        checks.append(
+            _threshold_check(
+                "min_findings",
+                actual=_int_run(run, "findings_count"),
+                expected=_coerce_int(expectation.get("min_findings")),
+                operator=">=",
+            )
+        )
+    if "max_findings" in expectation:
+        checks.append(
+            _threshold_check(
+                "max_findings",
+                actual=_int_run(run, "findings_count"),
+                expected=_coerce_int(expectation.get("max_findings")),
+                operator="<=",
+            )
+        )
+    expected_categories = expectation.get("categories")
+    if isinstance(expected_categories, dict):
+        actual_categories = _object_dict(run.get("categories"))
+        for category, expected in sorted(expected_categories.items()):
+            checks.append(
+                _threshold_check(
+                    f"category:{category}",
+                    actual=_coerce_int(actual_categories.get(str(category))),
+                    expected=_coerce_int(expected),
+                    operator=">=",
+                )
+            )
+    if not checks:
+        raise ValueError(f"expectation for PR {pr_number} does not define any checks")
+    return {"pr": pr_number, "passed": all(item["passed"] for item in checks), "checks": checks}
+
+
+def _threshold_check(
+    name: str,
+    *,
+    actual: int,
+    expected: int,
+    operator: str,
+) -> dict[str, object]:
+    passed = actual >= expected if operator == ">=" else actual <= expected
+    return {
+        "name": name,
+        "passed": passed,
+        "expected": expected,
+        "actual": actual,
+        "operator": operator,
+    }
+
+
+def _runs_by_pr(report: dict[str, object]) -> dict[int, dict[str, object]]:
+    runs = report.get("runs")
+    if not isinstance(runs, list):
+        return {}
+    by_pr: dict[int, dict[str, object]] = {}
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        pr_number = _coerce_int(run.get("pr"))
+        if pr_number > 0:
+            by_pr[pr_number] = {str(key): value for key, value in run.items()}
+    return by_pr
+
+
+def _run_delta(
+    pr_number: int,
+    current: dict[str, object] | None,
+    baseline: dict[str, object] | None,
+) -> dict[str, object]:
+    status = "changed"
+    if current is None:
+        status = "missing_current"
+    elif baseline is None:
+        status = "new"
+    elif _int_run(current, "findings_count") == _int_run(baseline, "findings_count"):
+        status = "unchanged"
+    return {
+        "pr": pr_number,
+        "status": status,
+        "findings_delta": _int_run(current or {}, "findings_count")
+        - _int_run(baseline or {}, "findings_count"),
+        "failures_delta": (1 if current and current.get("failure") else 0)
+        - (1 if baseline and baseline.get("failure") else 0),
+        "runtime_ms_delta": round(
+            _float_run(current or {}, "runtime_ms") - _float_run(baseline or {}, "runtime_ms"),
+            2,
+        ),
+    }
+
+
+def _markdown_comparison(comparison: dict[str, object]) -> list[str]:
+    totals = _object_dict(comparison.get("totals_delta"))
+    lines = [
+        "",
+        "## Trend Comparison",
+        "",
+        f"- Baseline: `{comparison.get('baseline_path', '')}`",
+        f"- Findings delta: {totals.get('findings', 0)}",
+        f"- Failures delta: {totals.get('failures', 0)}",
+        f"- Runtime delta ms: {totals.get('runtime_ms', 0)}",
+    ]
+    runs = comparison.get("runs")
+    if isinstance(runs, list) and runs:
+        lines.extend(
+            [
+                "",
+                "| PR | Status | Findings Delta | Failures Delta | Runtime ms Delta |",
+                "| --- | --- | ---: | ---: | ---: |",
+            ]
+        )
+        for item in runs:
+            if isinstance(item, dict):
+                lines.append(
+                    "| {pr} | {status} | {findings} | {failures} | {runtime} |".format(
+                        pr=item.get("pr", ""),
+                        status=item.get("status", ""),
+                        findings=item.get("findings_delta", 0),
+                        failures=item.get("failures_delta", 0),
+                        runtime=item.get("runtime_ms_delta", 0),
+                    )
+                )
+    return lines
+
+
+def _markdown_assertions(assertions: dict[str, object]) -> list[str]:
+    lines = [
+        "",
+        "## Expected Finding Assertions",
+        "",
+        f"- Expectations: `{assertions.get('expectations_path', '')}`",
+        f"- Passed: {assertions.get('passed', 0)}",
+        f"- Failed: {assertions.get('failed', 0)}",
+        "",
+        "| PR | Passed | Check | Expected | Actual |",
+        "| --- | --- | --- | ---: | ---: |",
+    ]
+    items = assertions.get("items")
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            checks = item.get("checks")
+            if not isinstance(checks, list):
+                continue
+            for check in checks:
+                if not isinstance(check, dict):
+                    continue
+                lines.append(
+                    "| {pr} | {passed} | {name} | {expected} | {actual} |".format(
+                        pr=item.get("pr", ""),
+                        passed=check.get("passed", False),
+                        name=check.get("name", ""),
+                        expected=check.get("expected", ""),
+                        actual=check.get("actual", ""),
+                    )
+                )
+    return lines
 
 
 def _category_text(value: object) -> str:
@@ -278,15 +580,19 @@ def _int_run(run: dict[str, object], key: str) -> int:
 
 def _float_run(run: dict[str, object], key: str) -> float:
     value = run.get(key)
-    if isinstance(value, int | float):
-        return float(value)
-    return 0.0
+    return _coerce_float(value)
 
 
 def _coerce_int(value: object) -> int:
     if isinstance(value, int):
         return value
     return 0
+
+
+def _coerce_float(value: object) -> float:
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
 
 
 def _string_list(value: object) -> list[str]:
