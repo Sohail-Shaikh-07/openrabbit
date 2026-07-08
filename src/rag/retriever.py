@@ -25,6 +25,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import PurePosixPath
 from typing import Any
 
 from rag.chunker import Chunk, ChunkKind
@@ -40,6 +41,7 @@ from rag.vector_store import (
 logger = logging.getLogger(__name__)
 
 _TOP_K = 10
+_RELATED_FUNCTION_TOP_K = 5
 _RETRIEVAL_COLLECTIONS = (
     COLLECTION_DOCS,
     COLLECTION_FUNCTIONS,
@@ -101,8 +103,20 @@ class RetrievalResult:
                 for key in ("rule_source", "scope_path", "guideline_path"):
                     if key in payload:
                         row[key] = str(payload.get(key, ""))
+                if "retrieval_reason" in payload:
+                    row["retrieval_reason"] = str(payload.get("retrieval_reason", ""))
                 rows.append(row)
         return rows
+
+
+@dataclass(frozen=True)
+class RetrievalPlan:
+    """Compact retrieval hints derived from a pull request."""
+
+    query_text: str
+    changed_paths: tuple[str, ...]
+    changed_symbols: tuple[str, ...]
+    changed_dirs: tuple[str, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -154,19 +168,20 @@ class ContextRetriever:
                     "RAG index is unavailable; continuing review with diff only",
                 )
                 return RetrievalResult()
-            query_vec = await self._build_query_vector(pr)
-            changed_paths = _changed_paths_from_pr(pr)
+            plan = _retrieval_plan_from_pr(pr)
+            query_vec = await self._build_query_vector(plan.query_text)
             results = await asyncio.gather(
-                self._fetch_security(query_vec, changed_paths),
-                self._fetch_architecture(query_vec, changed_paths),
-                self._fetch_performance(query_vec, changed_paths),
-                self._fetch_tests(query_vec, changed_paths),
+                self._store.search(COLLECTION_RULES, query_vec, top_k=self._top_k),
+                self._store.search(COLLECTION_DOCS, query_vec, top_k=self._top_k),
+                self._store.search(COLLECTION_REVIEWS, query_vec, top_k=self._top_k),
+                self._fetch_function_context(query_vec, plan),
             )
+            rules, docs, reviews, funcs = results
             return RetrievalResult(
-                security=results[0],
-                architecture=results[1],
-                performance=results[2],
-                tests=results[3],
+                security=_pack_hits(rules + funcs, plan, limit=self._top_k),
+                architecture=_pack_hits(docs + funcs, plan, limit=self._top_k),
+                performance=_pack_hits(funcs, plan, limit=self._top_k),
+                tests=_pack_hits(reviews + funcs, plan, limit=self._top_k),
             )
         except Exception as exc:
             logger.warning(
@@ -180,9 +195,8 @@ class ContextRetriever:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _build_query_vector(self, pr: Any) -> Any:
+    async def _build_query_vector(self, query_text: str) -> Any:
         """Encode the PR context into a query embedding vector."""
-        query_text = _query_text_from_pr(pr)
         query_chunk = Chunk(
             source_path=_QUERY_PATH,
             kind=ChunkKind.section,
@@ -193,60 +207,40 @@ class ContextRetriever:
         embedded = await self._engine.aencode([query_chunk])
         return embedded[0].vector
 
-    async def _fetch_security(
-        self, query_vec: Any, changed_paths: list[str]
+    async def _fetch_function_context(
+        self, query_vec: Any, plan: RetrievalPlan
     ) -> list[dict[str, Any]]:
-        """Rules + source functions."""
-        rules, funcs = await asyncio.gather(
-            self._store.search(COLLECTION_RULES, query_vec, top_k=self._top_k),
+        """Fetch changed-file, changed-symbol, and semantic function context."""
+        searches = [
             self._store.search(
                 COLLECTION_FUNCTIONS,
                 query_vec,
-                top_k=self._top_k,
-                filter=_path_filter(changed_paths),
-            ),
-        )
-        return _dedup(rules + funcs)
+                top_k=_RELATED_FUNCTION_TOP_K,
+            )
+        ]
+        path_filter = _path_filter(plan.changed_paths)
+        if path_filter:
+            searches.append(
+                self._store.search(
+                    COLLECTION_FUNCTIONS,
+                    query_vec,
+                    top_k=self._top_k,
+                    filter=path_filter,
+                )
+            )
+        symbol_filter = _symbol_filter(plan.changed_symbols)
+        if symbol_filter:
+            searches.append(
+                self._store.search(
+                    COLLECTION_FUNCTIONS,
+                    query_vec,
+                    top_k=self._top_k,
+                    filter=symbol_filter,
+                )
+            )
 
-    async def _fetch_architecture(
-        self, query_vec: Any, changed_paths: list[str]
-    ) -> list[dict[str, Any]]:
-        """Docs + source functions."""
-        docs, funcs = await asyncio.gather(
-            self._store.search(COLLECTION_DOCS, query_vec, top_k=self._top_k),
-            self._store.search(
-                COLLECTION_FUNCTIONS,
-                query_vec,
-                top_k=self._top_k,
-                filter=_path_filter(changed_paths),
-            ),
-        )
-        return _dedup(docs + funcs)
-
-    async def _fetch_performance(
-        self, query_vec: Any, changed_paths: list[str]
-    ) -> list[dict[str, Any]]:
-        """Source functions only."""
-        funcs = await self._store.search(
-            COLLECTION_FUNCTIONS,
-            query_vec,
-            top_k=self._top_k,
-            filter=_path_filter(changed_paths),
-        )
-        return _dedup(funcs)
-
-    async def _fetch_tests(self, query_vec: Any, changed_paths: list[str]) -> list[dict[str, Any]]:
-        """Reviews + source functions."""
-        reviews, funcs = await asyncio.gather(
-            self._store.search(COLLECTION_REVIEWS, query_vec, top_k=self._top_k),
-            self._store.search(
-                COLLECTION_FUNCTIONS,
-                query_vec,
-                top_k=self._top_k,
-                filter=_path_filter(changed_paths),
-            ),
-        )
-        return _dedup(reviews + funcs)
+        results = await asyncio.gather(*searches)
+        return [hit for result in results for hit in result]
 
 
 # ---------------------------------------------------------------------------
@@ -263,12 +257,12 @@ _QUERY_PATH = _dummy_path = type(
 def _dedup(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Remove duplicate hits based on the payload ``name`` field.
 
-    When the same name appears more than once (e.g. from two collections),
-    only the highest-scoring occurrence is kept.
+    When the same name appears more than once, the first hit in the incoming
+    order is kept. Callers sort by relevance before calling this helper.
     """
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
-    for hit in sorted(hits, key=lambda h: h.get("score", 0.0), reverse=True):
+    for hit in hits:
         name = hit.get("payload", {}).get("name", "")
         if name and name in seen:
             continue
@@ -276,6 +270,75 @@ def _dedup(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
             seen.add(name)
         out.append(hit)
     return out
+
+
+def _pack_hits(
+    hits: list[dict[str, Any]],
+    plan: RetrievalPlan,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Deduplicate, rank, annotate, and cap retrieved context."""
+    packed: list[dict[str, Any]] = []
+    for hit in hits:
+        reason = _retrieval_reason(hit.get("payload", {}), plan)
+        packed.append(_annotate_hit(hit, reason))
+
+    ranked = sorted(
+        packed,
+        key=lambda hit: (
+            _reason_priority(hit),
+            float(hit.get("score", 0.0) or 0.0),
+            str(hit.get("payload", {}).get("source_path", "")),
+            str(hit.get("payload", {}).get("name", "")),
+        ),
+        reverse=True,
+    )
+    return _dedup(ranked)[:limit]
+
+
+def _annotate_hit(hit: dict[str, Any], reason: str) -> dict[str, Any]:
+    payload = hit.get("payload", {})
+    if not isinstance(payload, dict):
+        payload = {}
+    annotated = dict(hit)
+    annotated["payload"] = {**payload, "retrieval_reason": reason}
+    return annotated
+
+
+def _reason_priority(hit: dict[str, Any]) -> int:
+    payload = hit.get("payload", {})
+    if not isinstance(payload, dict):
+        return 0
+    reason = str(payload.get("retrieval_reason", "semantic"))
+    return {
+        "changed_file": 100,
+        "scoped_guideline": 95,
+        "repository_guideline": 90,
+        "changed_symbol": 85,
+        "nearby_path": 75,
+        "semantic": 50,
+    }.get(reason, 0)
+
+
+def _retrieval_reason(payload: Any, plan: RetrievalPlan) -> str:
+    if not isinstance(payload, dict):
+        return "semantic"
+    source_path = str(payload.get("source_path", "") or "")
+    name = str(payload.get("name", "") or "")
+    scope_path = str(payload.get("scope_path", "") or "")
+
+    if source_path and source_path in plan.changed_paths:
+        return "changed_file"
+    if payload.get("rule_source") == "repository_guideline":
+        if scope_path and _scope_applies(scope_path, plan.changed_paths):
+            return "scoped_guideline"
+        return "repository_guideline"
+    if name and name in plan.changed_symbols:
+        return "changed_symbol"
+    if _is_near_changed_path(source_path, plan.changed_dirs):
+        return "nearby_path"
+    return "semantic"
 
 
 def _query_text_from_pr(pr: Any) -> str:
@@ -312,6 +375,18 @@ def _query_text_from_pr(pr: Any) -> str:
     return " ".join(parts)
 
 
+def _retrieval_plan_from_pr(pr: Any) -> RetrievalPlan:
+    changed_paths = tuple(dict.fromkeys(_changed_paths_from_pr(pr)))
+    changed_symbols = tuple(sorted(_changed_symbols_from_pr(pr)))
+    changed_dirs = tuple(dict.fromkeys(_directory_hints(changed_paths)))
+    return RetrievalPlan(
+        query_text=_query_text_from_pr(pr),
+        changed_paths=changed_paths,
+        changed_symbols=changed_symbols,
+        changed_dirs=changed_dirs,
+    )
+
+
 def _changed_paths_from_pr(pr: Any) -> list[str]:
     files = getattr(pr, "files", None)
     if not isinstance(files, list):
@@ -324,7 +399,32 @@ def _changed_paths_from_pr(pr: Any) -> list[str]:
     return paths
 
 
-def _path_filter(changed_paths: list[str]) -> dict[str, Any] | None:
+def _changed_symbols_from_pr(pr: Any) -> set[str]:
+    files = getattr(pr, "files", None)
+    if not isinstance(files, list):
+        return set()
+    symbols: set[str] = set()
+    for file_ in files:
+        hunks = getattr(file_, "hunks", None)
+        if not isinstance(hunks, list):
+            continue
+        for hunk in hunks:
+            for line in getattr(hunk, "lines", []) or []:
+                text = str(getattr(line, "text", "") or "")
+                symbols.update(_symbols_from_line(text))
+    return symbols
+
+
+def _directory_hints(changed_paths: tuple[str, ...]) -> list[str]:
+    dirs: list[str] = []
+    for path in changed_paths:
+        parent = str(PurePosixPath(path).parent)
+        if parent and parent != ".":
+            dirs.append(parent)
+    return dirs
+
+
+def _path_filter(changed_paths: tuple[str, ...]) -> dict[str, Any] | None:
     if not changed_paths:
         return None
     return {
@@ -333,6 +433,29 @@ def _path_filter(changed_paths: list[str]) -> dict[str, Any] | None:
             for path in dict.fromkeys(changed_paths)
         ]
     }
+
+
+def _symbol_filter(changed_symbols: tuple[str, ...]) -> dict[str, Any] | None:
+    if not changed_symbols:
+        return None
+    return {
+        "should": [
+            {"key": "name", "match": {"value": symbol}} for symbol in dict.fromkeys(changed_symbols)
+        ]
+    }
+
+
+def _scope_applies(scope_path: str, changed_paths: tuple[str, ...]) -> bool:
+    if not scope_path:
+        return True
+    prefix = f"{scope_path.rstrip('/')}/"
+    return any(path == scope_path or path.startswith(prefix) for path in changed_paths)
+
+
+def _is_near_changed_path(source_path: str, changed_dirs: tuple[str, ...]) -> bool:
+    if not source_path or not changed_dirs:
+        return False
+    return any(source_path.startswith(f"{path.rstrip('/')}/") for path in changed_dirs)
 
 
 _PY_SYMBOL_RE = re.compile(r"^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
