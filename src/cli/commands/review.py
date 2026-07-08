@@ -264,10 +264,13 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
             dimension = str(item.get("dimension", "")).strip()
             source_path = str(item.get("source_path", "")).strip()
             name = str(item.get("name", "")).strip()
+            reason = str(item.get("retrieval_reason", "")).strip()
             score = item.get("score")
             score_text = f", score={score:.2f}" if isinstance(score, int | float) else ""
+            reason_text = f", reason={reason}" if reason else ""
             label = f"{dimension} {source_path}".strip()
-            detail = f" ({name}{score_text})" if name or score_text else ""
+            detail_text = f"{name}{score_text}{reason_text}"
+            detail = f" ({detail_text})" if detail_text else ""
             print(f"    - {label}{detail}", file=out)
     publish_status = summary.get("publish_status")
     if publish_status == "posted":

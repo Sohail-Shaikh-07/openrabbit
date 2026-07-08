@@ -295,9 +295,9 @@ Run this after `openrabbit init`, after major documentation or architecture chan
 
 The index includes source symbols, tests, documentation, README-style files, prior review examples, `.openrabbit/*` rules, and common repository guideline files. Detected guideline files include `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`, `.windsurfrules`, and `.rules/**`. Path-local guideline files are tagged with their directory scope so prompt context can show where each rule applies. See [docs/repository-guidelines.md](docs/repository-guidelines.md).
 
-During review, OpenRabbit uses the changed file paths and changed symbols from the PR diff to prefer context from the files being edited, while still allowing architecture docs and review rules to contribute broader guidance.
+During review, OpenRabbit uses the changed file paths and changed symbols from the PR diff to prefer context from the files being edited, while still allowing related symbols, nearby files, architecture docs, tests, review examples, and review rules to contribute broader guidance. Retrieved context is packed deterministically so changed-file hits and scoped guideline files are preferred before broader semantic matches.
 
-Use `openrabbit index --health` to confirm Qdrant is reachable and list the available collections before reviewing. When repository context is loaded, `openrabbit review` prints compact context provenance under `Context sources:` so you can see which indexed files influenced the run.
+Use `openrabbit index --health` to confirm Qdrant is reachable and list the available collections before reviewing. When repository context is loaded, `openrabbit review` prints compact context provenance under `Context sources:` so you can see which indexed files influenced the run and why each source was selected, such as `changed_file`, `changed_symbol`, `nearby_path`, `scoped_guideline`, or `semantic`.
 
 The embedding model is downloaded once by FastEmbed when indexing or real RAG retrieval first needs it. OpenRabbit checks Qdrant for an existing RAG index before loading embeddings during review, so a machine without Qdrant or without an index should not trigger an embedding download just to fall back to diff-only mode.
 

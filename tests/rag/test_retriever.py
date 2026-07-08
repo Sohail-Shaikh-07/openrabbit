@@ -11,7 +11,12 @@ import numpy as np
 import pytest
 
 from rag.retriever import AgentDimension, ContextRetriever, RetrievalResult
-from rag.vector_store import COLLECTION_DOCS, COLLECTION_FUNCTIONS, COLLECTION_REVIEWS
+from rag.vector_store import (
+    COLLECTION_DOCS,
+    COLLECTION_FUNCTIONS,
+    COLLECTION_REVIEWS,
+    COLLECTION_RULES,
+)
 
 # Suppress grpc/protobuf DeprecationWarnings on Python 3.12.
 pytestmark = pytest.mark.filterwarnings("ignore:.*uses PyType_Spec.*:DeprecationWarning")
@@ -323,13 +328,118 @@ async def test_retrieve_path_filter_includes_all_changed_files() -> None:
         condition["match"]["value"]
         for call in filtered_calls
         for condition in call.kwargs["filter"]["should"]
+        if condition["key"] == "source_path"
     }
     assert values == {"src/auth/login.py", "src/auth/session.py"}
 
 
+@pytest.mark.asyncio
+async def test_retrieve_queries_function_context_by_changed_symbols() -> None:
+    store = _mock_store()
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+    pr = _make_pr_payload(title="Add task export", filenames=["src/tasks/export.py"])
+    pr.files[0].hunks = [
+        MagicMock(
+            lines=[
+                MagicMock(text="def export_tasks():"),
+                MagicMock(text="return csv_data"),
+            ]
+        )
+    ]
+
+    await retriever.retrieve(pr)
+
+    symbol_calls = [
+        call
+        for call in store.search.await_args_list
+        if call.args[0] == COLLECTION_FUNCTIONS
+        and any(
+            condition["key"] == "name" and condition["match"]["value"] == "export_tasks"
+            for condition in call.kwargs.get("filter", {}).get("should", [])
+        )
+    ]
+    assert symbol_calls
+
+
+@pytest.mark.asyncio
+async def test_retrieve_packs_changed_file_context_before_broader_matches() -> None:
+    store = _mock_store()
+
+    async def search_side_effect(
+        collection: str,
+        _query_vec: object,
+        *,
+        top_k: int = 10,
+        filter: dict | None = None,
+    ) -> list[dict]:
+        _ = top_k
+        if collection != COLLECTION_FUNCTIONS:
+            return []
+        conditions = (filter or {}).get("should", [])
+        if any(condition["key"] == "source_path" for condition in conditions):
+            return [_payload_hit("shared", "src/auth/login.py", score=0.1)]
+        if any(condition["key"] == "name" for condition in conditions):
+            return [_payload_hit("export_tasks", "src/tasks/helpers.py", score=0.8)]
+        return [
+            _payload_hit("shared", "src/auth/unrelated.py", score=0.99),
+            _payload_hit("semantic-helper", "src/auth/session.py", score=0.7),
+        ]
+
+    store.search.side_effect = search_side_effect
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+    pr = _make_pr_payload(filenames=["src/auth/login.py"])
+    pr.files[0].hunks = [MagicMock(lines=[MagicMock(text="def export_tasks():")])]
+
+    result = await retriever.retrieve(pr)
+
+    assert result.performance[0]["payload"]["source_path"] == "src/auth/login.py"
+    assert result.performance[0]["payload"]["retrieval_reason"] == "changed_file"
+    assert all(
+        hit["payload"]["source_path"] != "src/auth/unrelated.py" for hit in result.performance
+    )
+
+
+@pytest.mark.asyncio
+async def test_retrieve_labels_global_guidelines_as_repository_guidelines() -> None:
+    store = _mock_store()
+
+    async def search_side_effect(
+        collection: str,
+        _query_vec: object,
+        *,
+        top_k: int = 10,
+        filter: dict | None = None,
+    ) -> list[dict]:
+        _ = top_k, filter
+        if collection != COLLECTION_RULES:
+            return []
+        return [
+            {
+                "id": "AGENTS.md:rules",
+                "score": 0.92,
+                "payload": {
+                    "name": "rules",
+                    "source_path": "AGENTS.md",
+                    "kind": "section",
+                    "rule_source": "repository_guideline",
+                    "guideline_path": "AGENTS.md",
+                },
+            }
+        ]
+
+    store.search.side_effect = search_side_effect
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+
+    result = await retriever.retrieve(_make_pr_payload())
+
+    assert result.security[0]["payload"]["retrieval_reason"] == "repository_guideline"
+
+
 def test_retrieval_result_exposes_context_provenance() -> None:
+    security_hit = _payload_hit("security-rule", ".openrabbit/security_rules.md", 0.91)
+    security_hit["payload"]["retrieval_reason"] = "semantic"
     result = RetrievalResult(
-        security=[_payload_hit("security-rule", ".openrabbit/security_rules.md", 0.91)],
+        security=[security_hit],
         architecture=[_payload_hit("architecture", "docs/architecture.md", 0.82)],
     )
 
@@ -339,6 +449,7 @@ def test_retrieval_result_exposes_context_provenance() -> None:
     assert provenance[0]["source_path"] == ".openrabbit/security_rules.md"
     assert provenance[0]["name"] == "security-rule"
     assert provenance[0]["score"] == 0.91
+    assert provenance[0]["retrieval_reason"] == "semantic"
 
 
 def test_retrieval_result_provenance_includes_guideline_metadata() -> None:

@@ -973,6 +973,7 @@ def test_render_summary_prints_context_provenance() -> None:
                 "name": "security rules",
                 "kind": "section",
                 "score": 0.91,
+                "retrieval_reason": "scoped_guideline",
             },
             {
                 "dimension": "architecture",
@@ -992,6 +993,7 @@ def test_render_summary_prints_context_provenance() -> None:
     assert "Context:      loaded" in text
     assert "Context sources:" in text
     assert "security .openrabbit/security.md" in text
+    assert "reason=scoped_guideline" in text
     assert "architecture docs/architecture.md" in text
 
 
