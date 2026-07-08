@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `review`, `describe`, `ask`, `improve`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `model-health`, `review`, `describe`, `ask`, `improve`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -57,6 +57,7 @@ OpenRabbit uses Ollama by default. For a base-model test before fine-tuning:
 ```bash
 ollama pull qwen2.5-coder:7b
 ollama run qwen2.5-coder:7b
+openrabbit model-health --workspace .
 ```
 
 Then set `.openrabbit/config.yml` to:
@@ -243,6 +244,14 @@ model:
 The generic name `openai-compatible` still works, but a concrete name such as `openrouter`, `vllm`, or `litellm` is clearer in logs and diagnostics. Any provider other than `ollama` or official `openai` is treated as OpenAI-compatible when `base_url` is set.
 
 `base_model` is mainly useful as local-model/fine-tuning metadata for Ollama and adapter workflows. It is not sent to OpenAI or OpenAI-compatible API providers during review.
+
+Check the configured provider before a full PR review:
+
+```bash
+openrabbit model-health --workspace .
+```
+
+The command prints the configured provider and model, then exits non-zero with an actionable message if Ollama is unreachable, an API key is missing, `base_url` is invalid, or the provider returns an empty response.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
 
