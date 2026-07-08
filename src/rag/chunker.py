@@ -79,6 +79,8 @@ class Chunk:
         ``(start, end)`` byte offsets within the original file content.
         For markdown sections this is an approximation based on character
         position rather than a precise byte offset.
+    metadata:
+        Scanner-provided structured context such as repository guideline scope.
     """
 
     source_path: Path
@@ -87,6 +89,7 @@ class Chunk:
     text: str
     language: str | None = None
     byte_span: tuple[int, int] = field(default_factory=lambda: (0, 0))
+    metadata: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +148,7 @@ class Chunker:
                 text=text,
                 language=record.language,
                 byte_span=(0, len(text.encode())),
+                metadata=dict(record.metadata),
             )
         ]
 
@@ -293,6 +297,7 @@ def _make_code_chunk(
         text=text,
         language=record.language,
         byte_span=(start, end),
+        metadata=dict(record.metadata),
     )
 
 
@@ -344,6 +349,7 @@ def _split_section(text: str, name: str, byte_offset: int, record: FileRecord) -
                 text=text,
                 language=None,
                 byte_span=(byte_offset, byte_offset + len(text.encode())),
+                metadata=dict(record.metadata),
             )
         ]
 
@@ -364,6 +370,7 @@ def _split_section(text: str, name: str, byte_offset: int, record: FileRecord) -
                 text=window,
                 language=None,
                 byte_span=(chunk_start, chunk_end),
+                metadata=dict(record.metadata),
             )
         )
         pos += _CHUNK_WINDOW - _CHUNK_OVERLAP

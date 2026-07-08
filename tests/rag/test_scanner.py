@@ -58,6 +58,52 @@ def test_legacy_codereviewer_rules_are_still_indexed(tmp_path: Path) -> None:
     }
 
 
+def test_repository_guideline_files_are_indexed_as_rules(tmp_path: Path) -> None:
+    guideline_paths = [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "GEMINI.md",
+        ".cursorrules",
+        ".windsurfrules",
+        ".github/copilot-instructions.md",
+        ".github/instructions/python.instructions.md",
+        ".rules/security.md",
+    ]
+    for path in guideline_paths:
+        _write(tmp_path, path, "# Rules")
+
+    records = _scan(tmp_path)
+    by_path = {r.path.as_posix(): r for r in records}
+
+    assert set(guideline_paths).issubset(by_path)
+    assert all(by_path[path].kind is FileKind.rules for path in guideline_paths)
+    assert all(
+        by_path[path].metadata["rule_source"] == "repository_guideline" for path in guideline_paths
+    )
+
+
+def test_path_local_guidelines_carry_subtree_scope(tmp_path: Path) -> None:
+    _write(tmp_path, "services/api/AGENTS.md", "# API rules")
+    _write(tmp_path, "AGENTS.md", "# Root rules")
+
+    by_path = {r.path.as_posix(): r for r in _scan(tmp_path)}
+
+    assert by_path["services/api/AGENTS.md"].metadata["scope_path"] == "services/api"
+    assert by_path["AGENTS.md"].metadata["scope_path"] == "."
+
+
+def test_github_and_rules_guidelines_are_global_scope(tmp_path: Path) -> None:
+    _write(tmp_path, ".github/copilot-instructions.md", "# Copilot rules")
+    _write(tmp_path, ".github/instructions/python.instructions.md", "# Python rules")
+    _write(tmp_path, ".rules/security/api.md", "# Security rules")
+
+    by_path = {r.path.as_posix(): r for r in _scan(tmp_path)}
+
+    assert by_path[".github/copilot-instructions.md"].metadata["scope_path"] == "."
+    assert by_path[".github/instructions/python.instructions.md"].metadata["scope_path"] == "."
+    assert by_path[".rules/security/api.md"].metadata["scope_path"] == "."
+
+
 def test_other_files_are_skipped_by_default(scaffold_repo: Path) -> None:
     _write(scaffold_repo, "data/cargo.lock", "[lock]")
     _write(scaffold_repo, "src/app.py", "x")

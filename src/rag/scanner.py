@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import fnmatch
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -62,6 +62,20 @@ _LANGUAGES_BY_SUFFIX: dict[str, str] = {
 
 _DOC_SUFFIXES: frozenset[str] = frozenset({".md", ".mdx", ".rst"})
 
+_ROOT_GUIDELINE_FILES: frozenset[str] = frozenset(
+    {
+        "AGENTS.md",
+        "CLAUDE.md",
+        "GEMINI.md",
+        ".cursorrules",
+        ".windsurfrules",
+    }
+)
+_GITHUB_COPILOT_INSTRUCTIONS = Path(".github/copilot-instructions.md")
+_GITHUB_INSTRUCTIONS_DIR = ".github/instructions"
+_RULES_DIR = ".rules"
+_GUIDELINE_SOURCE = "repository_guideline"
+
 
 class FileKind(StrEnum):
     """High-level classification used by retrieval to pick the right bucket."""
@@ -82,6 +96,7 @@ class FileRecord:
     kind: FileKind
     size_bytes: int
     language: str | None = None
+    metadata: dict[str, str] = field(default_factory=dict)
 
 
 class IgnoreMatcher:
@@ -152,7 +167,7 @@ class RepositoryScanner:
             posix = relative.as_posix()
             if matcher.matches(posix):
                 continue
-            kind = _classify(relative)
+            kind, metadata = _classify(relative)
             if kind is FileKind.other and not self.include_other:
                 continue
             try:
@@ -165,29 +180,68 @@ class RepositoryScanner:
                 kind=kind,
                 size_bytes=size,
                 language=_LANGUAGES_BY_SUFFIX.get(relative.suffix.lower()),
+                metadata=metadata,
             )
 
 
-def _classify(relative: Path) -> FileKind:
+def _classify(relative: Path) -> tuple[FileKind, dict[str, str]]:
     parts = relative.parts
     suffix = relative.suffix.lower()
+    guideline_metadata = _guideline_metadata(relative)
+    if guideline_metadata:
+        return FileKind.rules, guideline_metadata
 
     if parts and parts[0] in RULE_DIRS:
-        return FileKind.rules
+        return FileKind.rules, {"rule_source": "openrabbit_rules", "scope_path": "."}
 
     if _is_test_path(relative):
-        return FileKind.tests
+        return FileKind.tests, {}
 
     if suffix in _DOC_SUFFIXES:
-        return FileKind.documentation
+        return FileKind.documentation, {}
 
     if parts and parts[0] == "docs":
-        return FileKind.documentation
+        return FileKind.documentation, {}
 
     if suffix in _LANGUAGES_BY_SUFFIX:
-        return FileKind.source
+        return FileKind.source, {}
 
-    return FileKind.other
+    return FileKind.other, {}
+
+
+def _guideline_metadata(relative: Path) -> dict[str, str]:
+    posix = relative.as_posix()
+    name = relative.name
+    if name in _ROOT_GUIDELINE_FILES:
+        return _rule_metadata(relative, scope=_parent_scope(relative))
+
+    if relative == _GITHUB_COPILOT_INSTRUCTIONS:
+        return _rule_metadata(relative, scope=".")
+
+    if (
+        posix.startswith(f"{_GITHUB_INSTRUCTIONS_DIR}/")
+        and name.endswith(".instructions.md")
+        and len(relative.parts) == 3
+    ):
+        return _rule_metadata(relative, scope=".")
+
+    if posix.startswith(f"{_RULES_DIR}/"):
+        return _rule_metadata(relative, scope=".")
+
+    return {}
+
+
+def _rule_metadata(relative: Path, *, scope: str) -> dict[str, str]:
+    return {
+        "rule_source": _GUIDELINE_SOURCE,
+        "scope_path": scope,
+        "guideline_path": relative.as_posix(),
+    }
+
+
+def _parent_scope(relative: Path) -> str:
+    parent = relative.parent.as_posix()
+    return "." if parent == "." else parent
 
 
 def _is_test_path(relative: Path) -> bool:

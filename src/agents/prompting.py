@@ -483,7 +483,7 @@ def _context_item_parts(item: Any) -> tuple[str, str]:
     if isinstance(item, dict):
         payload = item.get("payload")
         if isinstance(payload, dict):
-            source = str(payload.get("source_path") or payload.get("name") or "")
+            source = _context_source_label(payload)
             text = str(payload.get("text") or "")
             return source, text
         return "", str(item.get("text") or "")
@@ -491,3 +491,13 @@ def _context_item_parts(item: Any) -> tuple[str, str]:
     source = str(getattr(item, "source_path", "") or getattr(item, "name", "") or "")
     text = str(getattr(item, "text", "") or "")
     return source, text
+
+
+def _context_source_label(payload: dict[str, Any]) -> str:
+    source = str(payload.get("source_path") or payload.get("name") or "")
+    if payload.get("rule_source") != "repository_guideline":
+        return source
+
+    scope = str(payload.get("scope_path") or ".")
+    guideline = str(payload.get("guideline_path") or source)
+    return f"repository guideline {guideline} (scope: {scope})"

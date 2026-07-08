@@ -8,6 +8,7 @@ from agents.prompting import (
     collect_history_context,
     estimate_prompt_tokens,
     format_changed_line_evidence,
+    format_context,
     format_prompt_diff,
 )
 from github_.diff import DiffLine, Hunk
@@ -198,3 +199,22 @@ def test_collect_history_context_formats_pr_history() -> None:
 
     assert "PR history:" in text
     assert "Last reviewed SHA: abc123" in text
+
+
+def test_format_context_labels_repository_guidelines_with_scope() -> None:
+    context = format_context(
+        [
+            {
+                "payload": {
+                    "source_path": "services/api/AGENTS.md",
+                    "text": "Always use service-layer authorization checks.",
+                    "rule_source": "repository_guideline",
+                    "scope_path": "services/api",
+                    "guideline_path": "services/api/AGENTS.md",
+                }
+            }
+        ]
+    )
+
+    assert "[repository guideline services/api/AGENTS.md (scope: services/api)]" in context
+    assert "Always use service-layer authorization checks." in context

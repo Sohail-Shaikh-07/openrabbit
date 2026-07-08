@@ -227,7 +227,7 @@ def _chunk_payload(item: EmbeddedChunk) -> dict[str, Any]:
     """Build the Qdrant point payload from an :class:`EmbeddedChunk`."""
     chunk = item.chunk
     start, end = chunk.byte_span
-    return {
+    payload: dict[str, Any] = {
         "source_path": chunk.source_path.as_posix(),
         "kind": chunk.kind.value,
         "name": chunk.name,
@@ -236,6 +236,8 @@ def _chunk_payload(item: EmbeddedChunk) -> dict[str, Any]:
         "byte_start": start,
         "byte_end": end,
     }
+    payload.update(chunk.metadata)
+    return payload
 
 
 def _build_filter(filter_dict: dict[str, Any]) -> Any:

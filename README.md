@@ -16,7 +16,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, PR conversation models |
-| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading |
+| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
 
@@ -293,7 +293,9 @@ openrabbit index --workspace . --qdrant-host localhost --qdrant-port 6333
 
 Run this after `openrabbit init`, after major documentation or architecture changes, and after large source changes when you want reviews to use fresh repository context. If Qdrant is unavailable or no index exists, reviews continue in diff-only mode and report `Context: diff only`.
 
-The index includes source symbols, tests, documentation, README-style files, prior review examples, and `.openrabbit/*` rules. During review, OpenRabbit uses the changed file paths and changed symbols from the PR diff to prefer context from the files being edited, while still allowing architecture docs and review rules to contribute broader guidance.
+The index includes source symbols, tests, documentation, README-style files, prior review examples, `.openrabbit/*` rules, and common repository guideline files. Detected guideline files include `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`, `.windsurfrules`, and `.rules/**`. Path-local guideline files are tagged with their directory scope so prompt context can show where each rule applies. See [docs/repository-guidelines.md](docs/repository-guidelines.md).
+
+During review, OpenRabbit uses the changed file paths and changed symbols from the PR diff to prefer context from the files being edited, while still allowing architecture docs and review rules to contribute broader guidance.
 
 Use `openrabbit index --health` to confirm Qdrant is reachable and list the available collections before reviewing. When repository context is loaded, `openrabbit review` prints compact context provenance under `Context sources:` so you can see which indexed files influenced the run.
 
