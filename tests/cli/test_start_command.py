@@ -11,7 +11,7 @@ import respx
 
 from cli.commands.init import run_init
 from cli.commands.start import StartError, resolve_target_repo, run_start
-from configs import RepositorySettings, Settings, load_settings
+from configs import PollingSettings, RepositorySettings, Settings, load_settings
 from github_ import FileStateStore, GitHubClient, PollEvent, PollState, SeenPullRequest
 from github_.models import PullRequestSummary
 from github_.pr_commands import InMemoryCommandStateStore
@@ -55,6 +55,18 @@ def _issue_comment(comment_id: int, body: str) -> dict[str, Any]:
         "html_url": f"https://github.com/o/r/pull/1#issuecomment-{comment_id}",
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
+    }
+
+
+def _pull_file(filename: str) -> dict[str, Any]:
+    return {
+        "sha": "a" * 40,
+        "filename": filename,
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "changes": 1,
+        "patch": "@@ -1 +1 @@\n-old\n+new",
     }
 
 
@@ -355,6 +367,68 @@ async def test_start_command_listener_respects_pause_and_resume(scaffold_repo: P
 
     assert reviewed == [1]
     assert not command_store.load().is_paused(1)
+
+
+async def test_start_handler_skips_reviews_during_cooldown(scaffold_repo: Path) -> None:
+    from cli.commands.start import build_review_handler
+
+    settings = load_settings(scaffold_repo, env={})
+    settings.polling = PollingSettings(review_cooldown_seconds=300)
+    reviewed: list[int] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        reviewed.append(int(kwargs["number"]))
+        return {"findings_count": 0, "comments_posted": False}
+
+    handler = build_review_handler(
+        settings,
+        env={"GITHUB_TOKEN": "tkn"},
+        review_runner=fake_review_runner,
+    )
+    client = GitHubClient(token="tkn")
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+
+    try:
+        await handler(_event("commit_pushed"), handle)
+        await handler(_event("commit_pushed"), handle)
+    finally:
+        await client.aclose()
+
+    assert reviewed == [1]
+
+
+@respx.mock
+async def test_start_handler_skips_prs_over_changed_file_limit(scaffold_repo: Path) -> None:
+    from cli.commands.start import build_review_handler
+
+    settings = load_settings(scaffold_repo, env={})
+    settings.polling = PollingSettings(max_changed_files=1)
+    reviewed: list[int] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        reviewed.append(int(kwargs["number"]))
+        return {"findings_count": 0, "comments_posted": False}
+
+    handler = build_review_handler(
+        settings,
+        env={"GITHUB_TOKEN": "tkn"},
+        review_runner=fake_review_runner,
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/1/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[_pull_file("src/a.py"), _pull_file("src/b.py")],
+        )
+    )
+    client = GitHubClient(token="tkn")
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+
+    try:
+        await handler(_event("commit_pushed"), handle)
+    finally:
+        await client.aclose()
+
+    assert reviewed == []
 
 
 @respx.mock

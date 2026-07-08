@@ -112,6 +112,9 @@ class PollingSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     interval_seconds: int = Field(default=60, ge=5, le=3600)
+    max_concurrent_reviews: int = Field(default=1, ge=1, le=16)
+    review_cooldown_seconds: int = Field(default=0, ge=0, le=86400)
+    max_changed_files: int | None = Field(default=None, ge=1, le=1000)
 
 
 class RepositorySettings(BaseModel):

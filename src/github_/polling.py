@@ -59,13 +59,17 @@ class PollingService:
         handle: RepositoryHandle,
         *,
         interval_seconds: float,
+        max_concurrent_handlers: int = 1,
         store: StateStore | None = None,
         handler: Handler | None = None,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("interval_seconds must be > 0")
+        if max_concurrent_handlers <= 0:
+            raise ValueError("max_concurrent_handlers must be > 0")
         self._handle = handle
         self._interval = interval_seconds
+        self._max_concurrent_handlers = max_concurrent_handlers
         self._store: StateStore = store if store is not None else InMemoryStateStore()
         self._handler: Handler = handler if handler is not None else _noop_handler
 
@@ -82,20 +86,20 @@ class PollingService:
             repo=self._handle.full_name,
             seen_open_prs=len(prs),
             events=len(events),
+            handler_concurrency=self._max_concurrent_handlers,
         )
 
-        for event in events:
-            try:
-                await self._handler(event, self._handle)
-            except Exception as exc:
-                _log.error(
-                    "polling.handler_error",
-                    repo=self._handle.full_name,
-                    event_kind=event.kind,
-                    pr=event.number,
-                    error=str(exc),
-                    error_type=type(exc).__name__,
-                )
+        if self._max_concurrent_handlers == 1:
+            for event in events:
+                await self._handle_event(event)
+        else:
+            semaphore = asyncio.Semaphore(self._max_concurrent_handlers)
+
+            async def bounded_handle(event: PollEvent) -> None:
+                async with semaphore:
+                    await self._handle_event(event)
+
+            await asyncio.gather(*(bounded_handle(event) for event in events))
 
         return events
 
@@ -120,6 +124,19 @@ class PollingService:
                     error_type=type(exc).__name__,
                 )
             await asyncio.sleep(self._interval)
+
+    async def _handle_event(self, event: PollEvent) -> None:
+        try:
+            await self._handler(event, self._handle)
+        except Exception as exc:
+            _log.error(
+                "polling.handler_error",
+                repo=self._handle.full_name,
+                event_kind=event.kind,
+                pr=event.number,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
 
 
 def _diff(previous: PollState, current: list[PullRequestSummary]) -> list[PollEvent]:
