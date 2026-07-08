@@ -1,4 +1,8 @@
-"""Model serving abstractions (Ollama, vLLM, raw transformers) for Phase 4 and 5."""
+"""Reserved namespace for future local model-serving adapters.
+
+Runtime review providers live in :mod:`agents.llm` and are built through
+``agents.factory.build_llm_client``.
+"""
 
 from __future__ import annotations
 

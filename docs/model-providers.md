@@ -12,6 +12,14 @@ OpenRabbit can review pull requests with a local Ollama model, the official Open
 
 For custom API providers, `provider` is the name OpenRabbit shows in diagnostics. `base_url` is what tells OpenRabbit to use the OpenAI-compatible chat completions client.
 
+After changing provider config, run:
+
+```bash
+openrabbit model-health --workspace .
+```
+
+The health check uses the same provider client as `review`, `describe`, `ask`, and `improve`, but it does not contact GitHub or publish anything.
+
 ## Secret Rules
 
 Never put API key values in `.openrabbit/config.yml`.
@@ -51,7 +59,7 @@ Verify locally:
 
 ```bash
 ollama list
-openrabbit review --pr 42 --repo owner/repo --dry-run
+openrabbit model-health --workspace .
 ```
 
 Use this path when you want source code and prompts to stay on your own machine.
@@ -92,7 +100,7 @@ Do not set `base_url` for the official OpenAI provider. OpenRabbit rejects `mode
 Verify:
 
 ```bash
-openrabbit review --pr 42 --repo owner/repo --dry-run
+openrabbit model-health --workspace .
 ```
 
 ## OpenAI-Compatible Endpoints
@@ -144,6 +152,12 @@ http://localhost:8000/v1/chat/completions
 
 For local servers that do not enforce authentication, set the configured environment variable to a harmless placeholder such as `local-key`. OpenRabbit still sends it only in the request header.
 
+Verify:
+
+```bash
+openrabbit model-health --workspace .
+```
+
 ## GitHub Token
 
 Model provider keys are separate from GitHub auth. For GitHub reviews, set a token with repository access:
@@ -191,6 +205,10 @@ OPENRABBIT_MODEL__API_KEY_ENV=OPENAI_API_KEY
 Do not use `OPENRABBIT_MODEL__API_KEY`. It is rejected for the same reason as inline `model.api_key`: secrets should be stored in dedicated environment variables and referenced by name.
 
 ## Troubleshooting
+
+`openrabbit model-health` fails
+
+Read the provider and model shown in the output first. Missing keys, invalid base URLs, stopped local servers, unsupported provider config, and empty model responses are reported before you run a full PR review.
 
 `no GitHub token found`
 

@@ -18,7 +18,7 @@ def test_version_is_semver() -> None:
 def test_cli_help_lists_known_commands() -> None:
     result = _RUNNER.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for command in ("init", "start", "stop", "index", "review"):
+    for command in ("init", "start", "stop", "index", "model-health", "review"):
         assert command in result.stdout
 
 

@@ -40,6 +40,7 @@ from cli.commands.memory import (
     run_memory_learnings,
     run_memory_prune,
 )
+from cli.commands.model_health import run_model_health_check_blocking
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
@@ -230,6 +231,26 @@ def index(
         f"[green]Indexed {index_result.chunks_indexed} chunks from "
         f"{index_result.files_scanned} files.[/green]"
     )
+
+
+@app.command("model-health")
+def model_health(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+) -> None:
+    """Check the configured model provider without running a PR review."""
+    settings = _load_settings_or_exit(workspace.resolve())
+    result = run_model_health_check_blocking(settings)  # type: ignore[arg-type]
+    detail = f"{result.provider} / {result.model}: {result.message}"
+    if result.ok:
+        _console.print(f"[green]{detail}[/green]")
+        return
+    _err.print(f"[red]{detail}[/red]")
+    raise typer.Exit(code=exit_codes.USER_ERROR)
 
 
 @app.command()
