@@ -92,6 +92,10 @@ async def run_eval(
                     "categories": {},
                     "dropped_findings_count": 0,
                     "skipped_paths_count": 0,
+                    "memory_context": "unknown",
+                    "learning_count": 0,
+                    "guideline_sources": [],
+                    "linked_issue_count": 0,
                     "runtime_ms": round(runtime_ms, 2),
                     "failure": str(exc),
                 }
@@ -173,6 +177,10 @@ def _run_record_from_summary(
         "categories": _categories(finding_items),
         "dropped_findings_count": _int_summary(summary, "dropped_findings_count"),
         "skipped_paths_count": _int_summary(summary, "skipped_paths_count"),
+        "memory_context": str(summary.get("memory_context", "unknown") or "unknown"),
+        "learning_count": _int_summary(summary, "learning_count"),
+        "guideline_sources": _string_list(summary.get("guideline_sources")),
+        "linked_issue_count": _int_summary(summary, "linked_issue_count"),
         "runtime_ms": round(runtime_ms, 2),
         "failure": failure,
     }
@@ -200,6 +208,11 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
         "findings": sum(_int_run(run, "findings_count") for run in runs),
         "dropped_findings": sum(_int_run(run, "dropped_findings_count") for run in runs),
         "skipped_paths": sum(_int_run(run, "skipped_paths_count") for run in runs),
+        "learnings": sum(_int_run(run, "learning_count") for run in runs),
+        "linked_issues": sum(_int_run(run, "linked_issue_count") for run in runs),
+        "guideline_sources": sorted(
+            {source for run in runs for source in _string_list(run.get("guideline_sources"))}
+        ),
         "failures": sum(1 for run in runs if run.get("failure")),
         "categories": categories,
         "runtime_ms": round(sum(_float_run(run, "runtime_ms") for run in runs), 2),
@@ -218,8 +231,8 @@ def _markdown_report(report: dict[str, object]) -> str:
         f"- Findings: {totals.get('findings', 0)}",
         f"- Failures: {totals.get('failures', 0)}",
         "",
-        "| PR | Context | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
-        "| --- | --- | ---: | --- | ---: | ---: | ---: | --- |",
+        "| PR | Context | Memory | Learnings | Guidelines | Linked Issues | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |",
     ]
     runs = report.get("runs")
     if isinstance(runs, list):
@@ -227,10 +240,15 @@ def _markdown_report(report: dict[str, object]) -> str:
             if not isinstance(run, dict):
                 continue
             lines.append(
-                "| {pr} | {context} | {findings} | {categories} | {dropped} | "
+                "| {pr} | {context} | {memory} | {learnings} | {guidelines} | "
+                "{linked_issues} | {findings} | {categories} | {dropped} | "
                 "{skipped} | {runtime} | {failure} |".format(
                     pr=run.get("pr", ""),
                     context=run.get("context_mode", ""),
+                    memory=run.get("memory_context", ""),
+                    learnings=run.get("learning_count", 0),
+                    guidelines=len(_string_list(run.get("guideline_sources"))),
+                    linked_issues=run.get("linked_issue_count", 0),
                     findings=run.get("findings_count", 0),
                     categories=_category_text(run.get("categories")),
                     dropped=run.get("dropped_findings_count", 0),
@@ -269,6 +287,12 @@ def _coerce_int(value: object) -> int:
     if isinstance(value, int):
         return value
     return 0
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item)]
 
 
 def _object_dict(value: object) -> dict[str, object]:

@@ -276,6 +276,8 @@ async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> No
     first_history = captured_history[0]
     second_history = captured_history[1]
     assert first["memory_enabled"] is True
+    assert first["memory_context"] == "loaded"
+    assert first["learning_count"] == 1
     assert first_history is not None
     assert second_history is not None
     assert first_history.learnings[0].instruction == "Prefer bind parameters for raw SQL."
@@ -727,14 +729,35 @@ async def test_run_review_surfaces_publisher_errors(scaffold_repo: Path) -> None
 
 @respx.mock
 async def test_run_review_passes_loaded_context_to_agent_runner(scaffold_repo: Path) -> None:
-    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    pr_json = _pr_json()
+    pr_json["body"] = "Adds linked issue context. Fixes #12."
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=pr_json))
     respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(return_value=httpx.Response(200, json=[]))
     respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/issues/12").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "number": 12,
+                "title": "Need linked issue context",
+                "state": "open",
+                "body": "Review should see linked issue intent.",
+                "labels": [{"name": "context"}],
+                "html_url": "https://github.com/o/r/issues/12",
+            },
+        )
+    )
     retrieval = RetrievalResult(
         security=[
             {
                 "score": 0.9,
-                "payload": {"name": "rule", "source_path": ".openrabbit/security.md"},
+                "payload": {
+                    "name": "rule",
+                    "source_path": "services/api/AGENTS.md",
+                    "rule_source": "repository_guideline",
+                    "guideline_path": "services/api/AGENTS.md",
+                    "scope_path": "services/api",
+                },
             }
         ]
     )
@@ -764,12 +787,17 @@ async def test_run_review_passes_loaded_context_to_agent_runner(scaffold_repo: P
     assert summary["context_provenance"] == [
         {
             "dimension": "security",
-            "source_path": ".openrabbit/security.md",
+            "source_path": "services/api/AGENTS.md",
             "name": "rule",
             "kind": "",
             "score": 0.9,
+            "rule_source": "repository_guideline",
+            "scope_path": "services/api",
+            "guideline_path": "services/api/AGENTS.md",
         }
     ]
+    assert summary["guideline_sources"] == ["services/api/AGENTS.md"]
+    assert summary["linked_issue_count"] == 1
 
 
 @respx.mock
