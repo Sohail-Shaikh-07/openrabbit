@@ -9,6 +9,7 @@ from agents.prompting import (
     estimate_prompt_tokens,
     format_changed_line_evidence,
     format_context,
+    format_linked_issue_context,
     format_prompt_diff,
 )
 from github_.diff import DiffLine, Hunk
@@ -199,6 +200,32 @@ def test_collect_history_context_formats_pr_history() -> None:
 
     assert "PR history:" in text
     assert "Last reviewed SHA: abc123" in text
+
+
+def test_collect_history_context_includes_linked_issues() -> None:
+    payload = SimpleNamespace(
+        linked_issues=[
+            SimpleNamespace(
+                full_name="owner/repo#12",
+                title="Add safer search",
+                state="open",
+                labels=["security", "api"],
+                body_preview="Search must not interpolate user input.",
+                source="pull_request.body",
+            )
+        ]
+    )
+
+    text = collect_history_context({"pr_payload": payload, "pr_history": None})
+
+    assert "Linked GitHub issues:" in text
+    assert "owner/repo#12: Add safer search" in text
+    assert "labels=security, api" in text
+    assert "Search must not interpolate user input." in text
+
+
+def test_format_linked_issue_context_omits_when_absent() -> None:
+    assert format_linked_issue_context(SimpleNamespace(linked_issues=[])) == ""
 
 
 def test_format_context_labels_repository_guidelines_with_scope() -> None:

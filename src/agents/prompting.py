@@ -127,9 +127,51 @@ def collect_context(state: ReviewState, *dimensions: str) -> str:
 def collect_history_context(state: ReviewState) -> str:
     """Return formatted PR memory and conversation context."""
     history = state.get("pr_history")
+    linked_issue_context = format_linked_issue_context(state.get("pr_payload"))
     if isinstance(history, PullRequestHistory):
-        return format_history_context(history)
-    return format_history_context(history)
+        history_context = format_history_context(history)
+    else:
+        history_context = format_history_context(history)
+    if linked_issue_context:
+        return f"{history_context}\n\n{linked_issue_context}"
+    return history_context
+
+
+def format_linked_issue_context(pr_payload: Any, *, max_issues: int = 5) -> str:
+    """Return compact prompt context for GitHub issues linked from a PR."""
+    linked_issues = getattr(pr_payload, "linked_issues", None)
+    if not isinstance(linked_issues, list) or not linked_issues:
+        return ""
+
+    lines = ["Linked GitHub issues:"]
+    for issue in linked_issues[:max_issues]:
+        full_name = str(getattr(issue, "full_name", "") or "")
+        title = str(getattr(issue, "title", "") or "").strip()
+        state = str(getattr(issue, "state", "") or "").strip()
+        labels = getattr(issue, "labels", [])
+        label_text = ", ".join(str(label) for label in labels) if isinstance(labels, list) else ""
+        body_preview = str(getattr(issue, "body_preview", "") or "").strip()
+        source = str(getattr(issue, "source", "") or "").strip()
+        summary = f"- {full_name}: {title}"
+        details = []
+        if state:
+            details.append(f"state={state}")
+        if label_text:
+            details.append(f"labels={label_text}")
+        if source:
+            details.append(f"source={source}")
+        if details:
+            summary += f" ({'; '.join(details)})"
+        lines.append(summary)
+        if body_preview:
+            lines.append(f"  Issue body preview: {body_preview}")
+
+    omitted = len(linked_issues) - max_issues
+    if omitted > 0:
+        noun = "issue" if omitted == 1 else "issues"
+        lines.append(f"... {omitted} additional linked {noun} omitted.")
+
+    return "\n".join(lines)
 
 
 def format_changed_line_evidence(

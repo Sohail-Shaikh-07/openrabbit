@@ -200,6 +200,30 @@ async def test_list_pull_requests_handles_pagination() -> None:
 
 
 @respx.mock
+async def test_get_issue_returns_compact_issue_metadata() -> None:
+    respx.get(f"{_BASE}/repos/o/r/issues/12").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "number": 12,
+                "title": "Search endpoint should be safe",
+                "state": "open",
+                "body": "Users can search tasks by title.",
+                "labels": [{"name": "security"}, {"name": "api"}],
+                "html_url": "https://github.com/o/r/issues/12",
+            },
+        )
+    )
+
+    async with _client() as client:
+        issue = await client.get_issue("o", "r", 12)
+
+    assert issue.number == 12
+    assert issue.title == "Search endpoint should be safe"
+    assert [label.name for label in issue.labels] == ["security", "api"]
+
+
+@respx.mock
 async def test_create_review_sends_payload() -> None:
     captured: dict[str, object] = {}
 
