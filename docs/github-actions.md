@@ -39,8 +39,18 @@ Runner requirements:
 - Ollama installed and reachable from the runner
 - The model already pulled, or enough time/disk to pull it during the workflow
 - Optional: Docker and Qdrant if you want repository context indexing
+- Runner labels matching the example: `self-hosted`, `linux`, and `openrabbit`
 
 The workflow writes a minimal `.openrabbit/config.yml` if the repository has not committed one. For production use, commit your own `.openrabbit/` directory so review rules, architecture notes, and provider settings live beside the code.
+
+The example installs OpenRabbit from the `OPENRABBIT_REF` environment value, which defaults to `main`. For production use, pin this to a release tag, for example:
+
+```yaml
+env:
+  OPENRABBIT_REF: "v1.3.0"
+```
+
+Manual `workflow_dispatch` runs default to dry-run mode so you can inspect findings in the logs before posting comments. Set the `dry_run` input to `false` when you intentionally want a manual run to publish review comments. Pull request events publish by default because they use the normal review workflow.
 
 ## API Provider Workflow
 
@@ -118,6 +128,8 @@ openrabbit review --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
 
 If Qdrant is unavailable, reviews still run in diff-only mode.
 
+The example workflow runs `openrabbit index --health` before indexing and marks both index steps `continue-on-error: true`. That keeps PR review available even when Qdrant is not running, while still making the missing context visible in Actions logs.
+
 When context is loaded, the review summary includes `Context sources:` with the indexed files that contributed retrieved context. This is useful in CI logs because it confirms whether the run used repository rules, docs, tests, or source-symbol chunks.
 
 OpenRabbit checks for an existing RAG index before loading the embedding model during review, so runners without Qdrant do not need to download embedding weights just to complete a diff-only review.
@@ -135,6 +147,16 @@ Set the provider key as a repository or organization secret and make sure `model
 `Connection refused` for Ollama
 
 The runner cannot reach Ollama. Start `ollama serve`, check port `11434`, or switch to an API provider.
+
+The workflow is stuck pulling the model
+
+Pull the model once on the self-hosted runner before enabling the workflow:
+
+```bash
+ollama pull qwen2.5-coder:7b
+```
+
+The workflow still runs `ollama pull` to make the dependency explicit, but a pre-pulled model should make the step fast.
 
 No comments appear on forked PRs
 
