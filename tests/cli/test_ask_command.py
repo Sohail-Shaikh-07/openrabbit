@@ -9,7 +9,14 @@ import httpx
 import pytest
 import respx
 
-from cli.commands.ask import AnswerEvidence, PullRequestAnswer, render_answer, run_ask
+from cli.commands.ask import (
+    AnswerEvidence,
+    PullRequestAnswer,
+    render_answer,
+    render_answer_json,
+    render_answer_markdown,
+    run_ask,
+)
 from configs import load_settings
 from memory.store import SQLitePullRequestMemory
 from rag.retriever import RetrievalResult
@@ -212,3 +219,58 @@ def test_render_answer_prints_sections() -> None:
     assert "[changed_lines] src/search.py:1" in text
     assert "Uncertainty:" in text
     assert "Follow-up checks:" in text
+
+
+def test_render_answer_markdown_prints_report_sections() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 42,
+        "title": "Improve search",
+        "state": "open",
+        "head_sha": "abcdef012345",
+        "files_changed": 1,
+        "binary_files": 0,
+        "hunks": 1,
+        "commits": 1,
+        "context_loaded": False,
+        "question": "What changed?",
+        "answer": {
+            "answer": "Search now accepts a query.",
+            "evidence": [
+                {
+                    "source": "changed_lines",
+                    "file": "src/search.py",
+                    "line": 1,
+                    "detail": "The signature now includes query.",
+                }
+            ],
+            "uncertainty": ["No callers are shown."],
+            "follow_up_checks": ["Run search tests."],
+        },
+    }
+    out = io.StringIO()
+
+    render_answer_markdown(summary, out)
+
+    text = out.getvalue()
+    assert "# PR #42 Ask" in text
+    assert "## Question" in text
+    assert "## Evidence" in text
+    assert "- `changed_lines` `src/search.py:1`: The signature now includes query." in text
+
+
+def test_render_answer_json_prints_deterministic_summary() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 42,
+        "question": "What changed?",
+        "answer": {"answer": "Search now accepts a query."},
+    }
+    out = io.StringIO()
+
+    render_answer_json(summary, out)
+
+    text = out.getvalue()
+    assert text.endswith("\n")
+    assert '"answer": {' in text
+    assert '"question": "What changed?"' in text

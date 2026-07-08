@@ -24,6 +24,7 @@ from agents.prompting import (
     format_changed_line_evidence,
     format_prompt_diff,
 )
+from cli.commands.output import render_json
 from cli.commands.review import ContextLoader, _has_retrieval_context, _load_review_context
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -190,6 +191,31 @@ def render_description(summary: dict[str, object], out: TextIO) -> None:
     _print_walkthrough(description.get("walkthrough"), out)
 
 
+def render_description_markdown(summary: dict[str, object], out: TextIO) -> None:
+    """Render a PR description as Markdown."""
+    print(f"# PR #{summary['number']}: {summary['title']}", file=out)
+    print("", file=out)
+    _print_metadata(summary, out, markdown=True)
+
+    description = summary.get("description")
+    if not isinstance(description, dict):
+        return
+
+    print("", file=out)
+    print("## Summary", file=out)
+    print("", file=out)
+    print(str(description.get("summary", "")), file=out)
+    _print_markdown_list("Changed Files", description.get("changed_files"), out)
+    _print_markdown_list("Risk Areas", description.get("risk_areas"), out)
+    _print_markdown_list("Testing Focus", description.get("testing_focus"), out)
+    _print_markdown_walkthrough(description.get("walkthrough"), out)
+
+
+def render_description_json(summary: dict[str, object], out: TextIO) -> None:
+    """Render a PR description as deterministic JSON."""
+    render_json(summary, out)
+
+
 async def _generate_description(
     pr_payload: Any,
     *,
@@ -350,3 +376,48 @@ def _print_walkthrough(value: object, out: TextIO) -> None:
         if not isinstance(item, dict):
             continue
         print(f"  - {item.get('file', '')}: {item.get('notes', '')}", file=out)
+
+
+def _print_metadata(summary: dict[str, object], out: TextIO, *, markdown: bool) -> None:
+    context_loaded = summary.get("context_loaded")
+    context = (
+        "loaded"
+        if isinstance(context_loaded, bool) and context_loaded
+        else "diff only" if isinstance(context_loaded, bool) else "unknown"
+    )
+    rows = [
+        ("Repository", summary.get("repo", "")),
+        ("State", summary.get("state", "")),
+        ("Head SHA", summary.get("head_sha", "")),
+        ("Files", f"{summary.get('files_changed', 0)} ({summary.get('binary_files', 0)} binary)"),
+        ("Hunks", summary.get("hunks", "")),
+        ("Commits", summary.get("commits", "")),
+        ("Context", context),
+    ]
+    for label, value in rows:
+        prefix = "-" if markdown else " "
+        print(f"{prefix} {label}: {value}", file=out)
+
+
+def _print_markdown_list(title: str, value: object, out: TextIO) -> None:
+    items = value if isinstance(value, list) else []
+    if not items:
+        return
+    print("", file=out)
+    print(f"## {title}", file=out)
+    print("", file=out)
+    for item in items:
+        print(f"- {item}", file=out)
+
+
+def _print_markdown_walkthrough(value: object, out: TextIO) -> None:
+    items = value if isinstance(value, list) else []
+    if not items:
+        return
+    print("", file=out)
+    print("## Walkthrough", file=out)
+    print("", file=out)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        print(f"- `{item.get('file', '')}`: {item.get('notes', '')}", file=out)

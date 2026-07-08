@@ -24,6 +24,7 @@ from agents.prompting import (
     format_changed_line_evidence,
     format_prompt_diff,
 )
+from cli.commands.output import render_json
 from cli.commands.review import ContextLoader, _has_retrieval_context, _load_review_context
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -216,6 +217,34 @@ def render_answer(summary: dict[str, object], out: TextIO) -> None:
     _print_evidence(answer.get("evidence"), out)
     _print_list("Uncertainty:", answer.get("uncertainty"), out)
     _print_list("Follow-up checks:", answer.get("follow_up_checks"), out)
+
+
+def render_answer_markdown(summary: dict[str, object], out: TextIO) -> None:
+    """Render an ask response as Markdown."""
+    print(f"# PR #{summary['number']} Ask", file=out)
+    print("", file=out)
+    _print_metadata(summary, out)
+    print("", file=out)
+    print("## Question", file=out)
+    print("", file=out)
+    print(str(summary.get("question", "")), file=out)
+
+    answer = summary.get("answer")
+    if not isinstance(answer, dict):
+        return
+
+    print("", file=out)
+    print("## Answer", file=out)
+    print("", file=out)
+    print(str(answer.get("answer", "")), file=out)
+    _print_markdown_evidence(answer.get("evidence"), out)
+    _print_markdown_list("Uncertainty", answer.get("uncertainty"), out)
+    _print_markdown_list("Follow-up Checks", answer.get("follow_up_checks"), out)
+
+
+def render_answer_json(summary: dict[str, object], out: TextIO) -> None:
+    """Render an ask response as deterministic JSON."""
+    render_json(summary, out)
 
 
 async def _generate_answer(
@@ -434,3 +463,60 @@ def _print_list(title: str, value: object, out: TextIO) -> None:
     print(title, file=out)
     for item in items:
         print(f"  - {item}", file=out)
+
+
+def _print_metadata(summary: dict[str, object], out: TextIO) -> None:
+    context_loaded = summary.get("context_loaded")
+    context = (
+        "loaded"
+        if isinstance(context_loaded, bool) and context_loaded
+        else "diff only" if isinstance(context_loaded, bool) else "unknown"
+    )
+    rows = [
+        ("Repository", summary.get("repo", "")),
+        ("Title", summary.get("title", "")),
+        ("State", summary.get("state", "")),
+        ("Head SHA", summary.get("head_sha", "")),
+        ("Files", f"{summary.get('files_changed', 0)} ({summary.get('binary_files', 0)} binary)"),
+        ("Hunks", summary.get("hunks", "")),
+        ("Commits", summary.get("commits", "")),
+        ("Context", context),
+    ]
+    for label, value in rows:
+        print(f"- {label}: {value}", file=out)
+
+
+def _print_markdown_evidence(value: object, out: TextIO) -> None:
+    items = value if isinstance(value, list) else []
+    if not items:
+        return
+    print("", file=out)
+    print("## Evidence", file=out)
+    print("", file=out)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        file_ = item.get("file")
+        line = item.get("line")
+        location = ""
+        if isinstance(file_, str) and file_:
+            location = file_
+            if isinstance(line, int):
+                location = f"{location}:{line}"
+        source = item.get("source", "")
+        detail = item.get("detail", "")
+        if location:
+            print(f"- `{source}` `{location}`: {detail}", file=out)
+        else:
+            print(f"- `{source}`: {detail}", file=out)
+
+
+def _print_markdown_list(title: str, value: object, out: TextIO) -> None:
+    items = value if isinstance(value, list) else []
+    if not items:
+        return
+    print("", file=out)
+    print(f"## {title}", file=out)
+    print("", file=out)
+    for item in items:
+        print(f"- {item}", file=out)

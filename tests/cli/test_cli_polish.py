@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import io
+import re
 
 from typer.testing import CliRunner
 
@@ -17,6 +18,10 @@ from cli.commands.review import render_summary
 from cli.main import __version__, app
 
 runner = CliRunner()
+
+
+def _plain_help(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text).replace(" ", "")
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +105,12 @@ def test_describe_command_is_listed() -> None:
     assert "describe" in result.output
 
 
+def test_describe_command_accepts_format_option() -> None:
+    result = runner.invoke(app, ["describe", "--help"])
+    assert result.exit_code == 0
+    assert "--format" in _plain_help(result.output)
+
+
 def test_improve_command_is_listed() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
@@ -110,6 +121,12 @@ def test_ask_command_is_listed() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "ask" in result.output
+
+
+def test_ask_command_accepts_format_option() -> None:
+    result = runner.invoke(app, ["ask", "--help"])
+    assert result.exit_code == 0
+    assert "--format" in _plain_help(result.output)
 
 
 # ---------------------------------------------------------------------------

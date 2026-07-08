@@ -8,7 +8,13 @@ from pathlib import Path
 import httpx
 import respx
 
-from cli.commands.describe import PullRequestDescription, render_description, run_describe
+from cli.commands.describe import (
+    PullRequestDescription,
+    render_description,
+    render_description_json,
+    render_description_markdown,
+    run_describe,
+)
 from configs import load_settings
 from memory.store import SQLitePullRequestMemory
 from rag.retriever import RetrievalResult
@@ -190,3 +196,51 @@ def test_render_description_prints_sections() -> None:
     assert "Testing focus:" in text
     assert "Walkthrough:" in text
     assert "src/search.py: Adds query handling." in text
+
+
+def test_render_description_markdown_prints_report_sections() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 42,
+        "title": "Improve search",
+        "state": "open",
+        "head_sha": "abcdef012345",
+        "files_changed": 1,
+        "binary_files": 0,
+        "hunks": 1,
+        "commits": 1,
+        "context_loaded": False,
+        "description": {
+            "summary": "Search now accepts a query.",
+            "changed_files": ["src/search.py updates query handling."],
+            "risk_areas": ["Caller compatibility."],
+            "testing_focus": ["Empty query."],
+            "walkthrough": [{"file": "src/search.py", "notes": "Adds query handling."}],
+        },
+    }
+    out = io.StringIO()
+
+    render_description_markdown(summary, out)
+
+    text = out.getvalue()
+    assert "# PR #42: Improve search" in text
+    assert "- Context: diff only" in text
+    assert "## Changed Files" in text
+    assert "- `src/search.py`: Adds query handling." in text
+
+
+def test_render_description_json_prints_deterministic_summary() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 42,
+        "title": "Improve search",
+        "description": {"summary": "Search now accepts a query."},
+    }
+    out = io.StringIO()
+
+    render_description_json(summary, out)
+
+    text = out.getvalue()
+    assert text.endswith("\n")
+    assert '"description": {' in text
+    assert '"number": 42' in text
