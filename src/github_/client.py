@@ -25,6 +25,7 @@ from cli.logging import get_logger
 from configs.settings import Settings
 from github_.models import (
     Branch,
+    Issue,
     IssueComment,
     PullRequest,
     PullRequestCommit,
@@ -186,6 +187,10 @@ class GitHubClient:
     async def get_pull_request(self, owner: str, repo: str, number: int) -> PullRequest:
         data = await self._get(f"/repos/{owner}/{repo}/pulls/{number}")
         return PullRequest.model_validate(data)
+
+    async def get_issue(self, owner: str, repo: str, number: int) -> Issue:
+        data = await self._get(f"/repos/{owner}/{repo}/issues/{number}")
+        return Issue.model_validate(data)
 
     async def list_pull_files(
         self,

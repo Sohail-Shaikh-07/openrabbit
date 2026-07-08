@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from github_.client import GitHubClient
 from github_.models import (
     Branch,
+    Issue,
     IssueComment,
     PullRequest,
     PullRequestCommit,
@@ -65,6 +66,9 @@ class RepositoryHandle:
 
     async def get_pull_request(self, number: int) -> PullRequest:
         return await self.client.get_pull_request(self.owner, self.repo, number)
+
+    async def get_issue(self, number: int) -> Issue:
+        return await self.client.get_issue(self.owner, self.repo, number)
 
     async def list_pull_files(self, number: int) -> list[PullRequestFile]:
         return await self.client.list_pull_files(self.owner, self.repo, number)

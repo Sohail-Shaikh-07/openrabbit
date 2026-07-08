@@ -66,6 +66,17 @@ class Label(_APIObject):
     name: str
 
 
+class Issue(_APIObject):
+    """GitHub issue metadata used as compact PR context."""
+
+    number: int
+    title: str
+    state: Literal["open", "closed"]
+    body: str | None = None
+    labels: list[Label] = Field(default_factory=list)
+    html_url: str
+
+
 class PullRequestSummary(_APIObject):
     """Trimmed pull request representation used by polling and listing."""
 

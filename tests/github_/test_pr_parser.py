@@ -31,6 +31,17 @@ def _pr_json(number: int) -> dict[str, object]:
     }
 
 
+def _issue_json(number: int, *, title: str = "Linked issue") -> dict[str, object]:
+    return {
+        "number": number,
+        "title": title,
+        "state": "open",
+        "body": "Implement the requested behavior with tests.",
+        "labels": [{"name": "enhancement"}],
+        "html_url": f"https://github.com/o/r/issues/{number}",
+    }
+
+
 @respx.mock
 async def test_parse_combines_pr_files_and_commits() -> None:
     respx.get(f"{_BASE}/repos/o/r/pulls/7").mock(return_value=httpx.Response(200, json=_pr_json(7)))
@@ -154,3 +165,74 @@ async def test_parse_fetches_three_endpoints_concurrently() -> None:
     assert pr_route.call_count == 1
     assert files_route.call_count == 1
     assert commits_route.call_count == 1
+
+
+@respx.mock
+async def test_parse_loads_linked_issue_context_from_pr_body() -> None:
+    pr_json = _pr_json(10)
+    pr_json["body"] = "Adds safer search. Fixes #12 and Resolves other/repo#44."
+    respx.get(f"{_BASE}/repos/o/r/pulls/10").mock(return_value=httpx.Response(200, json=pr_json))
+    respx.get(f"{_BASE}/repos/o/r/pulls/10/files").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/pulls/10/commits").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/issues/12").mock(
+        return_value=httpx.Response(200, json=_issue_json(12, title="Safe search"))
+    )
+    respx.get(f"{_BASE}/repos/other/repo/issues/44").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "number": 44,
+                "title": "Cross repo rollout",
+                "state": "closed",
+                "body": "Coordinate the rollout across repositories.",
+                "labels": [{"name": "tracking"}],
+                "html_url": "https://github.com/other/repo/issues/44",
+            },
+        )
+    )
+
+    async with _client() as client:
+        handle = RepositoryHandle(owner="o", repo="r", client=client)
+        payload = await PullRequestParser(handle).parse(10)
+
+    assert [issue.full_name for issue in payload.linked_issues] == ["o/r#12", "other/repo#44"]
+    assert payload.linked_issues[0].title == "Safe search"
+    assert payload.linked_issues[0].labels == ["enhancement"]
+    assert payload.linked_issues[0].source == "pull_request.body"
+
+
+@respx.mock
+async def test_parse_infers_linked_issue_from_branch_ref() -> None:
+    pr_json = _pr_json(11)
+    pr_json["head"] = {"ref": "feature/fix-88-search", "sha": "h" * 40, "label": "alice:feat"}
+    respx.get(f"{_BASE}/repos/o/r/pulls/11").mock(return_value=httpx.Response(200, json=pr_json))
+    respx.get(f"{_BASE}/repos/o/r/pulls/11/files").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/pulls/11/commits").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/issues/88").mock(
+        return_value=httpx.Response(200, json=_issue_json(88, title="Branch issue"))
+    )
+
+    async with _client() as client:
+        handle = RepositoryHandle(owner="o", repo="r", client=client)
+        payload = await PullRequestParser(handle).parse(11)
+
+    assert [issue.full_name for issue in payload.linked_issues] == ["o/r#88"]
+    assert payload.linked_issues[0].source == "pull_request.head.ref"
+
+
+@respx.mock
+async def test_parse_continues_when_linked_issue_fetch_fails() -> None:
+    pr_json = _pr_json(12)
+    pr_json["body"] = "Closes #99"
+    respx.get(f"{_BASE}/repos/o/r/pulls/12").mock(return_value=httpx.Response(200, json=pr_json))
+    respx.get(f"{_BASE}/repos/o/r/pulls/12/files").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/pulls/12/commits").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/issues/99").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+
+    async with _client() as client:
+        handle = RepositoryHandle(owner="o", repo="r", client=client)
+        payload = await PullRequestParser(handle).parse(12)
+
+    assert payload.linked_issues == []

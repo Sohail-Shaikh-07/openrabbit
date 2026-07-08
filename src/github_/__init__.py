@@ -14,6 +14,7 @@ from github_.models import (
     BranchCommit,
     CommitAuthor,
     CommitInfo,
+    Issue,
     IssueComment,
     Label,
     PullRequest,
@@ -31,7 +32,13 @@ from github_.models import (
     User,
 )
 from github_.polling import EventKind, Handler, PollEvent, PollingService
-from github_.pr import ParsedFile, PullRequestParser, PullRequestPayload
+from github_.pr import (
+    LinkedIssue,
+    LinkedIssueReference,
+    ParsedFile,
+    PullRequestParser,
+    PullRequestPayload,
+)
 from github_.pr_commands import (
     CommandKind,
     CommandState,
@@ -70,9 +77,12 @@ __all__ = [
     "Hunk",
     "InMemoryCommandStateStore",
     "InMemoryStateStore",
+    "Issue",
     "IssueComment",
     "Label",
     "LineKind",
+    "LinkedIssue",
+    "LinkedIssueReference",
     "ParsedFile",
     "PollEvent",
     "PollState",

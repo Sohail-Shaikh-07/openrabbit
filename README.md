@@ -10,7 +10,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | --- | --- |
 | CLI | `init`, `index`, `review`, `describe`, `ask`, `improve`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
-| GitHub | PAT auth, repository handles, PR metadata, commits, changed files, hunks, binary-file handling |
+| GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
@@ -321,6 +321,8 @@ Each review records local structured memory when `memory.enabled` is true. The s
 `--mode incremental` is the default. It publishes only new findings and suppresses repeat comments for findings that are still present from an earlier OpenRabbit run. `--mode full` reruns and republishes all grounded findings, which is useful when you intentionally want a fresh full review.
 
 Review agents receive changed-line evidence before the full diff. For larger pull requests, OpenRabbit rebuilds a compact diff from parsed GitHub hunks, prioritizes risky and code-heavy files, keeps prompts within a deterministic token budget, and includes an omission note when content is left out.
+
+When the PR title, body, head branch, or commit messages reference GitHub issues with closing syntax such as `Fixes #12`, `Closes #12`, or `Resolves owner/repo#12`, OpenRabbit fetches compact issue context and includes it in review prompts. If an issue lookup fails, the review continues without that issue context.
 
 Today, `model.provider: ollama`, `model.provider: openai`, and `model.provider: openai-compatible` are implemented. The model layer uses a shared provider contract so more runtimes can plug into the same review-agent pipeline.
 
