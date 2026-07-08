@@ -15,6 +15,7 @@ from memory.models import (
     FindingComparison,
     FindingMemoryRecord,
     FindingStatus,
+    LearningMemoryRecord,
     PullRequestMemoryHistory,
     ReviewMemoryWrite,
     finding_payload,
@@ -81,6 +82,15 @@ class SQLitePullRequestMemory:
                 """,
                 (repo,),
             ).fetchall()
+            learning_rows = con.execute(
+                """
+                SELECT *
+                FROM learnings
+                WHERE repo = ?
+                ORDER BY active DESC, created_at ASC, id ASC
+                """,
+                (repo,),
+            ).fetchall()
 
         return {
             "schema_version": 1,
@@ -97,7 +107,84 @@ class SQLitePullRequestMemory:
                 for row in run_rows
             ],
             "findings": [_export_finding_row(row) for row in finding_rows],
+            "learnings": [_export_learning_row(row) for row in learning_rows],
         }
+
+    def add_learning(
+        self,
+        *,
+        repo: str,
+        instruction: str,
+        scope: str = "repository",
+        source_pr_number: int | None = None,
+        source_comment_id: int | None = None,
+        source_url: str = "",
+        author: str = "",
+        created_at: datetime | None = None,
+        active: bool = True,
+    ) -> LearningMemoryRecord:
+        """Store one explicit repository learning."""
+        clean_instruction = _clean_instruction(instruction)
+        clean_scope = _clean_scope(scope)
+        now = created_at or _now()
+        with self._connect() as con:
+            cursor = con.execute(
+                """
+                INSERT INTO learnings (
+                    repo, scope, instruction, source_pr_number, source_comment_id,
+                    source_url, author, created_at, active
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    repo,
+                    clean_scope,
+                    clean_instruction,
+                    source_pr_number,
+                    source_comment_id,
+                    source_url,
+                    author,
+                    _dump_dt(now),
+                    int(active),
+                ),
+            )
+            learning_id = int(cursor.lastrowid or 0)
+            con.commit()
+        return LearningMemoryRecord(
+            id=learning_id,
+            repo=repo,
+            scope=clean_scope,
+            instruction=clean_instruction,
+            source_pr_number=source_pr_number,
+            source_comment_id=source_comment_id,
+            source_url=source_url,
+            author=author,
+            created_at=now,
+            active=active,
+        )
+
+    def list_learnings(
+        self,
+        repo: str,
+        *,
+        active_only: bool = True,
+        limit: int = 20,
+    ) -> list[LearningMemoryRecord]:
+        """Return stored explicit learnings for one repository."""
+        where = "WHERE repo = ? AND active = 1" if active_only else "WHERE repo = ?"
+        bounded_limit = max(1, min(limit, 100))
+        with self._connect() as con:
+            rows = con.execute(
+                f"""
+                SELECT *
+                FROM learnings
+                {where}
+                ORDER BY active DESC, created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (repo, bounded_limit),
+            ).fetchall()
+        return [_learning_from_row(row) for row in rows]
 
     def prune_before(self, repo: str, cutoff: datetime) -> dict[str, int]:
         """Delete repository memory rows older than ``cutoff``."""
@@ -258,6 +345,22 @@ class SQLitePullRequestMemory:
                     payload_json TEXT NOT NULL,
                     UNIQUE(repo, pr_number, fingerprint)
                 );
+
+                CREATE TABLE IF NOT EXISTS learnings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    repo TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    instruction TEXT NOT NULL,
+                    source_pr_number INTEGER,
+                    source_comment_id INTEGER,
+                    source_url TEXT NOT NULL DEFAULT '',
+                    author TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_learnings_repo_active
+                    ON learnings(repo, active, created_at);
                 """)
             con.commit()
 
@@ -381,6 +484,35 @@ def _export_finding_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _export_learning_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "scope": str(row["scope"]),
+        "instruction": str(row["instruction"]),
+        "source_pr_number": _optional_int(row["source_pr_number"]),
+        "source_comment_id": _optional_int(row["source_comment_id"]),
+        "source_url": str(row["source_url"]),
+        "author": str(row["author"]),
+        "created_at": str(row["created_at"]),
+        "active": bool(row["active"]),
+    }
+
+
+def _learning_from_row(row: sqlite3.Row) -> LearningMemoryRecord:
+    return LearningMemoryRecord(
+        id=int(row["id"]),
+        repo=str(row["repo"]),
+        scope=str(row["scope"]),
+        instruction=str(row["instruction"]),
+        source_pr_number=_optional_int(row["source_pr_number"]),
+        source_comment_id=_optional_int(row["source_comment_id"]),
+        source_url=str(row["source_url"]),
+        author=str(row["author"]),
+        created_at=_load_dt(str(row["created_at"])),
+        active=bool(row["active"]),
+    )
+
+
 def _replace_status(
     record: FindingMemoryRecord,
     status: FindingStatus,
@@ -421,3 +553,23 @@ def _load_dt(value: str) -> datetime:
 def _load_json(value: str) -> dict[str, Any]:
     loaded = json.loads(value)
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _clean_instruction(value: str) -> str:
+    instruction = " ".join(value.split())
+    if not instruction:
+        raise ValueError("learning instruction must not be empty")
+    if len(instruction) > 1000:
+        raise ValueError("learning instruction must be 1000 characters or fewer")
+    return instruction
+
+
+def _clean_scope(value: str) -> str:
+    scope = value.strip().lower() or "repository"
+    if scope != "repository":
+        raise ValueError("only repository-scoped learnings are supported")
+    return scope
+
+
+def _optional_int(value: object) -> int | None:
+    return int(value) if isinstance(value, int) else None

@@ -213,6 +213,7 @@ memory:
   enabled: true
   # Local SQLite memory is stored under .openrabbit/state by default.
   # path: state/openrabbit.db
+  learnings_enabled: true
 ```
 
 For the official OpenAI API, use `provider: openai` and put the API model in `model_name`. You do not need `base_model` for API providers:
@@ -329,11 +330,20 @@ Inspects the local SQLite PR memory for a repository pull request. This command 
 openrabbit memory --pr 42 --repo owner/repo
 openrabbit memory --pr 42 --repo owner/repo --format json
 openrabbit memory --workspace /path/to/repo --pr 42 --repo owner/repo
+openrabbit memory --learnings --repo owner/repo
 openrabbit memory --repo owner/repo --export .openrabbit/reports/memory.json
 openrabbit memory --repo owner/repo --prune-before 2026-01-01
 ```
 
-Use this after one or more reviews to see the configured memory path, last reviewed SHA, finding status counts, and stored finding fingerprints. Export writes deterministic secret-safe JSON for local debugging or migration. Prune deletes local memory rows older than the given date.
+Use this after one or more reviews to see the configured memory path, last reviewed SHA, finding status counts, stored finding fingerprints, and active repository learnings. Export writes deterministic secret-safe JSON for local debugging or migration. Prune deletes local memory rows older than the given date.
+
+When `openrabbit start` is running, maintainers can add explicit local learnings from PR comments:
+
+```text
+@openrabbit learn Prefer SQLAlchemy bind parameters for any raw SQL in repositories.
+```
+
+Only explicit `@openrabbit learn ...` commands create learnings. Normal comments are kept as conversation context, not permanent instructions.
 
 ### `openrabbit describe`
 

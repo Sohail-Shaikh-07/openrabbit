@@ -61,6 +61,7 @@ memory:
   enabled: true
   # Local SQLite memory is stored under .openrabbit/state by default.
   # path: state/openrabbit.db
+  learnings_enabled: true
 """
 
 GITIGNORE: Final[str] = """\

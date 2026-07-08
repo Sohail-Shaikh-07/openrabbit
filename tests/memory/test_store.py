@@ -129,6 +129,30 @@ def test_export_repo_returns_deterministic_secret_free_payload(tmp_path: Path) -
     assert payload["review_runs"][0]["context_loaded"] is True  # type: ignore[index]
     assert payload["findings"][0]["title"] == "SQL Injection vulnerability"  # type: ignore[index]
     assert "payload_json" not in payload["findings"][0]  # type: ignore[index]
+    assert payload["learnings"] == []
+
+
+def test_store_records_and_lists_active_learnings(tmp_path: Path) -> None:
+    store = SQLitePullRequestMemory(tmp_path / "openrabbit.db")
+
+    learning = store.add_learning(
+        repo="owner/repo",
+        instruction=" Prefer bind parameters for raw SQL. ",
+        source_pr_number=7,
+        source_comment_id=123,
+        source_url="https://github.com/owner/repo/pull/7#issuecomment-123",
+        author="alice",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    learnings = store.list_learnings("owner/repo")
+    payload = store.export_repo("owner/repo")
+
+    assert learning.id > 0
+    assert learnings[0].instruction == "Prefer bind parameters for raw SQL."
+    assert learnings[0].source_pr_number == 7
+    assert learnings[0].source_comment_id == 123
+    assert payload["learnings"][0]["instruction"] == "Prefer bind parameters for raw SQL."  # type: ignore[index]
 
 
 def test_prune_before_deletes_old_runs_and_findings(tmp_path: Path) -> None:

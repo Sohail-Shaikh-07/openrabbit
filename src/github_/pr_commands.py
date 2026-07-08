@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-CommandKind = Literal["review", "full_review", "improve", "ask", "pause", "resume"]
+CommandKind = Literal["review", "full_review", "improve", "ask", "pause", "resume", "learn"]
 
 _COMMAND_RE = re.compile(r"^\s*@openrabbit(?:\s+(.+?))?\s*$", re.IGNORECASE | re.DOTALL)
 
@@ -19,6 +19,7 @@ class PullRequestCommand:
 
     kind: CommandKind
     question: str = ""
+    instruction: str = ""
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,10 @@ def parse_openrabbit_command(body: str) -> PullRequestCommand | None:
         question = raw[4:].strip()
         if question:
             return PullRequestCommand(kind="ask", question=question)
+    if lowered.startswith("learn "):
+        instruction = raw[6:].strip()
+        if instruction:
+            return PullRequestCommand(kind="learn", instruction=instruction)
     return None
 
 

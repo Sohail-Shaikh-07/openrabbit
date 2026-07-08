@@ -250,6 +250,7 @@ async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> No
 
     settings = load_settings(scaffold_repo, env={})
     store = SQLitePullRequestMemory(scaffold_repo / ".openrabbit" / "state" / "test.db")
+    store.add_learning(repo="o/r", instruction="Prefer bind parameters for raw SQL.")
 
     first = await run_review(
         settings,
@@ -277,6 +278,7 @@ async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> No
     assert first["memory_enabled"] is True
     assert first_history is not None
     assert second_history is not None
+    assert first_history.learnings[0].instruction == "Prefer bind parameters for raw SQL."
     assert first_history.local.last_reviewed_sha is None
     assert second_history.local.last_reviewed_sha == "abcdef0123456789" + "0" * 24
     assert first["memory_status_counts"] == {"new": 1}

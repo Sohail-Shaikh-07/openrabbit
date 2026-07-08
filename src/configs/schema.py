@@ -163,6 +163,7 @@ class MemorySettings(BaseModel):
 
     enabled: bool = True
     path: str | None = None
+    learnings_enabled: bool = True
 
     @field_validator("path")
     @classmethod

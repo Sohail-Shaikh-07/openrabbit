@@ -40,6 +40,22 @@ class FindingMemoryRecord:
 
 
 @dataclass(frozen=True)
+class LearningMemoryRecord:
+    """An explicit repository instruction learned from a PR command."""
+
+    id: int
+    repo: str
+    scope: str
+    instruction: str
+    source_pr_number: int | None
+    source_comment_id: int | None
+    source_url: str
+    author: str
+    created_at: datetime
+    active: bool = True
+
+
+@dataclass(frozen=True)
 class FindingComparison:
     """Current and resolved findings after comparing a review to memory."""
 

@@ -26,6 +26,7 @@ from github_ import (
     RepositoryHandle,
     parse_openrabbit_command,
 )
+from memory.store import SQLitePullRequestMemory
 
 _log = get_logger(__name__)
 
@@ -242,9 +243,46 @@ async def _handle_pr_commands(
                 summary=summary,
                 publisher=issue_comment_publisher,
             )
+        elif command.kind == "learn":
+            _record_learning(
+                settings,
+                repo=handle.full_name,
+                pr_number=event.number,
+                instruction=command.instruction,
+                comment=comment,
+            )
 
     command_store.save(state)
     return handled
+
+
+def _record_learning(
+    settings: Settings,
+    *,
+    repo: str,
+    pr_number: int,
+    instruction: str,
+    comment: Any,
+) -> None:
+    if not settings.memory.enabled or not settings.memory.learnings_enabled:
+        _log.info(
+            "start.command_learn_ignored",
+            repo=repo,
+            pr=pr_number,
+            reason="memory_learnings_disabled",
+        )
+        return
+    store = SQLitePullRequestMemory(settings.resolved_memory_path())
+    store.add_learning(
+        repo=repo,
+        instruction=instruction,
+        source_pr_number=pr_number,
+        source_comment_id=int(getattr(comment, "id", 0) or 0),
+        source_url=str(getattr(comment, "html_url", "") or ""),
+        author=str(getattr(getattr(comment, "user", None), "login", "") or ""),
+        created_at=getattr(comment, "created_at", None),
+    )
+    _log.info("start.command_learn", repo=repo, pr=pr_number)
 
 
 async def _publish_ask_reply(
