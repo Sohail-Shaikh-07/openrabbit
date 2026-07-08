@@ -8,6 +8,7 @@ while same-SHA metadata updates are logged and skipped.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from io import StringIO
 from pathlib import Path
@@ -106,6 +107,7 @@ def build_review_handler(
     improve = improve_runner or _run_manual_improve
     ask = ask_runner or _run_manual_ask
     commands = command_store or InMemoryCommandStateStore()
+    review_started_at: dict[int, float] = {}
 
     async def _handler(event: PollEvent, handle: RepositoryHandle) -> None:
         await _log_handler(event, handle)
@@ -139,23 +141,116 @@ def build_review_handler(
             )
             return
 
-        summary = await review(
-            settings,
-            number=event.number,
-            repo=handle.full_name,
-            env=env,
-            dry_run=False,
-            mode="incremental",
+        cooldown_remaining = _cooldown_remaining(
+            event.number,
+            review_started_at=review_started_at,
+            now=time.monotonic(),
+            cooldown_seconds=settings.polling.review_cooldown_seconds,
         )
+        if cooldown_remaining > 0:
+            _log.info(
+                "start.review_skipped",
+                repo=handle.full_name,
+                pr=event.number,
+                reason="review_cooldown",
+                cooldown_remaining_seconds=round(cooldown_remaining, 3),
+            )
+            return
+
+        if await _should_skip_for_changed_files(settings, event=event, handle=handle):
+            return
+
+        review_started_at[event.number] = time.monotonic()
+        _log.info(
+            "start.review_started",
+            repo=handle.full_name,
+            pr=event.number,
+            event_kind=event.kind,
+            head_sha=event.pull_request.head.sha,
+        )
+        try:
+            summary = await review(
+                settings,
+                number=event.number,
+                repo=handle.full_name,
+                env=env,
+                dry_run=False,
+                mode="incremental",
+            )
+        except Exception as exc:
+            _log.error(
+                "start.review_failed",
+                repo=handle.full_name,
+                pr=event.number,
+                event_kind=event.kind,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            raise
+
         _log.info(
             "start.review_complete",
             repo=handle.full_name,
             pr=event.number,
             findings=summary.get("findings_count", 0),
             comments_posted=summary.get("comments_posted", False),
+            publish_status=summary.get("publish_status"),
+            published_findings=summary.get("published_findings_count", 0),
+            context_loaded=summary.get("context_loaded"),
+            memory_context=summary.get("memory_context"),
+            skipped_paths=summary.get("skipped_paths_count", 0),
         )
 
     return _handler
+
+
+def _cooldown_remaining(
+    pr_number: int,
+    *,
+    review_started_at: dict[int, float],
+    now: float,
+    cooldown_seconds: int,
+) -> float:
+    if cooldown_seconds <= 0:
+        return 0.0
+    previous = review_started_at.get(pr_number)
+    if previous is None:
+        return 0.0
+    return max(0.0, cooldown_seconds - (now - previous))
+
+
+async def _should_skip_for_changed_files(
+    settings: Settings,
+    *,
+    event: PollEvent,
+    handle: RepositoryHandle,
+) -> bool:
+    limit = settings.polling.max_changed_files
+    if limit is None:
+        return False
+    try:
+        changed_files = len(await handle.list_pull_files(event.number))
+    except Exception as exc:
+        _log.warning(
+            "start.size_check_failed",
+            repo=handle.full_name,
+            pr=event.number,
+            max_changed_files=limit,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return False
+    if changed_files <= limit:
+        return False
+    _log.info(
+        "start.review_skipped",
+        repo=handle.full_name,
+        pr=event.number,
+        reason="changed_files_limit_exceeded",
+        changed_files=changed_files,
+        max_changed_files=limit,
+    )
+    return True
 
 
 async def _handle_pr_commands(
@@ -348,6 +443,7 @@ async def run_start(
     service = PollingService(
         handle,
         interval_seconds=settings.polling.interval_seconds,
+        max_concurrent_handlers=settings.polling.max_concurrent_reviews,
         store=store,
         handler=handler,
     )
@@ -356,6 +452,9 @@ async def run_start(
         "start.ready",
         repo=handle.full_name,
         interval_seconds=settings.polling.interval_seconds,
+        max_concurrent_reviews=settings.polling.max_concurrent_reviews,
+        review_cooldown_seconds=settings.polling.review_cooldown_seconds,
+        max_changed_files=settings.polling.max_changed_files,
         state=str(state_path),
         command_state=str(command_state_path),
     )

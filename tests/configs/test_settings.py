@@ -454,6 +454,34 @@ def test_polling_interval_lower_bound_enforced(tmp_path: Path) -> None:
         load_settings(tmp_path, env={})
 
 
+def test_polling_automation_controls_load(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "\n".join(
+            [
+                "polling:",
+                "  interval_seconds: 30",
+                "  max_concurrent_reviews: 3",
+                "  review_cooldown_seconds: 120",
+                "  max_changed_files: 50",
+            ]
+        ),
+    )
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.polling.max_concurrent_reviews == 3
+    assert settings.polling.review_cooldown_seconds == 120
+    assert settings.polling.max_changed_files == 50
+
+
+def test_polling_automation_control_bounds_are_enforced(tmp_path: Path) -> None:
+    _write_config(tmp_path, "polling:\n  max_concurrent_reviews: 0\n")
+
+    with pytest.raises(ValueError):
+        load_settings(tmp_path, env={})
+
+
 def test_non_mapping_yaml_is_rejected(tmp_path: Path) -> None:
     _write_config(tmp_path, "- just\n- a\n- list\n")
 

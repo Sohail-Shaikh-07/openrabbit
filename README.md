@@ -202,6 +202,11 @@ model:
 
 polling:
   interval_seconds: 60
+  max_concurrent_reviews: 1
+  review_cooldown_seconds: 0
+  # Optional daemon-side size guard. Leave empty to let review.max_files and
+  # review.max_changed_lines handle size inside the review pipeline.
+  # max_changed_files: 250
 
 github:
   token_env: GITHUB_TOKEN
@@ -401,6 +406,14 @@ openrabbit start --workspace . --repo owner/repo
 ```
 
 The first poll seeds state without reviewing every already-open PR. After that, new PRs and changed head SHAs trigger the same review-and-publish path as `openrabbit review`. Same-SHA updates, such as label or description changes, are logged and skipped.
+
+Polling controls keep the daemon predictable on busy repositories:
+
+- `polling.max_concurrent_reviews` limits how many PR events can run through the handler at once. The default is `1`.
+- `polling.review_cooldown_seconds` optionally suppresses repeated automatic reviews for the same PR inside one daemon session. The default is `0`, which disables the cooldown.
+- `polling.max_changed_files` optionally skips automatic daemon reviews for PRs above a changed-file threshold. Leave it empty to rely on `review.max_files` and `review.max_changed_lines` inside the review pipeline instead.
+
+Daemon logs include `start.review_started`, `start.review_skipped`, `start.review_complete`, and `start.review_failed` events with concrete fields such as PR number, skip reason, publish status, posted finding count, context state, and skipped path count.
 
 While `openrabbit start` is running, OpenRabbit also listens for new PR comments addressed to it:
 

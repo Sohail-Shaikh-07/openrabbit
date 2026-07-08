@@ -47,6 +47,11 @@ model:
 
 polling:
   interval_seconds: 60
+  max_concurrent_reviews: 1
+  review_cooldown_seconds: 0
+  # Optional daemon-side size guard. Leave empty to let review.max_files and
+  # review.max_changed_lines handle size inside the review pipeline.
+  # max_changed_files: 250
 
 github:
   # GITHUB_TOKEN can also come from the environment. The token never leaves

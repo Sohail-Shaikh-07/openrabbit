@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -53,12 +54,14 @@ def _service(
     *,
     store: InMemoryStateStore | None = None,
     handler: Any = None,
+    max_concurrent_handlers: int = 1,
 ) -> tuple[PollingService, GitHubClient]:
     client = _client()
     handle = RepositoryHandle(owner="o", repo="r", client=client)
     service = PollingService(
         handle,
         interval_seconds=60,
+        max_concurrent_handlers=max_concurrent_handlers,
         store=store,
         handler=handler,
     )
@@ -72,6 +75,15 @@ def test_constructor_rejects_zero_or_negative_interval() -> None:
         PollingService(handle, interval_seconds=0)
     with pytest.raises(ValueError):
         PollingService(handle, interval_seconds=-1)
+
+
+def test_constructor_rejects_zero_or_negative_concurrency() -> None:
+    client = _client()
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+    with pytest.raises(ValueError):
+        PollingService(handle, interval_seconds=60, max_concurrent_handlers=0)
+    with pytest.raises(ValueError):
+        PollingService(handle, interval_seconds=60, max_concurrent_handlers=-1)
 
 
 @respx.mock
@@ -235,6 +247,44 @@ async def test_handler_exception_does_not_break_remaining_events() -> None:
     assert len(events) == 2
     # Both handlers were invoked even though one raised.
     assert sorted(invocations) == [1, 2]
+
+
+@respx.mock
+async def test_handler_concurrency_is_bounded() -> None:
+    _mock_list(
+        [
+            _pr_summary(1, updated_at="2026-01-05T00:00:00Z", head_sha="z" * 40),
+            _pr_summary(2, updated_at="2026-01-05T00:00:00Z", head_sha="c" * 40),
+        ]
+    )
+    store = InMemoryStateStore(
+        PollState(
+            pull_requests={
+                1: SeenPullRequest(
+                    number=1, updated_at="2026-01-01T00:00:00+00:00", head_sha="a" * 40
+                )
+            }
+        )
+    )
+    active = 0
+    max_active = 0
+
+    async def handler(event: PollEvent, handle: RepositoryHandle) -> None:
+        nonlocal active, max_active
+        _ = event, handle
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0)
+        active -= 1
+
+    service, client = _service(store=store, handler=handler, max_concurrent_handlers=2)
+
+    try:
+        await service.run_once()
+    finally:
+        await client.aclose()
+
+    assert max_active == 2
 
 
 @respx.mock
