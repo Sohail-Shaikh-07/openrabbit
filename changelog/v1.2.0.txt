@@ -1,0 +1,49 @@
+OpenRabbit v1.2.0 - 2026-07-07
+===============================
+
+OpenRabbit v1.2.0 adds PR memory, incremental re-review, command-driven automation, stronger repository context controls, and repeatable PR-based quality logs.
+
+Review Memory And Re-Review
+---------------------------
+
+- Added local PR conversation memory for prior review findings, review comments, issue comments, commits, and prompt-ready PR history.
+- Added finding fingerprints so review runs can classify findings as new, still present, or possibly fixed.
+- Added incremental review mode so repeated reviews avoid reposting unchanged findings.
+- Added full review mode for intentionally republishing all grounded findings.
+
+Improve Publishing And PR Commands
+----------------------------------
+
+- Added explicit `openrabbit improve --publish` support for grounded suggestions.
+- Added GitHub suggestion blocks for concrete replacement snippets and grouped broader suggestions in review bodies.
+- Added PR comment command handling in polling mode for `@openrabbit review`, `full review`, `improve`, `ask`, `pause`, and `resume`.
+- Added local paused-state and command cursor persistence under `.openrabbit/`.
+
+Repository Context And Controls
+-------------------------------
+
+- Added `openrabbit index --health` for Qdrant connectivity and collection checks.
+- Added changed-symbol retrieval hints and all-changed-file source filtering for RAG.
+- Added context provenance in review summaries so users can see which indexed files influenced a run.
+- Added CodeRabbit-style review controls for `chill` and `assertive` profiles, path include/exclude filters, path-specific instructions, max-file and max-line limits, generated-file defaults, and skipped-path reporting.
+
+Evaluation
+----------
+
+- Added `openrabbit eval` to run selected PRs as dry-run regression scenarios.
+- Added JSON and Markdown quality logs that capture command, PR, provider, model, context mode, findings, categories, dropped findings, skipped paths, runtime, and failures.
+
+Documentation
+-------------
+
+- Updated README coverage for PR memory, incremental review, improve publishing, PR commands, RAG health checks, review controls, and eval logs.
+- Updated GitHub Actions and PR-Agent gap documentation for the new review automation and quality evidence loop.
+
+Release Notes
+-------------
+
+- Package version is `1.2.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- The fine-tuning dependency group remains optional and is intended for GPU environments.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.

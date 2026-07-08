@@ -1,8 +1,8 @@
 # OpenRabbit vs PR-Agent Gap Analysis
 
-Date: 2026-07-06
+Date: 2026-07-08
 
-This document compares the current OpenRabbit `v1.2.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
+This document compares the current OpenRabbit `v1.3.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
 
 Sources reviewed:
 
@@ -32,9 +32,10 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Model layer | Shared provider contract exists; Ollama, official OpenAI, and OpenAI-compatible base URL providers are wired; vLLM and Transformers remain placeholders |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
-| RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, and automatic review context loading |
+| RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, automatic review context loading, repository guideline detection, and context provenance |
+| Knowledge sources | Local repository learnings, repository guideline files, and linked GitHub issue context |
 | Fine-tuning | QLoRA training/evaluation/packaging pipeline for a Qwen2.5-Coder adapter |
-| Benchmarks | Runner, scorer, profiler, packaged v1.1 regression corpus, and PR-based `openrabbit eval` test logs |
+| Benchmarks | Runner, scorer, profiler, packaged v1.1 regression corpus, and PR-based `openrabbit eval` test logs with v1.3 memory and knowledge context fields |
 
 ## PR-Agent Capabilities To Learn From
 
@@ -156,7 +157,7 @@ Recommended tasks:
 
 ### 11. Quality evidence now has a local PR test log
 
-OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, findings, categories, dropped findings, skipped paths, runtime, and failures.
+OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, findings, categories, dropped findings, skipped paths, runtime, and failures.
 
 Recommended tasks:
 
