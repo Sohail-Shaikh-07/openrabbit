@@ -15,7 +15,7 @@ import pytest
 from rag.chunker import Chunk
 from rag.embeddings import EmbeddedChunk
 from rag.indexer import run_index
-from rag.vector_store import COLLECTION_DOCS, COLLECTION_FUNCTIONS, VECTOR_SIZE
+from rag.vector_store import COLLECTION_DOCS, COLLECTION_FUNCTIONS, COLLECTION_RULES, VECTOR_SIZE
 
 # Suppress grpc/protobuf DeprecationWarnings on Python 3.12.
 pytestmark = pytest.mark.filterwarnings("ignore:.*uses PyType_Spec.*:DeprecationWarning")
@@ -83,6 +83,33 @@ async def test_run_index_upserts_markdown_to_docs_collection(
 
     collection_names = [call.kwargs["collection"] for call in store.upsert.call_args_list]
     assert COLLECTION_DOCS in collection_names
+
+
+@pytest.mark.asyncio
+async def test_run_index_upserts_repository_guidelines_to_rules_collection(
+    scaffold_repo: Path,
+) -> None:
+    guideline = scaffold_repo / "services" / "api" / "AGENTS.md"
+    guideline.parent.mkdir(parents=True, exist_ok=True)
+    guideline.write_text("# API rules\n\nUse explicit transaction boundaries.\n", encoding="utf-8")
+    store = _mock_store()
+
+    await run_index(scaffold_repo, store=store, engine=_mock_engine())
+
+    rule_calls = [
+        call
+        for call in store.upsert.call_args_list
+        if call.kwargs["collection"] == COLLECTION_RULES
+    ]
+    assert rule_calls
+    guideline_items = [
+        item
+        for call in rule_calls
+        for item in call.kwargs["items"]
+        if item.chunk.source_path.as_posix() == "services/api/AGENTS.md"
+    ]
+    assert guideline_items
+    assert guideline_items[0].chunk.metadata["scope_path"] == "services/api"
 
 
 @pytest.mark.asyncio

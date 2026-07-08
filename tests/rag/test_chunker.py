@@ -22,6 +22,7 @@ def _record(
     content: str,
     kind: FileKind = FileKind.source,
     language: str | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> FileRecord:
     target = tmp_path / relative
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -32,6 +33,7 @@ def _record(
         kind=kind,
         size_bytes=target.stat().st_size,
         language=language,
+        metadata=metadata or {},
     )
 
 
@@ -250,3 +252,23 @@ def test_chunk_text_is_non_empty(tmp_path: Path) -> None:
     code = "def bar() -> None:\n    pass\n"
     chunks = _chunk(tmp_path, "bar.py", code, "python")
     assert all(c.text.strip() for c in chunks)
+
+
+def test_chunker_preserves_record_metadata(tmp_path: Path) -> None:
+    record = _record(
+        tmp_path,
+        "services/api/AGENTS.md",
+        "# API rules\n\nUse repository errors.",
+        kind=FileKind.rules,
+        metadata={
+            "rule_source": "repository_guideline",
+            "scope_path": "services/api",
+            "guideline_path": "services/api/AGENTS.md",
+        },
+    )
+
+    chunks = Chunker().chunk(record)
+
+    assert chunks
+    assert all(chunk.metadata["rule_source"] == "repository_guideline" for chunk in chunks)
+    assert all(chunk.metadata["scope_path"] == "services/api" for chunk in chunks)

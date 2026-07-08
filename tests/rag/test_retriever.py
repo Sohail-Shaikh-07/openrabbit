@@ -67,6 +67,21 @@ def _payload_hit(name: str, path: str, score: float = 0.9) -> dict:
     return {"id": f"{path}:{name}", "score": score, "payload": {"name": name, "source_path": path}}
 
 
+def _guideline_hit() -> dict:
+    return {
+        "id": "services/api/AGENTS.md:api-rules",
+        "score": 0.88,
+        "payload": {
+            "name": "api-rules",
+            "source_path": "services/api/AGENTS.md",
+            "kind": "section",
+            "rule_source": "repository_guideline",
+            "scope_path": "services/api",
+            "guideline_path": "services/api/AGENTS.md",
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # RetrievalResult
 # ---------------------------------------------------------------------------
@@ -324,6 +339,16 @@ def test_retrieval_result_exposes_context_provenance() -> None:
     assert provenance[0]["source_path"] == ".openrabbit/security_rules.md"
     assert provenance[0]["name"] == "security-rule"
     assert provenance[0]["score"] == 0.91
+
+
+def test_retrieval_result_provenance_includes_guideline_metadata() -> None:
+    result = RetrievalResult(security=[_guideline_hit()])
+
+    provenance = result.provenance()
+
+    assert provenance[0]["rule_source"] == "repository_guideline"
+    assert provenance[0]["scope_path"] == "services/api"
+    assert provenance[0]["guideline_path"] == "services/api/AGENTS.md"
 
 
 @pytest.mark.asyncio

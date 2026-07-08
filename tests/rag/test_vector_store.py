@@ -44,6 +44,23 @@ def _embedded(name: str = "foo", kind: ChunkKind = ChunkKind.function) -> Embedd
     return EmbeddedChunk(chunk=chunk, vector=np.ones(VECTOR_SIZE, dtype="float32"))
 
 
+def _embedded_guideline() -> EmbeddedChunk:
+    chunk = Chunk(
+        source_path=Path("services/api/AGENTS.md"),
+        kind=ChunkKind.section,
+        name="API rules",
+        text="# API rules",
+        language=None,
+        byte_span=(0, 11),
+        metadata={
+            "rule_source": "repository_guideline",
+            "scope_path": "services/api",
+            "guideline_path": "services/api/AGENTS.md",
+        },
+    )
+    return EmbeddedChunk(chunk=chunk, vector=np.ones(VECTOR_SIZE, dtype="float32"))
+
+
 def _async_qdrant_mock() -> MagicMock:
     """Return a mock AsyncQdrantClient with the methods VectorStore uses."""
     client = MagicMock()
@@ -135,6 +152,20 @@ async def test_upsert_point_carries_metadata() -> None:
     assert payload["kind"] == "function"
     assert payload["language"] == "python"
     assert "source_path" in payload
+
+
+@pytest.mark.asyncio
+async def test_upsert_point_carries_guideline_metadata() -> None:
+    mock_client = _async_qdrant_mock()
+    store = VectorStore(client=mock_client)
+
+    await store.upsert(COLLECTION_RULES, [_embedded_guideline()])
+
+    points = mock_client.upsert.call_args.kwargs["points"]
+    payload = points[0].payload
+    assert payload["rule_source"] == "repository_guideline"
+    assert payload["scope_path"] == "services/api"
+    assert payload["guideline_path"] == "services/api/AGENTS.md"
 
 
 @pytest.mark.asyncio

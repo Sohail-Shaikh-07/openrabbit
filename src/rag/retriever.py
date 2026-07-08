@@ -91,15 +91,17 @@ class RetrievalResult:
                 payload = hit.get("payload", {})
                 if not isinstance(payload, dict):
                     payload = {}
-                rows.append(
-                    {
-                        "dimension": str(dimension),
-                        "source_path": str(payload.get("source_path", "")),
-                        "name": str(payload.get("name", "")),
-                        "kind": str(payload.get("kind", "")),
-                        "score": hit.get("score"),
-                    }
-                )
+                row = {
+                    "dimension": str(dimension),
+                    "source_path": str(payload.get("source_path", "")),
+                    "name": str(payload.get("name", "")),
+                    "kind": str(payload.get("kind", "")),
+                    "score": hit.get("score"),
+                }
+                for key in ("rule_source", "scope_path", "guideline_path"):
+                    if key in payload:
+                        row[key] = str(payload.get(key, ""))
+                rows.append(row)
         return rows
 
 
