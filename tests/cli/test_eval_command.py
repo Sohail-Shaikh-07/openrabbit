@@ -90,6 +90,94 @@ async def test_run_eval_writes_json_and_markdown_reports(
 
 
 @pytest.mark.asyncio
+async def test_run_eval_compares_baseline_and_checks_expectations(
+    scaffold_repo: Path,
+    tmp_path: Path,
+) -> None:
+    settings = load_settings(scaffold_repo, env={})
+    output = tmp_path / "eval.json"
+    markdown = tmp_path / "eval.md"
+    baseline = tmp_path / "baseline.json"
+    expectations = tmp_path / "expectations.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-01-01T00:00:00+00:00",
+                "totals": {
+                    "findings": 1,
+                    "failures": 0,
+                    "dropped_findings": 0,
+                    "skipped_paths": 0,
+                    "runtime_ms": 30.0,
+                },
+                "runs": [
+                    {
+                        "pr": 1,
+                        "findings_count": 1,
+                        "runtime_ms": 30.0,
+                        "failure": None,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    expectations.write_text(
+        json.dumps(
+            {
+                "expectations": [
+                    {"pr": 1, "min_findings": 2, "categories": {"security": 1}},
+                    {"pr": 2, "max_findings": 0},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_review_runner(
+        *_args: object, number: int, **_kwargs: object
+    ) -> dict[str, object]:
+        return {
+            "repo": "o/r",
+            "number": number,
+            "title": f"PR {number}",
+            "head_sha": f"sha-{number}",
+            "findings": (
+                [
+                    {"category": "security"},
+                    {"category": "tests"},
+                ]
+                if number == 1
+                else []
+            ),
+            "context_loaded": False,
+        }
+
+    report = await run_eval(
+        settings,
+        repo="o/r",
+        prs=[1, 2],
+        output=output,
+        markdown=markdown,
+        compare=baseline,
+        expectations=expectations,
+        review_runner=fake_review_runner,
+    )
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data["comparison"]["totals_delta"]["findings"] == 1
+    assert data["comparison"]["runs"][0]["pr"] == 1
+    assert data["comparison"]["runs"][0]["findings_delta"] == 1
+    assert data["comparison"]["runs"][1]["status"] == "new"
+    assert data["assertions"]["passed"] == 2
+    assert data["assertions"]["failed"] == 0
+    assert report["assertions"]["items"][0]["checks"][0]["name"] == "min_findings"
+    text = markdown.read_text(encoding="utf-8")
+    assert "Trend Comparison" in text
+    assert "Expected Finding Assertions" in text
+
+
+@pytest.mark.asyncio
 async def test_run_eval_records_failures(scaffold_repo: Path, tmp_path: Path) -> None:
     settings = load_settings(scaffold_repo, env={})
 
@@ -119,3 +207,5 @@ def test_eval_cli_command_exists() -> None:
 
     assert result.exit_code == 0
     assert "evaluation" in result.output.lower()
+    assert "compare" in result.output
+    assert "expectations" in result.output
