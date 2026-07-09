@@ -10,6 +10,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added prompt-safe conversation redaction and trimming for token-like strings and large comments.
 - Added stale finding transitions and clearer review summary output for previous review SHA and memory status counts.
 - Expanded polling-mode PR comment commands with `@openrabbit ignore`, `@openrabbit summary`, and `@openrabbit configuration`, including persisted ignore state and secret-safe config replies.
+- Added managed PR walkthrough summaries through `openrabbit describe --publish` and `@openrabbit summary`, updating one stable OpenRabbit summary comment instead of posting duplicates.
 
 ## v1.4.0 - 2026-07-08
 

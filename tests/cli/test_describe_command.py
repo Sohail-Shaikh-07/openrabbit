@@ -15,6 +15,7 @@ from cli.commands.describe import (
     render_description_markdown,
     run_describe,
 )
+from cli.commands.pr_summary import SUMMARY_MARKER
 from configs import load_settings
 from memory.store import SQLitePullRequestMemory
 from rag.retriever import RetrievalResult
@@ -161,6 +162,114 @@ async def test_run_describe_passes_active_learnings(scaffold_repo: Path) -> None
     assert captured
     history = captured[0]
     assert history.learnings[0].instruction == "Prefer repository-layer SQL access."
+
+
+@respx.mock
+async def test_run_describe_publish_creates_managed_summary(scaffold_repo: Path) -> None:
+    _mock_pr()
+    captured: dict[str, object] = {}
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> PullRequestDescription:
+        return PullRequestDescription(
+            summary="Search now accepts a query.",
+            risk_areas=["src/search.py changes caller behavior."],
+            testing_focus=["Exercise empty query input."],
+            walkthrough=[{"file": "src/search.py", "notes": "Adds query handling."}],
+        )
+
+    respx.get(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode()
+        return httpx.Response(
+            200,
+            json={
+                "id": 90,
+                "user": {"login": "openrabbit", "id": 42},
+                "body": "created",
+                "html_url": "https://github.com/o/r/pull/42#issuecomment-90",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+
+    respx.post(f"{_BASE}/repos/o/r/issues/42/comments").mock(side_effect=handler)
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_describe(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+    )
+
+    assert summary["publish_status"] == "created"
+    assert summary["summary_comment_id"] == 90
+    assert SUMMARY_MARKER in str(captured["body"])
+    assert "### Walkthrough" in str(captured["body"])
+    assert "@openrabbit review" in str(captured["body"])
+
+
+@respx.mock
+async def test_run_describe_publish_updates_existing_managed_summary(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+    captured: dict[str, object] = {}
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> PullRequestDescription:
+        return PullRequestDescription(summary="Updated summary.")
+
+    respx.get(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 91,
+                    "user": {"login": "openrabbit", "id": 42},
+                    "body": f"{SUMMARY_MARKER}\nold body",
+                    "html_url": "https://github.com/o/r/pull/42#issuecomment-91",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                }
+            ],
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode()
+        return httpx.Response(
+            200,
+            json={
+                "id": 91,
+                "user": {"login": "openrabbit", "id": 42},
+                "body": "updated",
+                "html_url": "https://github.com/o/r/pull/42#issuecomment-91",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:05:00Z",
+            },
+        )
+
+    respx.patch(f"{_BASE}/repos/o/r/issues/comments/91").mock(side_effect=handler)
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_describe(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+    )
+
+    assert summary["publish_status"] == "updated"
+    assert "Updated summary." in str(captured["body"])
 
 
 def test_render_description_prints_sections() -> None:

@@ -106,3 +106,6 @@ class RepositoryHandle:
 
     async def create_issue_comment(self, number: int, *, body: str) -> IssueComment:
         return await self.client.create_issue_comment(self.owner, self.repo, number, body=body)
+
+    async def update_issue_comment(self, comment_id: int, *, body: str) -> IssueComment:
+        return await self.client.update_issue_comment(self.owner, self.repo, comment_id, body=body)

@@ -337,6 +337,11 @@ def describe(
         case_sensitive=False,
         help="Output format: text, markdown, or json.",
     ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        help="Create or update OpenRabbit's managed PR summary comment.",
+    ),
 ) -> None:
     """Generate a read-only summary and walkthrough of a pull request."""
     workspace = workspace.resolve()
@@ -346,6 +351,7 @@ def describe(
             settings,  # type: ignore[arg-type]
             number=pr,
             repo=repo,
+            publish=publish,
         )
     except StartError as exc:
         _err.print(f"[red]{exc}[/red]")
