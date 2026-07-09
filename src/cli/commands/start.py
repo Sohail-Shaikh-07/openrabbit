@@ -14,6 +14,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from cli.commands.pr_summary import publish_pr_summary_body
 from cli.logging import get_logger
 from configs.settings import Settings
 from github_ import (
@@ -449,11 +450,12 @@ async def _publish_summary_reply(
     summary: dict[str, object],
     publisher: IssueCommentPublisher | None,
 ) -> None:
-    body = _format_summary_reply(summary)
-    if publisher is not None:
-        await publisher(pr_number=pr_number, body=body)
-        return
-    await handle.create_issue_comment(pr_number, body=body)
+    await publish_pr_summary_body(
+        handle,
+        pr_number=pr_number,
+        summary=summary,
+        publisher=publisher,
+    )
 
 
 async def _publish_configuration_reply(
@@ -489,20 +491,6 @@ def _format_ask_reply(summary: dict[str, object]) -> str:
             line = item.get("line")
             location = f" (`{file_}:{line}`)" if file_ and isinstance(line, int) else ""
             out.write(f"- {detail}{location}\n")
-    return out.getvalue()
-
-
-def _format_summary_reply(summary: dict[str, object]) -> str:
-    description = summary.get("description")
-    if not isinstance(description, dict):
-        return "## OpenRabbit PR Summary\n\nI could not produce a summary for this pull request."
-
-    out = StringIO()
-    out.write("## OpenRabbit PR Summary\n\n")
-    out.write(str(description.get("summary") or "No summary generated."))
-    _write_markdown_list(out, "Changed files", description.get("changed_files"))
-    _write_markdown_list(out, "Risk areas", description.get("risk_areas"))
-    _write_markdown_list(out, "Testing focus", description.get("testing_focus"))
     return out.getvalue()
 
 
@@ -542,14 +530,6 @@ def _format_configuration_reply(settings: Settings, *, repo: str) -> str:
             "Secrets are not displayed.",
         ]
     )
-
-
-def _write_markdown_list(out: StringIO, title: str, values: object) -> None:
-    if not isinstance(values, list) or not values:
-        return
-    out.write(f"\n\n{title}:\n")
-    for item in values[:8]:
-        out.write(f"- {item}\n")
 
 
 async def run_start(

@@ -365,10 +365,11 @@ Only explicit `@openrabbit learn ...` commands create learnings. Normal comments
 
 ### `openrabbit describe`
 
-Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, then prints a read-only summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`, but it never publishes comments or mutates the pull request.
+Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, then prints a summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`. By default it is read-only; add `--publish` to create or update one OpenRabbit-managed PR summary comment with walkthrough, risk areas, context sources, review status, and follow-up commands.
 
 ```bash
 openrabbit describe --pr 42 --repo owner/repo
+openrabbit describe --pr 42 --repo owner/repo --publish
 openrabbit describe --pr 42 --repo owner/repo --format markdown
 openrabbit describe --pr 42 --repo owner/repo --format json
 openrabbit --quiet describe --pr 42 --repo owner/repo
@@ -464,7 +465,7 @@ While `openrabbit start` is running, OpenRabbit also listens for new PR comments
 @openrabbit ignore
 ```
 
-Comment commands are only handled by the polling service. They are not active during one-off CLI commands. `summary` posts a describe-style PR summary, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses review activity, and `ignore` suppresses the PR until `@openrabbit resume` is received. Pause, ignore, and the last processed comment cursor are stored locally under `.openrabbit/commands.json`.
+Comment commands are only handled by the polling service. They are not active during one-off CLI commands. `summary` creates or updates the single OpenRabbit-managed PR summary comment, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses review activity, and `ignore` suppresses the PR until `@openrabbit resume` is received. Pause, ignore, and the last processed comment cursor are stored locally under `.openrabbit/commands.json`.
 
 ### `openrabbit install-model`
 

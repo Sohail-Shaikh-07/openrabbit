@@ -26,7 +26,16 @@ from agents.prompting import (
 )
 from cli.commands.history import load_pr_history
 from cli.commands.output import render_json
-from cli.commands.review import ContextLoader, _has_retrieval_context, _load_review_context
+from cli.commands.pr_summary import (
+    PRSummaryPublishResult,
+    publish_or_update_pr_summary,
+)
+from cli.commands.review import (
+    ContextLoader,
+    _context_provenance,
+    _has_retrieval_context,
+    _load_review_context,
+)
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
@@ -48,6 +57,7 @@ class PullRequestDescription:
 
 
 DescriptionGenerator = Callable[..., Awaitable[PullRequestDescription]]
+SummaryPublisher = Callable[..., Awaitable[PRSummaryPublishResult]]
 
 _PROMPT_TEMPLATE = """You are OpenRabbit's PR describe agent. Explain this pull request like a senior maintainer preparing another reviewer to inspect it quickly.
 
@@ -103,6 +113,8 @@ async def run_describe(
     env: dict[str, str] | None = None,
     generator: DescriptionGenerator | None = None,
     context_loader: ContextLoader | None = None,
+    publish: bool = False,
+    summary_publisher: SummaryPublisher | None = None,
 ) -> dict[str, object]:
     """Fetch a PR, generate a read-only description, and return a summary dict."""
     target = resolve_target_repo(settings, repo)
@@ -111,47 +123,57 @@ async def run_describe(
         handle = RepositoryHandle.from_full_name(target, client)
         payload = await PullRequestParser(handle).parse(number)
         pr_history_result = await load_pr_history(settings, handle=handle, payload=payload)
+
+        retrieval_result: Any | None = None
+        loader = context_loader or _load_review_context
+        try:
+            retrieval_result = await loader(payload)
+        except Exception as exc:
+            _log.warning(
+                "describe.context_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            retrieval_result = None
+
+        describe = generator or _generate_description
+        description = await describe(
+            payload,
+            settings=settings,
+            retrieval_result=retrieval_result,
+            pr_history=pr_history_result.history,
+            env=env,
+        )
+
+        hunk_total = sum(len(f.hunks) for f in payload.files)
+        binary_count = sum(1 for f in payload.files if f.is_binary)
+        summary: dict[str, object] = {
+            "repo": handle.full_name,
+            "number": payload.number,
+            "title": payload.pull_request.title,
+            "state": payload.pull_request.state,
+            "head_sha": payload.head_sha[:12],
+            "files_changed": len(payload.files),
+            "binary_files": binary_count,
+            "hunks": hunk_total,
+            "commits": len(payload.commits),
+            "context_loaded": _has_retrieval_context(retrieval_result),
+            "context_provenance": _context_provenance(retrieval_result),
+            "conversation_count": pr_history_result.conversation_count,
+            "learning_count": pr_history_result.learning_count,
+            "review_status": "summary generated",
+            "publish_status": "read_only",
+            "description": _serialize_description(description),
+        }
+        if publish:
+            publisher = summary_publisher or publish_or_update_pr_summary
+            result = await publisher(handle, pr_number=payload.number, summary=summary)
+            summary["publish_status"] = result.action
+            summary["summary_comment_id"] = result.comment_id
+            summary["summary_comment_url"] = result.html_url
+        return summary
     finally:
         await client.aclose()
-
-    retrieval_result: Any | None = None
-    loader = context_loader or _load_review_context
-    try:
-        retrieval_result = await loader(payload)
-    except Exception as exc:
-        _log.warning(
-            "describe.context_failed",
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        retrieval_result = None
-
-    describe = generator or _generate_description
-    description = await describe(
-        payload,
-        settings=settings,
-        retrieval_result=retrieval_result,
-        pr_history=pr_history_result.history,
-        env=env,
-    )
-
-    hunk_total = sum(len(f.hunks) for f in payload.files)
-    binary_count = sum(1 for f in payload.files if f.is_binary)
-    return {
-        "repo": handle.full_name,
-        "number": payload.number,
-        "title": payload.pull_request.title,
-        "state": payload.pull_request.state,
-        "head_sha": payload.head_sha[:12],
-        "files_changed": len(payload.files),
-        "binary_files": binary_count,
-        "hunks": hunk_total,
-        "commits": len(payload.commits),
-        "context_loaded": _has_retrieval_context(retrieval_result),
-        "conversation_count": pr_history_result.conversation_count,
-        "learning_count": pr_history_result.learning_count,
-        "description": _serialize_description(description),
-    }
 
 
 def run_describe_blocking(
@@ -160,9 +182,10 @@ def run_describe_blocking(
     number: int,
     repo: str | None = None,
     env: dict[str, str] | None = None,
+    publish: bool = False,
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
-    return asyncio.run(run_describe(settings, number=number, repo=repo, env=env))
+    return asyncio.run(run_describe(settings, number=number, repo=repo, env=env, publish=publish))
 
 
 def render_description(summary: dict[str, object], out: TextIO) -> None:
@@ -180,6 +203,7 @@ def render_description(summary: dict[str, object], out: TextIO) -> None:
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
+    _print_publish_status(summary, out, markdown=False)
 
     description = summary.get("description")
     if not isinstance(description, dict):
@@ -199,6 +223,7 @@ def render_description_markdown(summary: dict[str, object], out: TextIO) -> None
     print(f"# PR #{summary['number']}: {summary['title']}", file=out)
     print("", file=out)
     _print_metadata(summary, out, markdown=True)
+    _print_publish_status(summary, out, markdown=True)
 
     description = summary.get("description")
     if not isinstance(description, dict):
@@ -374,6 +399,21 @@ def _print_metadata(summary: dict[str, object], out: TextIO, *, markdown: bool) 
     for label, value in rows:
         prefix = "-" if markdown else " "
         print(f"{prefix} {label}: {value}", file=out)
+
+
+def _print_publish_status(summary: dict[str, object], out: TextIO, *, markdown: bool) -> None:
+    publish_status = summary.get("publish_status")
+    if publish_status not in {"created", "updated"}:
+        return
+    url = str(summary.get("summary_comment_url") or "").strip()
+    label = "created" if publish_status == "created" else "updated"
+    value = f"summary comment {label}"
+    if url:
+        value = f"{value} ({url})"
+    if markdown:
+        print(f"- Published: {value}", file=out)
+    else:
+        print(f"  Published:    {value}", file=out)
 
 
 def _print_markdown_list(title: str, value: object, out: TextIO) -> None:
