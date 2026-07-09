@@ -9,6 +9,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added shared PR history loading for `review`, `describe`, `ask`, and `improve` so model prompts include sanitized GitHub PR reviews, inline review comments, and issue comments when memory is enabled.
 - Added prompt-safe conversation redaction and trimming for token-like strings and large comments.
 - Added stale finding transitions and clearer review summary output for previous review SHA and memory status counts.
+- Expanded polling-mode PR comment commands with `@openrabbit ignore`, `@openrabbit summary`, and `@openrabbit configuration`, including persisted ignore state and secret-safe config replies.
 
 ## v1.4.0 - 2026-07-08
 

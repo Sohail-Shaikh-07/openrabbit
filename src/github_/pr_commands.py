@@ -8,7 +8,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-CommandKind = Literal["review", "full_review", "improve", "ask", "pause", "resume", "learn"]
+CommandKind = Literal[
+    "review",
+    "full_review",
+    "improve",
+    "ask",
+    "pause",
+    "resume",
+    "ignore",
+    "summary",
+    "configuration",
+    "learn",
+]
 
 _COMMAND_RE = re.compile(r"^\s*@openrabbit(?:\s+(.+?))?\s*$", re.IGNORECASE | re.DOTALL)
 
@@ -27,6 +38,7 @@ class CommandState:
     """Local state for PR command processing."""
 
     paused_prs: frozenset[int] = field(default_factory=frozenset)
+    ignored_prs: frozenset[int] = field(default_factory=frozenset)
     last_seen_comment_ids: dict[int, int] = field(default_factory=dict)
 
     @classmethod
@@ -36,6 +48,9 @@ class CommandState:
     def is_paused(self, pr_number: int) -> bool:
         return pr_number in self.paused_prs
 
+    def is_ignored(self, pr_number: int) -> bool:
+        return pr_number in self.ignored_prs
+
     def last_seen_comment_id(self, pr_number: int) -> int:
         return self.last_seen_comment_ids.get(pr_number, 0)
 
@@ -44,21 +59,38 @@ class CommandState:
         paused.add(pr_number)
         return CommandState(
             paused_prs=frozenset(paused),
+            ignored_prs=self.ignored_prs,
             last_seen_comment_ids=dict(self.last_seen_comment_ids),
         )
 
     def resume(self, pr_number: int) -> CommandState:
         paused = set(self.paused_prs)
+        ignored = set(self.ignored_prs)
         paused.discard(pr_number)
+        ignored.discard(pr_number)
         return CommandState(
             paused_prs=frozenset(paused),
+            ignored_prs=frozenset(ignored),
+            last_seen_comment_ids=dict(self.last_seen_comment_ids),
+        )
+
+    def ignore(self, pr_number: int) -> CommandState:
+        ignored = set(self.ignored_prs)
+        ignored.add(pr_number)
+        return CommandState(
+            paused_prs=self.paused_prs,
+            ignored_prs=frozenset(ignored),
             last_seen_comment_ids=dict(self.last_seen_comment_ids),
         )
 
     def mark_comment_seen(self, pr_number: int, comment_id: int) -> CommandState:
         cursors = dict(self.last_seen_comment_ids)
         cursors[pr_number] = max(comment_id, cursors.get(pr_number, 0))
-        return CommandState(paused_prs=self.paused_prs, last_seen_comment_ids=cursors)
+        return CommandState(
+            paused_prs=self.paused_prs,
+            ignored_prs=self.ignored_prs,
+            last_seen_comment_ids=cursors,
+        )
 
 
 class CommandStateStore(Protocol):
@@ -101,16 +133,22 @@ class FileCommandStateStore:
         if raw.get("version") != self.SCHEMA_VERSION:
             return CommandState.empty()
         paused = frozenset(int(value) for value in raw.get("paused_prs", []))
+        ignored = frozenset(int(value) for value in raw.get("ignored_prs", []))
         cursors = {
             int(pr_number): int(comment_id)
             for pr_number, comment_id in raw.get("last_seen_comment_ids", {}).items()
         }
-        return CommandState(paused_prs=paused, last_seen_comment_ids=cursors)
+        return CommandState(
+            paused_prs=paused,
+            ignored_prs=ignored,
+            last_seen_comment_ids=cursors,
+        )
 
     def save(self, state: CommandState) -> None:
         payload = {
             "version": self.SCHEMA_VERSION,
             "paused_prs": sorted(state.paused_prs),
+            "ignored_prs": sorted(state.ignored_prs),
             "last_seen_comment_ids": {
                 str(pr): comment_id
                 for pr, comment_id in sorted(state.last_seen_comment_ids.items())
@@ -143,6 +181,12 @@ def parse_openrabbit_command(body: str) -> PullRequestCommand | None:
         return PullRequestCommand(kind="pause")
     if lowered == "resume":
         return PullRequestCommand(kind="resume")
+    if lowered == "ignore":
+        return PullRequestCommand(kind="ignore")
+    if lowered == "summary":
+        return PullRequestCommand(kind="summary")
+    if lowered in {"configuration", "config"}:
+        return PullRequestCommand(kind="configuration")
     if lowered.startswith("ask "):
         question = raw[4:].strip()
         if question:

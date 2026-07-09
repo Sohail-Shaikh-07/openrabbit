@@ -19,6 +19,10 @@ def test_parse_openrabbit_commands() -> None:
     assert parse_openrabbit_command("@openrabbit improve").kind == "improve"  # type: ignore[union-attr]
     assert parse_openrabbit_command("@openrabbit pause").kind == "pause"  # type: ignore[union-attr]
     assert parse_openrabbit_command("@openrabbit resume").kind == "resume"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("@openrabbit ignore").kind == "ignore"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("@openrabbit summary").kind == "summary"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("@openrabbit configuration").kind == "configuration"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("@openrabbit config").kind == "configuration"  # type: ignore[union-attr]
     assert parse_openrabbit_command("@openrabbit learn Use repositories for SQL").kind == "learn"  # type: ignore[union-attr]
 
     ask = parse_openrabbit_command("@openrabbit ask what changed here?")
@@ -39,26 +43,31 @@ def test_parse_ignores_non_commands_and_empty_ask() -> None:
     assert parse_openrabbit_command("@openrabbit learn") is None
 
 
-def test_in_memory_command_state_tracks_pause_and_comment_cursor() -> None:
+def test_in_memory_command_state_tracks_pause_ignore_and_comment_cursor() -> None:
     store = InMemoryCommandStateStore()
     state = CommandState.empty()
 
-    store.save(state.pause(7).mark_comment_seen(7, 123))
+    store.save(state.pause(7).ignore(7).mark_comment_seen(7, 123))
 
     loaded = store.load()
     assert loaded.is_paused(7)
+    assert loaded.is_ignored(7)
     assert loaded.last_seen_comment_id(7) == 123
-    assert not loaded.resume(7).is_paused(7)
+    resumed = loaded.resume(7)
+    assert not resumed.is_paused(7)
+    assert not resumed.is_ignored(7)
 
 
 def test_file_command_state_store_round_trips(tmp_path: Path) -> None:
     path = tmp_path / ".openrabbit" / "commands.json"
     store = FileCommandStateStore(path)
 
-    store.save(CommandState.empty().pause(3).mark_comment_seen(3, 456))
+    store.save(CommandState.empty().pause(3).ignore(3).mark_comment_seen(3, 456))
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == FileCommandStateStore.SCHEMA_VERSION
+    assert raw["ignored_prs"] == [3]
     loaded = store.load()
     assert loaded.is_paused(3)
+    assert loaded.is_ignored(3)
     assert loaded.last_seen_comment_id(3) == 456

@@ -276,12 +276,15 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
                 _issue_comment(12, "@openrabbit improve"),
                 _issue_comment(13, "@openrabbit ask what changed?"),
                 _issue_comment(14, "@openrabbit learn Prefer bind parameters for SQL."),
+                _issue_comment(15, "@openrabbit summary"),
+                _issue_comment(16, "@openrabbit configuration"),
             ],
         )
     )
     review_calls: list[dict[str, object]] = []
     improve_calls: list[dict[str, object]] = []
     ask_calls: list[dict[str, object]] = []
+    describe_calls: list[dict[str, object]] = []
     replies: list[str] = []
 
     async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
@@ -296,6 +299,17 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
         ask_calls.append(kwargs)
         return {"answer": {"answer": "It updates search."}}
 
+    async def fake_describe_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        describe_calls.append(kwargs)
+        return {
+            "description": {
+                "summary": "This PR updates task search.",
+                "changed_files": ["Search repository changes."],
+                "risk_areas": ["Query safety."],
+                "testing_focus": ["Search filters."],
+            }
+        }
+
     async def fake_reply_publisher(**kwargs: object) -> None:
         replies.append(str(kwargs["body"]))
 
@@ -307,6 +321,7 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
         review_runner=fake_review_runner,
         improve_runner=fake_improve_runner,
         ask_runner=fake_ask_runner,
+        describe_runner=fake_describe_runner,
         command_store=command_store,
         issue_comment_publisher=fake_reply_publisher,
     )
@@ -321,8 +336,11 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
     assert [call.get("mode") for call in review_calls] == ["incremental", "full"]
     assert improve_calls[0]["publish"] is True
     assert ask_calls[0]["question"] == "what changed?"
+    assert describe_calls[0]["number"] == 1
     assert "It updates search." in replies[0]
-    assert command_store.load().last_seen_comment_id(1) == 14
+    assert "This PR updates task search." in replies[1]
+    assert "Secrets are not displayed." in replies[2]
+    assert command_store.load().last_seen_comment_id(1) == 16
     store = SQLitePullRequestMemory(settings.resolved_memory_path())
     assert store.list_learnings("o/r")[0].instruction == "Prefer bind parameters for SQL."
 
@@ -367,6 +385,48 @@ async def test_start_command_listener_respects_pause_and_resume(scaffold_repo: P
 
     assert reviewed == [1]
     assert not command_store.load().is_paused(1)
+
+
+@respx.mock
+async def test_start_command_listener_respects_ignore_and_resume(scaffold_repo: Path) -> None:
+    from cli.commands.start import build_review_handler
+
+    settings = load_settings(scaffold_repo, env={})
+    command_store = InMemoryCommandStateStore()
+    reviewed: list[int] = []
+
+    async def fake_review_runner(*_args: object, **kwargs: object) -> dict[str, object]:
+        reviewed.append(int(kwargs["number"]))
+        return {"findings_count": 0, "comments_posted": False}
+
+    handler = build_review_handler(
+        settings,
+        env={"GITHUB_TOKEN": "tkn"},
+        review_runner=fake_review_runner,
+        command_store=command_store,
+    )
+    client = GitHubClient(token="tkn")
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+
+    try:
+        respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+            return_value=httpx.Response(200, json=[_issue_comment(30, "@openrabbit ignore")])
+        )
+        await handler(_event("pull_request_updated"), handle)
+        await handler(_event("commit_pushed"), handle)
+        assert reviewed == []
+        assert command_store.load().is_ignored(1)
+
+        respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+            return_value=httpx.Response(200, json=[_issue_comment(31, "@openrabbit resume")])
+        )
+        await handler(_event("pull_request_updated"), handle)
+        await handler(_event("commit_pushed"), handle)
+    finally:
+        await client.aclose()
+
+    assert reviewed == [1]
+    assert not command_store.load().is_ignored(1)
 
 
 async def test_start_handler_skips_reviews_during_cooldown(scaffold_repo: Path) -> None:
