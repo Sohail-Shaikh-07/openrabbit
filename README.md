@@ -457,11 +457,14 @@ While `openrabbit start` is running, OpenRabbit also listens for new PR comments
 @openrabbit full review
 @openrabbit improve
 @openrabbit ask what changed in the search path?
+@openrabbit summary
+@openrabbit configuration
 @openrabbit pause
 @openrabbit resume
+@openrabbit ignore
 ```
 
-Comment commands are only handled by the polling service. They are not active during one-off CLI commands. Pause state and the last processed comment cursor are stored locally under `.openrabbit/commands.json`; paused PRs skip automatic review until `@openrabbit resume` is received.
+Comment commands are only handled by the polling service. They are not active during one-off CLI commands. `summary` posts a describe-style PR summary, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses review activity, and `ignore` suppresses the PR until `@openrabbit resume` is received. Pause, ignore, and the last processed comment cursor are stored locally under `.openrabbit/commands.json`.
 
 ### `openrabbit install-model`
 

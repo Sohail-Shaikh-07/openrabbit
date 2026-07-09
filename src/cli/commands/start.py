@@ -37,6 +37,7 @@ COMMAND_STATE_FILENAME = "commands.json"
 ReviewRunner = Callable[..., Awaitable[dict[str, object]]]
 ImproveRunner = Callable[..., Awaitable[dict[str, object]]]
 AskRunner = Callable[..., Awaitable[dict[str, object]]]
+DescribeRunner = Callable[..., Awaitable[dict[str, object]]]
 IssueCommentPublisher = Callable[..., Awaitable[None]]
 
 
@@ -92,6 +93,13 @@ async def _run_manual_ask(*args: Any, **kwargs: Any) -> dict[str, object]:
     return await run_ask(*args, **kwargs)
 
 
+async def _run_manual_describe(*args: Any, **kwargs: Any) -> dict[str, object]:
+    """Import lazily to avoid a cycle with ``cli.commands.describe``."""
+    from cli.commands.describe import run_describe
+
+    return await run_describe(*args, **kwargs)
+
+
 def build_review_handler(
     settings: Settings,
     *,
@@ -99,6 +107,7 @@ def build_review_handler(
     review_runner: ReviewRunner | None = None,
     improve_runner: ImproveRunner | None = None,
     ask_runner: AskRunner | None = None,
+    describe_runner: DescribeRunner | None = None,
     command_store: CommandStateStore | None = None,
     issue_comment_publisher: IssueCommentPublisher | None = None,
 ) -> Callable[[PollEvent, RepositoryHandle], Awaitable[None]]:
@@ -106,6 +115,7 @@ def build_review_handler(
     review = review_runner or _run_manual_review
     improve = improve_runner or _run_manual_improve
     ask = ask_runner or _run_manual_ask
+    describe = describe_runner or _run_manual_describe
     commands = command_store or InMemoryCommandStateStore()
     review_started_at: dict[int, float] = {}
 
@@ -121,6 +131,7 @@ def build_review_handler(
                 review_runner=review,
                 improve_runner=improve,
                 ask_runner=ask,
+                describe_runner=describe,
                 issue_comment_publisher=issue_comment_publisher,
             )
             if not handled:
@@ -132,7 +143,17 @@ def build_review_handler(
                 )
             return
 
-        if commands.load().is_paused(event.number):
+        state = commands.load()
+        if state.is_ignored(event.number):
+            _log.info(
+                "start.review_skipped",
+                repo=handle.full_name,
+                pr=event.number,
+                reason="openrabbit_ignored",
+            )
+            return
+
+        if state.is_paused(event.number):
             _log.info(
                 "start.review_skipped",
                 repo=handle.full_name,
@@ -263,6 +284,7 @@ async def _handle_pr_commands(
     review_runner: ReviewRunner,
     improve_runner: ImproveRunner,
     ask_runner: AskRunner,
+    describe_runner: DescribeRunner,
     issue_comment_publisher: IssueCommentPublisher | None,
 ) -> bool:
     state = command_store.load()
@@ -289,13 +311,19 @@ async def _handle_pr_commands(
             command_store.save(state)
             _log.info("start.command_resume", repo=handle.full_name, pr=event.number)
             continue
-        if state.is_paused(event.number):
+        if command.kind == "ignore":
+            state = state.ignore(event.number)
+            command_store.save(state)
+            _log.info("start.command_ignore", repo=handle.full_name, pr=event.number)
+            continue
+        if state.is_ignored(event.number) or state.is_paused(event.number):
+            reason = "openrabbit_ignored" if state.is_ignored(event.number) else "openrabbit_paused"
             _log.info(
                 "start.command_ignored",
                 repo=handle.full_name,
                 pr=event.number,
                 command=command.kind,
-                reason="openrabbit_paused",
+                reason=reason,
             )
             continue
         if command.kind == "review":
@@ -336,6 +364,26 @@ async def _handle_pr_commands(
                 handle,
                 pr_number=event.number,
                 summary=summary,
+                publisher=issue_comment_publisher,
+            )
+        elif command.kind == "summary":
+            summary = await describe_runner(
+                settings,
+                number=event.number,
+                repo=handle.full_name,
+                env=env,
+            )
+            await _publish_summary_reply(
+                handle,
+                pr_number=event.number,
+                summary=summary,
+                publisher=issue_comment_publisher,
+            )
+        elif command.kind == "configuration":
+            await _publish_configuration_reply(
+                settings,
+                handle,
+                pr_number=event.number,
                 publisher=issue_comment_publisher,
             )
         elif command.kind == "learn":
@@ -394,6 +442,34 @@ async def _publish_ask_reply(
     await handle.create_issue_comment(pr_number, body=body)
 
 
+async def _publish_summary_reply(
+    handle: RepositoryHandle,
+    *,
+    pr_number: int,
+    summary: dict[str, object],
+    publisher: IssueCommentPublisher | None,
+) -> None:
+    body = _format_summary_reply(summary)
+    if publisher is not None:
+        await publisher(pr_number=pr_number, body=body)
+        return
+    await handle.create_issue_comment(pr_number, body=body)
+
+
+async def _publish_configuration_reply(
+    settings: Settings,
+    handle: RepositoryHandle,
+    *,
+    pr_number: int,
+    publisher: IssueCommentPublisher | None,
+) -> None:
+    body = _format_configuration_reply(settings, repo=handle.full_name)
+    if publisher is not None:
+        await publisher(pr_number=pr_number, body=body)
+        return
+    await handle.create_issue_comment(pr_number, body=body)
+
+
 def _format_ask_reply(summary: dict[str, object]) -> str:
     answer = summary.get("answer")
     if not isinstance(answer, dict):
@@ -414,6 +490,66 @@ def _format_ask_reply(summary: dict[str, object]) -> str:
             location = f" (`{file_}:{line}`)" if file_ and isinstance(line, int) else ""
             out.write(f"- {detail}{location}\n")
     return out.getvalue()
+
+
+def _format_summary_reply(summary: dict[str, object]) -> str:
+    description = summary.get("description")
+    if not isinstance(description, dict):
+        return "## OpenRabbit PR Summary\n\nI could not produce a summary for this pull request."
+
+    out = StringIO()
+    out.write("## OpenRabbit PR Summary\n\n")
+    out.write(str(description.get("summary") or "No summary generated."))
+    _write_markdown_list(out, "Changed files", description.get("changed_files"))
+    _write_markdown_list(out, "Risk areas", description.get("risk_areas"))
+    _write_markdown_list(out, "Testing focus", description.get("testing_focus"))
+    return out.getvalue()
+
+
+def _format_configuration_reply(settings: Settings, *, repo: str) -> str:
+    enabled_reviews = [
+        name
+        for name in ("security", "performance", "architecture", "bug", "test_coverage", "style")
+        if bool(getattr(settings.review, name))
+    ]
+    base_url = settings.model.base_url or "default"
+    memory_state = "enabled" if settings.memory.enabled else "disabled"
+    learnings_state = "enabled" if settings.memory.learnings_enabled else "disabled"
+    max_changed_files = (
+        str(settings.polling.max_changed_files)
+        if settings.polling.max_changed_files is not None
+        else "unbounded"
+    )
+    return "\n".join(
+        [
+            "## OpenRabbit Configuration",
+            "",
+            f"- Repository: `{repo}`",
+            f"- Model provider: `{settings.model.provider}`",
+            f"- Model name: `{settings.model.model_name}`",
+            f"- Base URL: `{base_url}`",
+            f"- Model key env: `{settings.model.api_key_env}`",
+            f"- GitHub token env: `{settings.github.token_env}`",
+            f"- Review profile: `{settings.review.profile}`",
+            f"- Enabled checks: `{', '.join(enabled_reviews) or 'none'}`",
+            f"- Memory: `{memory_state}`",
+            f"- Learnings: `{learnings_state}`",
+            f"- Poll interval: `{settings.polling.interval_seconds}s`",
+            f"- Review cooldown: `{settings.polling.review_cooldown_seconds}s`",
+            f"- Max concurrent reviews: `{settings.polling.max_concurrent_reviews}`",
+            f"- Max changed files: `{max_changed_files}`",
+            "",
+            "Secrets are not displayed.",
+        ]
+    )
+
+
+def _write_markdown_list(out: StringIO, title: str, values: object) -> None:
+    if not isinstance(values, list) or not values:
+        return
+    out.write(f"\n\n{title}:\n")
+    for item in values[:8]:
+        out.write(f"- {item}\n")
 
 
 async def run_start(

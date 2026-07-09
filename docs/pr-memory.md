@@ -142,6 +142,25 @@ OpenRabbit stores the instruction locally with the repository, source PR, source
 
 Learnings are treated as instructions, not findings. OpenRabbit does not infer permanent learnings from ordinary human comments.
 
+## PR Comment Commands
+
+When `openrabbit start` is running, OpenRabbit can react to explicit PR comments:
+
+```text
+@openrabbit review
+@openrabbit full review
+@openrabbit improve
+@openrabbit ask what changed in the search path?
+@openrabbit summary
+@openrabbit configuration
+@openrabbit pause
+@openrabbit resume
+@openrabbit ignore
+@openrabbit learn Prefer SQLAlchemy bind parameters for raw SQL.
+```
+
+Comment commands are handled only by the polling daemon. `summary` posts a describe-style PR summary, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses command and automatic review work, and `ignore` suppresses the PR until `@openrabbit resume` clears the local state. Pause, ignore, and the last processed comment cursor are stored in `.openrabbit/commands.json`.
+
 ## GitHub Conversation Context
 
 When memory is enabled, model-facing commands load the live PR conversation before generating output:
