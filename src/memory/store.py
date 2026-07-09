@@ -260,7 +260,12 @@ class SQLitePullRequestMemory:
             )
 
         resolved = [
-            _replace_status(record, FindingStatus.POSSIBLY_FIXED, head_sha=head_sha, now=now)
+            _replace_status(
+                record,
+                _resolved_status(record),
+                head_sha=head_sha,
+                now=now,
+            )
             for fingerprint, record in previous.items()
             if fingerprint not in seen
         ]
@@ -536,6 +541,12 @@ def _replace_status(
         last_seen_at=now,
         payload=record.payload,
     )
+
+
+def _resolved_status(record: FindingMemoryRecord) -> FindingStatus:
+    if record.status in {FindingStatus.POSSIBLY_FIXED, FindingStatus.STALE}:
+        return FindingStatus.STALE
+    return FindingStatus.POSSIBLY_FIXED
 
 
 def _now() -> datetime:

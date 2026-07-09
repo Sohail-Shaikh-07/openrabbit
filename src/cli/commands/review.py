@@ -197,6 +197,7 @@ async def run_review(
         "publish_status": publish_status,
         "memory_enabled": memory_enabled,
         "memory_context": _memory_context_label(memory_enabled, pr_history, memory_error),
+        "last_reviewed_sha": _last_reviewed_sha(pr_history),
         "learning_count": pr_history_result.learning_count,
         "conversation_count": pr_history_result.conversation_count,
         "guideline_sources": _guideline_sources(context_provenance),
@@ -273,6 +274,19 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     memory_enabled = summary.get("memory_enabled")
     if isinstance(memory_enabled, bool):
         print(f"  Memory:       {'enabled' if memory_enabled else 'disabled'}", file=out)
+    last_reviewed_sha = summary.get("last_reviewed_sha")
+    if isinstance(last_reviewed_sha, str) and last_reviewed_sha:
+        print(f"  Last review:  {last_reviewed_sha[:12]}", file=out)
+    raw_status_counts = summary.get("memory_status_counts")
+    status_counts = raw_status_counts if isinstance(raw_status_counts, dict) else {}
+    if status_counts:
+        status_text = ", ".join(
+            f"{status}={count}"
+            for status, count in sorted(status_counts.items())
+            if isinstance(count, int) and count > 0
+        )
+        if status_text:
+            print(f"  Statuses:     {status_text}", file=out)
     conversation_count = summary.get("conversation_count")
     if isinstance(conversation_count, int) and conversation_count > 0:
         noun = "event" if conversation_count == 1 else "events"
@@ -385,6 +399,12 @@ def _memory_context_label(
     if history is not None:
         return "loaded"
     return "unavailable"
+
+
+def _last_reviewed_sha(history: PullRequestHistory | None) -> str:
+    if history is None or history.local is None or history.local.last_reviewed_sha is None:
+        return ""
+    return history.local.last_reviewed_sha
 
 
 def _guideline_sources(provenance: list[dict[str, object]]) -> list[str]:
