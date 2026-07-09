@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from memory.models import LearningMemoryRecord, PullRequestMemoryHistory
+
+MAX_CONVERSATION_BODY_CHARS = 1200
+SECRET_REDACTION = "[REDACTED]"
+
+_SECRET_PATTERNS = (
+    re.compile(
+        r"(?i)\b("
+        r"github_pat_[A-Za-z0-9_]+|"
+        r"ghp_[A-Za-z0-9_]+|"
+        r"gho_[A-Za-z0-9_]+|"
+        r"sk-[A-Za-z0-9_-]{20,}|"
+        r"xox[baprs]-[A-Za-z0-9-]+"
+        r")\b"
+    ),
+    re.compile(
+        r"(?i)\b("
+        r"(?:api[_-]?key|token|secret|password|authorization)"
+        r"\s*[:=]\s*)"
+        r"([^\s,;]{8,})"
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -121,7 +143,7 @@ def conversation_events_from_github(
     """Normalize GitHub review and comment objects into conversation events."""
     events: list[ConversationEvent] = []
     for review in reviews:
-        body = str(getattr(review, "body", "") or "").strip()
+        body = sanitize_conversation_body(getattr(review, "body", ""))
         if not body:
             continue
         events.append(
@@ -137,11 +159,14 @@ def conversation_events_from_github(
         )
 
     for comment in review_comments:
+        body = sanitize_conversation_body(getattr(comment, "body", ""))
+        if not body:
+            continue
         events.append(
             ConversationEvent(
                 source="review_comment",
                 author=str(getattr(getattr(comment, "user", None), "login", "")),
-                body=str(getattr(comment, "body", "")),
+                body=body,
                 url=str(getattr(comment, "html_url", "")),
                 created_at=getattr(comment, "created_at", None),
                 file=str(getattr(comment, "path", "")),
@@ -151,14 +176,42 @@ def conversation_events_from_github(
         )
 
     for comment in issue_comments:
+        body = sanitize_conversation_body(getattr(comment, "body", ""))
+        if not body:
+            continue
         events.append(
             ConversationEvent(
                 source="issue_comment",
                 author=str(getattr(getattr(comment, "user", None), "login", "")),
-                body=str(getattr(comment, "body", "")),
+                body=body,
                 url=str(getattr(comment, "html_url", "")),
                 created_at=getattr(comment, "created_at", None),
             )
         )
 
     return sorted(events, key=lambda event: event.created_at or datetime.min)
+
+
+def sanitize_conversation_body(value: object) -> str:
+    """Return prompt-safe PR conversation text.
+
+    PR comments can include pasted tokens, logs, or huge generated output. History
+    ingestion keeps enough context for re-review while redacting common secrets
+    and bounding the text before it reaches prompts.
+    """
+    if not isinstance(value, str):
+        return ""
+
+    body = value.strip()
+    for pattern in _SECRET_PATTERNS:
+        body = pattern.sub(_redact_secret_match, body)
+    body = " ".join(body.split())
+    if len(body) <= MAX_CONVERSATION_BODY_CHARS:
+        return body
+    return f"{body[: MAX_CONVERSATION_BODY_CHARS - 3].rstrip()}..."
+
+
+def _redact_secret_match(match: re.Match[str]) -> str:
+    if match.lastindex and match.lastindex >= 2:
+        return f"{match.group(1)}{SECRET_REDACTION}"
+    return SECRET_REDACTION

@@ -290,6 +290,92 @@ async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> No
 
 
 @respx.mock
+async def test_run_review_passes_github_conversation_history(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/reviews").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 10,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "Please fix the query.",
+                    "state": "COMMENTED",
+                    "commit_id": "c" * 40,
+                    "submitted_at": "2026-01-01T00:00:00Z",
+                    "html_url": "https://github.com/o/r/pull/42#pullrequestreview-10",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 20,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "This line still uses token=secret-token-value.",
+                    "path": "src/a.py",
+                    "line": 2,
+                    "commit_id": "c" * 40,
+                    "created_at": "2026-01-01T00:01:00Z",
+                    "updated_at": "2026-01-01T00:02:00Z",
+                    "html_url": "https://github.com/o/r/pull/42#discussion_r20",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 30,
+                    "user": {"login": "author", "id": 3},
+                    "body": "Fixed in the latest commit.",
+                    "created_at": "2026-01-01T00:03:00Z",
+                    "updated_at": "2026-01-01T00:04:00Z",
+                    "html_url": "https://github.com/o/r/pull/42#issuecomment-30",
+                }
+            ],
+        )
+    )
+    captured_history: list[object] = []
+
+    async def fake_runner(*_args: object, **kwargs: object) -> ReviewPipelineResult:
+        captured_history.append(kwargs.get("pr_history"))
+        return ReviewPipelineResult(agent_results=[], ranked_findings=[])
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=_empty_context_loader,
+        dry_run=True,
+    )
+
+    history = captured_history[0]
+    assert history is not None
+    assert summary["conversation_count"] == 3
+    assert [event.source for event in history.conversation] == [
+        "review",
+        "review_comment",
+        "issue_comment",
+    ]
+    assert "token=[REDACTED]" in history.conversation[1].body
+    assert "secret-token-value" not in history.conversation[1].body
+
+
+@respx.mock
 async def test_run_review_incremental_mode_suppresses_repeated_publish(
     scaffold_repo: Path,
 ) -> None:

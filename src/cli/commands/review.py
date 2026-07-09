@@ -13,6 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, TextIO
 
+from cli.commands.history import load_pr_history
 from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -66,6 +67,12 @@ async def run_review(
     try:
         handle = RepositoryHandle.from_full_name(target, client)
         payload = await PullRequestParser(handle).parse(number)
+        pr_history_result = await load_pr_history(
+            settings,
+            handle=handle,
+            payload=payload,
+            memory_store=memory_store,
+        )
     finally:
         await client.aclose()
 
@@ -77,28 +84,9 @@ async def run_review(
     memory_enabled = settings.memory.enabled
     memory_comparison: FindingComparison | None = None
     memory_error: str | None = None
-    memory_store_for_run: PullRequestMemoryBackend | None = None
-    pr_history: PullRequestHistory | None = None
-
-    if memory_enabled:
-        try:
-            memory_store_for_run = memory_store or SQLitePullRequestMemory(
-                settings.resolved_memory_path()
-            )
-            local_history = memory_store_for_run.load_history(handle.full_name, payload.number)
-            pr_history = PullRequestHistory.from_payload(
-                repo=handle.full_name,
-                payload=payload,
-                local=local_history,
-                learnings=_load_repo_learnings(settings, memory_store_for_run, handle.full_name),
-            )
-        except Exception as exc:
-            memory_error = type(exc).__name__
-            _log.warning(
-                "review.memory_load_failed",
-                error=str(exc),
-                error_type=type(exc).__name__,
-            )
+    memory_store_for_run = pr_history_result.store
+    pr_history = pr_history_result.history
+    memory_error = pr_history_result.error
 
     if run_agents:
         loader = context_loader or _load_review_context
@@ -209,7 +197,8 @@ async def run_review(
         "publish_status": publish_status,
         "memory_enabled": memory_enabled,
         "memory_context": _memory_context_label(memory_enabled, pr_history, memory_error),
-        "learning_count": len(pr_history.learnings) if pr_history is not None else 0,
+        "learning_count": pr_history_result.learning_count,
+        "conversation_count": pr_history_result.conversation_count,
         "guideline_sources": _guideline_sources(context_provenance),
         "linked_issue_count": len(payload.linked_issues),
         "memory_status_counts": _memory_status_counts(memory_comparison),
@@ -284,6 +273,10 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     memory_enabled = summary.get("memory_enabled")
     if isinstance(memory_enabled, bool):
         print(f"  Memory:       {'enabled' if memory_enabled else 'disabled'}", file=out)
+    conversation_count = summary.get("conversation_count")
+    if isinstance(conversation_count, int) and conversation_count > 0:
+        noun = "event" if conversation_count == 1 else "events"
+        print(f"  Conversation: {conversation_count} {noun}", file=out)
     memory_error = summary.get("memory_error")
     if isinstance(memory_error, str) and memory_error:
         print(f"  Memory error: {memory_error}", file=out)
@@ -406,18 +399,6 @@ def _guideline_sources(provenance: list[dict[str, object]]) -> list[str]:
         seen.add(source)
         sources.append(source)
     return sources
-
-
-def _load_repo_learnings(
-    settings: Settings,
-    store: PullRequestMemoryBackend,
-    repo: str,
-) -> list[Any]:
-    if not settings.memory.learnings_enabled:
-        return []
-    if isinstance(store, SQLitePullRequestMemory):
-        return store.list_learnings(repo)
-    return []
 
 
 def _publishable_ranked(

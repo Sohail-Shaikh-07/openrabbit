@@ -1,6 +1,6 @@
 # OpenRabbit PR Memory
 
-OpenRabbit keeps a local structured memory of pull request review runs. The goal is to make re-reviews smarter without sending repository history to a hosted service.
+OpenRabbit keeps a local structured memory of pull request review runs and loads current pull request conversation context from GitHub. The goal is to make re-reviews smarter without sending repository history to a hosted service.
 
 ## What Is Stored
 
@@ -14,13 +14,15 @@ The local memory stores derived review metadata:
 - finding status, title, category, severity, file, line, reason, and suggestion
 - first seen and last seen SHAs
 
-OpenRabbit also has typed GitHub client support for fetching PR reviews, inline review comments, and issue comments. Those conversation events are normalized into a `PullRequestHistory` object for prompt context.
+OpenRabbit also fetches PR reviews, inline review comments, and issue comments for `review`, `describe`, `ask`, and `improve` when memory is enabled. Those conversation events are normalized into a `PullRequestHistory` object for prompt context.
 
 ## What Is Not Stored
 
 OpenRabbit does not store GitHub tokens or model API keys in memory. Secrets should stay in environment variables.
 
 The memory database is local state. Do not commit it to the repository.
+
+GitHub conversation events are used as prompt context for the current command. They are sanitized before prompt use, common token-like strings are redacted, and large comment bodies are trimmed. Ordinary comments are not saved as permanent learnings.
 
 ## Default Location
 
@@ -137,6 +139,16 @@ When `openrabbit start` is running, maintainers can teach repository-specific re
 OpenRabbit stores the instruction locally with the repository, source PR, source comment, author, timestamp, and active flag. Active learnings are included in the `PR history context` used by `review`, `describe`, `ask`, and `improve`.
 
 Learnings are treated as instructions, not findings. OpenRabbit does not infer permanent learnings from ordinary human comments.
+
+## GitHub Conversation Context
+
+When memory is enabled, model-facing commands load the live PR conversation before generating output:
+
+- submitted PR reviews
+- inline review comments
+- top-level PR issue comments
+
+This helps OpenRabbit understand whether a maintainer already asked for a change, whether the author says a fix was pushed, and what previous bot or human review context exists. If GitHub conversation loading fails, OpenRabbit logs a warning and continues with local memory, linked issues, RAG context, and the diff.
 
 ## Why SQLite First
 
