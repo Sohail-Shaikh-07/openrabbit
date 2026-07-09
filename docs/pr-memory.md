@@ -87,7 +87,7 @@ Statuses:
 - `new`: not seen before on this PR
 - `still_present`: seen before and still found
 - `possibly_fixed`: seen before but missing from the current review
-- `stale`: reserved for future re-review cleanup
+- `stale`: missing for more than one review after being marked possibly fixed
 
 ## Incremental Re-Review
 
@@ -101,6 +101,8 @@ openrabbit review --pr 42 --repo owner/repo --mode full
 `incremental` is the default. It still runs the review and records all current findings, but it only publishes findings whose memory status is `new`. Findings marked `still_present` remain visible in the local summary and memory database, but OpenRabbit does not repost them as duplicate GitHub comments.
 
 `full` publishes every grounded finding from the current run. Use this when you intentionally want to refresh all review comments.
+
+Review summaries show the previous reviewed SHA and status counts when memory data is available. That makes it easier to see whether a run found new issues, repeated issues, or findings that are now possibly fixed or stale.
 
 ## Inspecting Memory
 

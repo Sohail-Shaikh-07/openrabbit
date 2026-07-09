@@ -110,6 +110,41 @@ def test_record_review_persists_resolved_finding_status(tmp_path: Path) -> None:
     assert history.previous_findings[0].last_seen_sha == "fixedsha"
 
 
+def test_repeated_missing_finding_becomes_stale(tmp_path: Path) -> None:
+    store = SQLitePullRequestMemory(tmp_path / "openrabbit.db")
+    store.record_review(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="oldsha",
+        findings=[_finding()],
+        context_loaded=False,
+        comments_posted=True,
+    )
+    first_missing = store.record_review(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="fixedsha",
+        findings=[],
+        context_loaded=False,
+        comments_posted=False,
+    )
+    second_missing = store.record_review(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="later-fixedsha",
+        findings=[],
+        context_loaded=False,
+        comments_posted=False,
+    )
+
+    history = store.load_history("owner/repo", 7)
+
+    assert first_missing.comparison.resolved[0].status == FindingStatus.POSSIBLY_FIXED
+    assert second_missing.comparison.resolved[0].status == FindingStatus.STALE
+    assert history.previous_findings[0].status == FindingStatus.STALE
+    assert history.previous_findings[0].last_seen_sha == "later-fixedsha"
+
+
 def test_export_repo_returns_deterministic_secret_free_payload(tmp_path: Path) -> None:
     store = SQLitePullRequestMemory(tmp_path / "openrabbit.db")
     store.record_review(

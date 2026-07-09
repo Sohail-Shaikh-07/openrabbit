@@ -287,6 +287,7 @@ async def test_run_review_records_local_memory_status(scaffold_repo: Path) -> No
     assert first["findings"][0]["memory_status"] == "new"
     assert second["memory_status_counts"] == {"still_present": 1}
     assert second["findings"][0]["memory_status"] == "still_present"
+    assert second["last_reviewed_sha"] == "abcdef0123456789" + "0" * 24
 
 
 @respx.mock
@@ -1081,6 +1082,38 @@ def test_render_summary_prints_context_provenance() -> None:
     assert "security .openrabbit/security.md" in text
     assert "reason=scoped_guideline" in text
     assert "architecture docs/architecture.md" in text
+
+
+def test_render_summary_prints_memory_status_counts() -> None:
+    summary = {
+        "repo": "o/r",
+        "number": 7,
+        "title": "Hello",
+        "state": "open",
+        "head_sha": "abcdef012345",
+        "files_changed": 1,
+        "binary_files": 0,
+        "hunks": 1,
+        "commits": 1,
+        "findings_count": 0,
+        "dropped_findings_count": 0,
+        "context_loaded": False,
+        "mode": "incremental",
+        "memory_enabled": True,
+        "last_reviewed_sha": "oldabcdef012345",
+        "memory_status_counts": {"possibly_fixed": 1, "stale": 2},
+        "conversation_count": 1,
+        "publish_status": "no_new_findings",
+        "findings": [],
+    }
+    out = io.StringIO()
+    render_summary(summary, out)
+
+    text = out.getvalue()
+    assert "Memory:       enabled" in text
+    assert "Last review:  oldabcdef012" in text
+    assert "Statuses:     possibly_fixed=1, stale=2" in text
+    assert "Conversation: 1 event" in text
 
 
 def test_render_summary_prints_skipped_paths() -> None:
