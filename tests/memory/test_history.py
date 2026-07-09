@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from memory.history import ConversationEvent, PullRequestHistory, format_history_context
+from memory.history import (
+    ConversationEvent,
+    PullRequestHistory,
+    conversation_events_from_github,
+    format_history_context,
+    sanitize_conversation_body,
+)
 from memory.models import (
     FindingMemoryRecord,
     FindingStatus,
@@ -97,3 +103,39 @@ def test_pull_request_history_from_payload_collects_commit_shas() -> None:
     assert history.pr_number == 3
     assert history.head_sha == "headsha"
     assert history.commit_shas == ["one", "two"]
+
+
+def test_conversation_events_from_github_sorts_and_sanitizes() -> None:
+    review = SimpleNamespace(
+        body="Please do not paste token=super-secret-value-here in logs.",
+        user=SimpleNamespace(login="reviewer"),
+        html_url="https://github.com/owner/repo/pull/3#pullrequestreview-1",
+        submitted_at=datetime(2026, 1, 2, tzinfo=UTC),
+        state="COMMENTED",
+        commit_id="abc",
+    )
+    issue_comment = SimpleNamespace(
+        body="Fixed it. github_pat_abcdefghijklmnopqrstuvwxyz0123456789",
+        user=SimpleNamespace(login="author"),
+        html_url="https://github.com/owner/repo/pull/3#issuecomment-2",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    events = conversation_events_from_github(
+        reviews=[review],
+        review_comments=[],
+        issue_comments=[issue_comment],
+    )
+
+    assert [event.source for event in events] == ["issue_comment", "review"]
+    assert events[0].author == "author"
+    assert "[REDACTED]" in events[0].body
+    assert "github_pat_" not in events[0].body
+    assert "token=[REDACTED]" in events[1].body
+
+
+def test_sanitize_conversation_body_bounds_large_comments() -> None:
+    body = sanitize_conversation_body("x" * 2000)
+
+    assert len(body) == 1200
+    assert body.endswith("...")

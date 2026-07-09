@@ -24,6 +24,7 @@ from agents.prompting import (
     format_changed_line_evidence,
     format_prompt_diff,
 )
+from cli.commands.history import load_pr_history
 from cli.commands.review import ContextLoader, _has_retrieval_context, _load_review_context
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -36,7 +37,6 @@ from github_ import (
     ReviewComment,
 )
 from memory.history import PullRequestHistory
-from memory.store import SQLitePullRequestMemory
 from ranking.grounding import DiffGroundingIndex, build_diff_grounding_index
 
 _log = get_logger(__name__)
@@ -149,6 +149,7 @@ async def run_improve(
     try:
         handle = RepositoryHandle.from_full_name(target, client)
         payload = await PullRequestParser(handle).parse(number)
+        pr_history_result = await load_pr_history(settings, handle=handle, payload=payload)
     finally:
         await client.aclose()
 
@@ -169,7 +170,7 @@ async def run_improve(
         payload,
         settings=settings,
         retrieval_result=retrieval_result,
-        pr_history=_load_local_history(settings, handle.full_name, payload),
+        pr_history=pr_history_result.history,
         env=env,
     )
     result = _ground_suggestions(raw_suggestions, payload)
@@ -208,6 +209,8 @@ async def run_improve(
         "hunks": hunk_total,
         "commits": len(payload.commits),
         "context_loaded": _has_retrieval_context(retrieval_result),
+        "conversation_count": pr_history_result.conversation_count,
+        "learning_count": pr_history_result.learning_count,
         "suggestions_count": len(publish_plan.inline_suggestions)
         + len(publish_plan.summary_suggestions),
         "dropped_suggestions_count": result.dropped_suggestions_count,
@@ -352,32 +355,6 @@ def _build_prompt(
         diff=format_prompt_diff(pr_payload),
         review_discipline=REVIEW_DISCIPLINE,
     )
-
-
-def _load_local_history(
-    settings: Settings,
-    repo: str,
-    pr_payload: Any,
-) -> PullRequestHistory | None:
-    if not settings.memory.enabled:
-        return None
-    try:
-        store = SQLitePullRequestMemory(settings.resolved_memory_path())
-        local = store.load_history(repo, int(getattr(pr_payload, "number", 0) or 0))
-        learnings = store.list_learnings(repo) if settings.memory.learnings_enabled else []
-        return PullRequestHistory.from_payload(
-            repo=repo,
-            payload=pr_payload,
-            local=local,
-            learnings=learnings,
-        )
-    except Exception as exc:
-        _log.warning(
-            "improve.memory_load_failed",
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        return None
 
 
 def _parse_suggestions(raw: str) -> list[ImprovementSuggestion]:

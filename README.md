@@ -15,7 +15,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
-| PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, PR conversation models |
+| PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, sanitized GitHub PR conversation context |
 | RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
@@ -273,7 +273,7 @@ OpenRabbit loads configuration in layers:
 
 Use the user config for repeated local defaults such as model provider, model name, polling interval, or `github.token_env`. Keep repository-specific review rules in the repo config. Do not store token values or model API keys in either config file; store secrets in environment variables and reference their names.
 
-OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md). Future graph and vector memory plugins are planned as optional local-first adapters, documented in [docs/memory-backends.md](docs/memory-backends.md).
+OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. Model-facing commands also fetch current GitHub PR reviews, inline review comments, and issue comments as sanitized conversation context when memory is enabled. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md). Future graph and vector memory plugins are planned as optional local-first adapters, documented in [docs/memory-backends.md](docs/memory-backends.md).
 
 Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 
@@ -361,11 +361,11 @@ When `openrabbit start` is running, maintainers can add explicit local learnings
 @openrabbit learn Prefer SQLAlchemy bind parameters for any raw SQL in repositories.
 ```
 
-Only explicit `@openrabbit learn ...` commands create learnings. Normal comments are kept as conversation context, not permanent instructions.
+Only explicit `@openrabbit learn ...` commands create learnings. Normal comments are kept as prompt-only conversation context, not permanent instructions.
 
 ### `openrabbit describe`
 
-Fetches one PR, loads indexed repository context and local PR memory when available, and prints a read-only summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`, but it never publishes comments or mutates the pull request.
+Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, then prints a read-only summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`, but it never publishes comments or mutates the pull request.
 
 ```bash
 openrabbit describe --pr 42 --repo owner/repo
@@ -376,7 +376,7 @@ openrabbit --quiet describe --pr 42 --repo owner/repo
 
 ### `openrabbit ask`
 
-Fetches one PR, loads indexed repository context and local PR memory when available, and answers a focused question about the pull request. The answer is separated into direct answer, evidence, uncertainty, and follow-up checks. The command uses the same configured model provider as `openrabbit review`, but it never posts comments or mutates the pull request.
+Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, and answers a focused question about the pull request. The answer is separated into direct answer, evidence, uncertainty, and follow-up checks. The command uses the same configured model provider as `openrabbit review`, but it never posts comments or mutates the pull request.
 
 ```bash
 openrabbit ask --pr 42 --repo owner/repo "Does this change add enough test coverage?"
@@ -387,7 +387,7 @@ openrabbit --quiet ask --pr 42 --repo owner/repo "What files should I inspect fi
 
 ### `openrabbit improve`
 
-Fetches one PR, loads indexed repository context and local PR memory when available, and prints improvement suggestions for changed lines. Suggestions are grounded to changed files and changed new-side lines before they are shown. The command uses the same configured model provider as `openrabbit review`, but it never applies patches or pushes commits.
+Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, and prints improvement suggestions for changed lines. Suggestions are grounded to changed files and changed new-side lines before they are shown. The command uses the same configured model provider as `openrabbit review`, but it never applies patches or pushes commits.
 
 By default, `improve` is read-only. Add `--publish` only when you want OpenRabbit to post grounded, actionable suggestions to the pull request. Suggestions with concrete replacement snippets become GitHub suggestion blocks on changed lines. Broader actionable suggestions are grouped into the review body, and non-actionable TODO/comment-only advice is dropped.
 
