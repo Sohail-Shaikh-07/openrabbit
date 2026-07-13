@@ -28,6 +28,7 @@ packages = [
     { include = "models", from = "src" },
     { include = "rag", from = "src" },
     { include = "ranking", from = "src" },
+    { include = "quality", from = "src" },
     { include = "review_controls", from = "src" },
 ]
 include = [
@@ -112,7 +113,7 @@ ignore = ["E501"]  # line length handled by black
 "src/cli/**" = ["B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "api", "benchmarks", "cli", "configs", "finetuning", "github_", "memory", "models", "rag", "ranking", "review_controls"]
+known-first-party = ["agents", "api", "benchmarks", "cli", "configs", "finetuning", "github_", "memory", "models", "quality", "rag", "ranking", "review_controls"]
 
 [tool.black]
 line-length = 100
@@ -155,7 +156,7 @@ follow_imports = "skip"
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov=memory --cov=rag --cov=finetuning --cov=benchmarks --cov-fail-under=70"
+addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov=memory --cov=quality --cov=rag --cov=finetuning --cov=benchmarks --cov-fail-under=70"
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning:google.*",

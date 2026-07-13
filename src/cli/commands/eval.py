@@ -98,6 +98,9 @@ async def run_eval(
                     "learning_count": 0,
                     "guideline_sources": [],
                     "linked_issue_count": 0,
+                    "quality_gates": [],
+                    "quality_status_counts": {},
+                    "quality_diagnostics_count": 0,
                     "runtime_ms": round(runtime_ms, 2),
                     "failure": str(exc),
                 }
@@ -218,6 +221,9 @@ def _run_record_from_summary(
         "learning_count": _int_summary(summary, "learning_count"),
         "guideline_sources": _string_list(summary.get("guideline_sources")),
         "linked_issue_count": _int_summary(summary, "linked_issue_count"),
+        "quality_gates": _dict_list(summary.get("quality_gates")),
+        "quality_status_counts": _object_dict(summary.get("quality_status_counts")),
+        "quality_diagnostics_count": _int_summary(summary, "quality_diagnostics_count"),
         "runtime_ms": round(runtime_ms, 2),
         "failure": failure,
     }
@@ -235,11 +241,18 @@ def _categories(findings: list[object]) -> dict[str, int]:
 
 def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
     categories: dict[str, int] = {}
+    quality_statuses: dict[str, int] = {}
     for run in runs:
         raw_categories = run.get("categories")
         if isinstance(raw_categories, dict):
             for category, count in raw_categories.items():
                 categories[str(category)] = categories.get(str(category), 0) + _coerce_int(count)
+        raw_quality_statuses = run.get("quality_status_counts")
+        if isinstance(raw_quality_statuses, dict):
+            for status, count in raw_quality_statuses.items():
+                quality_statuses[str(status)] = quality_statuses.get(str(status), 0) + _coerce_int(
+                    count
+                )
     return {
         "prs": len(runs),
         "findings": sum(_int_run(run, "findings_count") for run in runs),
@@ -252,6 +265,8 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
         ),
         "failures": sum(1 for run in runs if run.get("failure")),
         "categories": categories,
+        "quality_diagnostics": sum(_int_run(run, "quality_diagnostics_count") for run in runs),
+        "quality_status_counts": quality_statuses,
         "runtime_ms": round(sum(_float_run(run, "runtime_ms") for run in runs), 2),
     }
 
@@ -267,9 +282,10 @@ def _markdown_report(report: dict[str, object]) -> str:
         f"- PRs: {totals.get('prs', 0)}",
         f"- Findings: {totals.get('findings', 0)}",
         f"- Failures: {totals.get('failures', 0)}",
+        f"- Quality diagnostics: {totals.get('quality_diagnostics', 0)}",
         "",
-        "| PR | Context | Memory | Learnings | Guidelines | Linked Issues | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |",
+        "| PR | Context | Memory | Quality | Diagnostics | Learnings | Guidelines | Linked Issues | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |",
     ]
     runs = report.get("runs")
     if isinstance(runs, list):
@@ -277,12 +293,14 @@ def _markdown_report(report: dict[str, object]) -> str:
             if not isinstance(run, dict):
                 continue
             lines.append(
-                "| {pr} | {context} | {memory} | {learnings} | {guidelines} | "
+                "| {pr} | {context} | {memory} | {quality} | {quality_diagnostics} | {learnings} | {guidelines} | "
                 "{linked_issues} | {findings} | {categories} | {dropped} | "
                 "{skipped} | {runtime} | {failure} |".format(
                     pr=run.get("pr", ""),
                     context=run.get("context_mode", ""),
                     memory=run.get("memory_context", ""),
+                    quality=_category_text(run.get("quality_status_counts")),
+                    quality_diagnostics=run.get("quality_diagnostics_count", 0),
                     learnings=run.get("learning_count", 0),
                     guidelines=len(_string_list(run.get("guideline_sources"))),
                     linked_issues=run.get("linked_issue_count", 0),
@@ -605,3 +623,13 @@ def _object_dict(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         return {}
     return {str(key): item for key, item in value.items()}
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [
+        {str(key): item for key, item in value_item.items()}
+        for value_item in value
+        if isinstance(value_item, dict)
+    ]

@@ -4,6 +4,13 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
+### Local Quality Gates
+
+- Added optional local execution for Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test.
+- Added safe auto-detection, known command definitions, per-tool timeouts, bounded process output, and structured diagnostics without arbitrary shell configuration.
+- Added quality gate evidence to review agent prompts, CLI summaries, and JSON/Markdown eval reports.
+- Added setup, detection, safety, and provider privacy-boundary documentation.
+
 ### PR Memory
 
 - Added shared PR history loading for `review`, `describe`, `ask`, and `improve` so model prompts include sanitized GitHub PR reviews, inline review comments, and issue comments when memory is enabled.

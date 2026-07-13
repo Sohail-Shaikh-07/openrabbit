@@ -23,6 +23,7 @@ from configs.schema import (
     MemorySettings,
     ModelSettings,
     PollingSettings,
+    QualitySettings,
     RepositorySettings,
     ReviewSettings,
 )
@@ -52,7 +53,9 @@ class Settings(BaseModel):
     github: GithubSettings = GithubSettings()
     repository: RepositorySettings = RepositorySettings()
     memory: MemorySettings = MemorySettings()
+    quality: QualitySettings = QualitySettings()
     _config_dir: Path | None = PrivateAttr(default=None)
+    _workspace_root: Path | None = PrivateAttr(default=None)
 
     def resolved_github_token(self, env: dict[str, str] | None = None) -> str | None:
         """Return the GitHub token using the documented precedence rules.
@@ -89,6 +92,10 @@ class Settings(BaseModel):
             return (base / raw).resolve()
         base = self._config_dir or Path.cwd() / CONFIG_SUBDIR
         return base / "state" / "openrabbit.db"
+
+    def resolved_workspace_root(self) -> Path:
+        """Return the local repository root used for quality-gate commands."""
+        return (self._workspace_root or Path.cwd()).resolve()
 
 
 def find_config_file(start: Path) -> Path:
@@ -173,8 +180,10 @@ def load_settings(
     settings = Settings.model_validate(merged)
     if repo_config_path is not None:
         settings._config_dir = repo_config_path.parent
+        settings._workspace_root = repo_config_path.parent.parent.resolve()
     elif user_config_path is not None:
         settings._config_dir = user_config_path.parent
+        settings._workspace_root = start.resolve()
     return settings
 
 

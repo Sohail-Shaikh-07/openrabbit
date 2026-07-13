@@ -56,6 +56,27 @@ async def test_run_eval_writes_json_and_markdown_reports(
             "learning_count": 2 if number == 1 else 0,
             "guideline_sources": ["AGENTS.md"] if number == 1 else [],
             "linked_issue_count": 1 if number == 1 else 0,
+            "quality_gates": (
+                [
+                    {
+                        "tool": "ruff",
+                        "status": "failed",
+                        "diagnostics_count": 2,
+                        "diagnostics": [
+                            {
+                                "severity": "error",
+                                "file": "src/app.py",
+                                "line": 3,
+                                "message": "Undefined name",
+                            }
+                        ],
+                    }
+                ]
+                if number == 1
+                else []
+            ),
+            "quality_status_counts": {"failed": 1} if number == 1 else {},
+            "quality_diagnostics_count": 2 if number == 1 else 0,
         }
 
     report = await run_eval(
@@ -84,6 +105,10 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["runs"][0]["guideline_sources"] == ["AGENTS.md"]
     assert data["runs"][0]["linked_issue_count"] == 1
     assert data["runs"][0]["categories"] == {"security": 1, "tests": 1}
+    assert data["runs"][0]["quality_gates"][0]["tool"] == "ruff"
+    assert data["runs"][0]["quality_status_counts"] == {"failed": 1}
+    assert data["totals"]["quality_diagnostics"] == 2
+    assert data["totals"]["quality_status_counts"] == {"failed": 1}
     assert data["runs"][1]["skipped_paths_count"] == 2
     assert report["output_path"] == str(output)
     assert "OpenRabbit Evaluation Report" in markdown.read_text(encoding="utf-8")

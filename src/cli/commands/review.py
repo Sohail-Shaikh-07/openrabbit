@@ -17,6 +17,7 @@ from cli.commands.history import load_pr_history
 from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
+from configs.schema import QualitySettings
 from configs.settings import Settings
 from github_ import GitHubAuthError, GitHubClient, PullRequestParser, RepositoryHandle
 from github_.publisher import GitHubPublisher
@@ -25,6 +26,8 @@ from memory.fingerprints import fingerprint_finding
 from memory.history import PullRequestHistory
 from memory.models import FindingComparison, FindingStatus
 from memory.store import SQLitePullRequestMemory
+from quality.models import ToolRunResult
+from quality.runner import LocalQualityRunner
 from ranking.ranker import RankedFinding
 
 _log = get_logger(__name__)
@@ -33,6 +36,7 @@ _log = get_logger(__name__)
 AgentRunner = Callable[..., Awaitable[ReviewPipelineResult]]
 ReviewPublisher = Callable[..., Awaitable[None]]
 ContextLoader = Callable[[Any], Awaitable[Any]]
+QualityGateRunner = Callable[[Path, QualitySettings], Awaitable[list[ToolRunResult]]]
 
 
 class ReviewMode(StrEnum):
@@ -40,6 +44,15 @@ class ReviewMode(StrEnum):
 
     FULL = "full"
     INCREMENTAL = "incremental"
+
+
+async def run_local_quality_gates(
+    workspace: Path,
+    settings: QualitySettings,
+) -> list[ToolRunResult]:
+    """Run bounded quality tools without blocking the review event loop."""
+    runner = LocalQualityRunner(settings)
+    return await asyncio.to_thread(runner.run, workspace)
 
 
 async def run_review(
@@ -55,6 +68,7 @@ async def run_review(
     publisher: ReviewPublisher | None = None,
     context_loader: ContextLoader | None = None,
     memory_store: PullRequestMemoryBackend | None = None,
+    quality_gate_runner: QualityGateRunner | None = None,
 ) -> dict[str, object]:
     """Fetch, review, optionally publish, and return a summary dict.
 
@@ -87,6 +101,23 @@ async def run_review(
     memory_store_for_run = pr_history_result.store
     pr_history = pr_history_result.history
     memory_error = pr_history_result.error
+    quality_results: list[ToolRunResult] = []
+    quality_error: str | None = None
+
+    if run_agents and settings.quality.enabled:
+        quality_runner = quality_gate_runner or run_local_quality_gates
+        try:
+            quality_results = await quality_runner(
+                settings.resolved_workspace_root(),
+                settings.quality,
+            )
+        except Exception as exc:
+            quality_error = type(exc).__name__
+            _log.warning(
+                "review.quality_gates_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
 
     if run_agents:
         loader = context_loader or _load_review_context
@@ -105,6 +136,7 @@ async def run_review(
             settings=settings,
             retrieval_result=retrieval_result,
             pr_history=pr_history,
+            quality_results=quality_results,
             env=env,
         )
         ranked = pipeline_result.ranked_findings
@@ -204,6 +236,10 @@ async def run_review(
         "linked_issue_count": len(payload.linked_issues),
         "memory_status_counts": _memory_status_counts(memory_comparison),
         "memory_error": memory_error,
+        "quality_gates": [result.as_dict() for result in quality_results],
+        "quality_status_counts": _quality_status_counts(quality_results),
+        "quality_diagnostics_count": sum(len(result.diagnostics) for result in quality_results),
+        "quality_error": quality_error,
     }
 
 
@@ -244,6 +280,19 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
+    quality_statuses = summary.get("quality_status_counts")
+    if isinstance(quality_statuses, dict) and quality_statuses:
+        status_text = ", ".join(
+            f"{status}={count}"
+            for status, count in sorted(quality_statuses.items())
+            if isinstance(count, int) and count > 0
+        )
+        diagnostics = summary.get("quality_diagnostics_count", 0)
+        if status_text:
+            print(f"  Quality:      {status_text}; diagnostics={diagnostics}", file=out)
+    quality_error = summary.get("quality_error")
+    if isinstance(quality_error, str) and quality_error:
+        print(f"  Quality error:{quality_error}", file=out)
     raw_provenance = summary.get("context_provenance")
     provenance = raw_provenance if isinstance(raw_provenance, list) else []
     if provenance:
@@ -326,6 +375,14 @@ def _coerce_review_mode(mode: ReviewMode | str) -> ReviewMode:
         return ReviewMode(str(mode).strip().lower())
     except ValueError as exc:
         raise ValueError("mode must be 'full' or 'incremental'") from exc
+
+
+def _quality_status_counts(results: list[ToolRunResult]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for result in results:
+        status = result.status.value
+        counts[status] = counts.get(status, 0) + 1
+    return counts
 
 
 def _serialize_ranked_finding(

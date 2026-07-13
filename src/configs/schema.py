@@ -175,3 +175,31 @@ class MemorySettings(BaseModel):
             return None
         stripped = value.strip()
         return stripped or None
+
+
+_QUALITY_TOOLS = {"ruff", "mypy", "pytest", "bandit", "semgrep", "eslint", "npm-test"}
+
+
+class QualitySettings(BaseModel):
+    """Safe local quality tools executed alongside model review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    auto_detect: bool = True
+    tools: list[str] = Field(default_factory=list)
+    timeout_seconds: int = Field(default=120, ge=1, le=1800)
+    max_output_chars: int = Field(default=20000, ge=1000, le=1000000)
+    max_diagnostics: int = Field(default=100, ge=1, le=500)
+
+    @field_validator("tools")
+    @classmethod
+    def _validate_tools(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            tool = value.strip().lower().replace("_", "-")
+            if tool not in _QUALITY_TOOLS:
+                raise ValueError(f"unsupported quality tool: {value}")
+            if tool not in normalized:
+                normalized.append(tool)
+        return normalized
