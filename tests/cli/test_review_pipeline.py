@@ -84,6 +84,17 @@ class CapturingAgent(BaseReviewAgent):
         return AgentResult(agent=self.name, findings=[], confidence=0.0, execution_time=0.01)
 
 
+class CapturingQualityAgent(BaseReviewAgent):
+    name = "capturing_quality"
+
+    def __init__(self) -> None:
+        self.quality_results: list[object] = []
+
+    async def run(self, state: ReviewState) -> AgentResult:
+        self.quality_results = list(state.get("quality_results") or [])
+        return AgentResult(agent=self.name, findings=[], confidence=0.0, execution_time=0.01)
+
+
 @pytest.mark.asyncio
 async def test_run_agent_review_returns_ranked_findings() -> None:
     pr_payload = MagicMock()
@@ -170,3 +181,18 @@ async def test_run_agent_review_applies_review_controls_before_agents() -> None:
     assert result.skipped_paths_count == 1
     assert result.skipped_paths[0]["path"] == "docs/usage.md"
     assert result.skipped_paths[0]["reason"] == "path_not_included"
+
+
+@pytest.mark.asyncio
+async def test_run_agent_review_passes_quality_results_to_agents() -> None:
+    pr_payload = MagicMock(files=[])
+    quality_results = [MagicMock(tool="ruff")]
+    agent = CapturingQualityAgent()
+
+    await run_agent_review(
+        pr_payload,
+        agents=[agent],
+        quality_results=quality_results,
+    )
+
+    assert agent.quality_results == quality_results

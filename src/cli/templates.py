@@ -67,6 +67,16 @@ memory:
   # Local SQLite memory is stored under .openrabbit/state by default.
   # path: state/openrabbit.db
   learnings_enabled: true
+
+quality:
+  # Local quality gates are disabled by default. When enabled, auto-detection
+  # uses only known tools already configured and installed in this repository.
+  enabled: false
+  auto_detect: true
+  tools: []
+  timeout_seconds: 120
+  max_output_chars: 20000
+  max_diagnostics: 100
 """
 
 GITIGNORE: Final[str] = """\

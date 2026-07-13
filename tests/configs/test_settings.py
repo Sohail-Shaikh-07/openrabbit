@@ -38,6 +38,40 @@ def test_defaults_match_init_template(scaffold_repo: Path) -> None:
     assert settings.model_dump() == Settings().model_dump()
 
 
+def test_quality_gate_settings_are_safe_by_default(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
+
+    assert settings.quality.enabled is False
+    assert settings.quality.auto_detect is True
+    assert settings.quality.tools == []
+    assert settings.quality.timeout_seconds == 120
+    assert settings.quality.max_diagnostics == 100
+
+
+def test_quality_gate_settings_validate_tools(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        "quality:\n  enabled: true\n  auto_detect: false\n  tools: [ruff, mypy, pytest]\n",
+    )
+
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.quality.tools == ["ruff", "mypy", "pytest"]
+
+
+def test_quality_gate_settings_reject_unknown_tools(tmp_path: Path) -> None:
+    _write_config(tmp_path, "quality:\n  enabled: true\n  tools: [arbitrary-shell-command]\n")
+
+    with pytest.raises(ValueError, match="unsupported quality tool"):
+        load_settings(tmp_path, env={})
+
+
+def test_settings_resolve_repository_workspace(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo / "src", env={})
+
+    assert settings.resolved_workspace_root() == scaffold_repo.resolve()
+
+
 def test_load_settings_resolves_memory_path_under_openrabbit_state(scaffold_repo: Path) -> None:
     settings = load_settings(scaffold_repo, env={})
 

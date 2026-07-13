@@ -17,6 +17,7 @@ from cli.main import app
 from configs import load_settings
 from github_ import GitHubAPIError
 from memory.store import SQLitePullRequestMemory
+from quality.models import ToolDiagnostic, ToolRunResult, ToolStatus
 from rag.retriever import RetrievalResult
 from ranking.ranker import RankedFinding
 
@@ -128,14 +129,39 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
         fix="",
     )
 
-    async def fake_runner(*_args: object, **_kwargs: object) -> ReviewPipelineResult:
+    captured_quality: list[object] = []
+
+    async def fake_runner(*_args: object, **kwargs: object) -> ReviewPipelineResult:
+        captured_quality.extend(kwargs.get("quality_results") or [])
         return ReviewPipelineResult(
             agent_results=[],
             ranked_findings=[RankedFinding(finding=finding, score=2.7)],
             dropped_findings_count=2,
         )
 
+    async def fake_quality_runner(*_args: object) -> list[ToolRunResult]:
+        return [
+            ToolRunResult(
+                tool="ruff",
+                status=ToolStatus.failed,
+                command=("python", "-m", "ruff"),
+                exit_code=1,
+                duration_ms=4.0,
+                summary="1 diagnostic",
+                diagnostics=(
+                    ToolDiagnostic(
+                        severity="error",
+                        message="Undefined name",
+                        file="src/a.py",
+                        line=2,
+                        code="F821",
+                    ),
+                ),
+            )
+        ]
+
     settings = load_settings(scaffold_repo, env={})
+    settings.quality.enabled = True
 
     summary = await run_review(
         settings,
@@ -144,6 +170,7 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
         env={"GITHUB_TOKEN": "tkn"},
         agent_runner=fake_runner,
         context_loader=_empty_context_loader,
+        quality_gate_runner=fake_quality_runner,
         dry_run=True,
     )
 
@@ -153,6 +180,12 @@ async def test_run_review_returns_ranked_findings_from_agent_runner(scaffold_rep
     assert summary["findings"][0]["score"] == 2.7
     assert summary["comments_posted"] is False
     assert summary["publish_status"] == "dry_run"
+    assert [result.tool for result in captured_quality if isinstance(result, ToolRunResult)] == [
+        "ruff"
+    ]
+    assert summary["quality_status_counts"] == {"failed": 1}
+    assert summary["quality_diagnostics_count"] == 1
+    assert summary["quality_gates"][0]["diagnostics"][0]["code"] == "F821"
 
 
 @respx.mock

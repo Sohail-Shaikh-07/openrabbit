@@ -136,6 +136,9 @@ class ReviewState(TypedDict, total=False):
     pr_history: Any
     """The :class:`~memory.history.PullRequestHistory` for this PR."""
 
+    quality_results: Any
+    """Structured local quality-gate results for this repository checkout."""
+
     agent_results: list[AgentResult]
     """Accumulated results from all review agents."""
 

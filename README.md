@@ -15,6 +15,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
+| Quality gates | Optional local Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics and bounded timeouts |
 | PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, sanitized GitHub PR conversation context |
 | RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
@@ -220,6 +221,14 @@ memory:
   # Local SQLite memory is stored under .openrabbit/state by default.
   # path: state/openrabbit.db
   learnings_enabled: true
+
+quality:
+  enabled: false
+  auto_detect: true
+  tools: []
+  timeout_seconds: 120
+  max_output_chars: 20000
+  max_diagnostics: 100
 ```
 
 For the official OpenAI API, use `provider: openai` and put the API model in `model_name`. You do not need `base_model` for API providers:
@@ -254,6 +263,8 @@ openrabbit model-health --workspace .
 The command prints the configured provider and model, then exits non-zero with an actionable message if Ollama is unreachable, an API key is missing, `base_url` is invalid, or the provider returns an empty response.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
+
+Local quality gates are disabled by default. Enable `quality.enabled` to run known tools already installed and configured in the current checkout. Keep `tools: []` with `auto_detect: true` to detect repository configuration, or set an explicit list from `ruff`, `mypy`, `pytest`, `bandit`, `semgrep`, `eslint`, and `npm-test`. OpenRabbit does not accept arbitrary shell commands. See [docs/local-quality-gates.md](docs/local-quality-gates.md).
 
 Example path-specific guidance:
 
@@ -329,6 +340,8 @@ openrabbit --verbose review --pr 42 --repo owner/repo --dry-run
 ```
 
 Use `--dry-run` to print the result locally without posting comments. Empty findings are not posted, so clean PRs do not receive noisy review comments.
+
+When local quality gates are enabled, run the command from the checkout that matches `owner/repo`. OpenRabbit runs the configured tools from that repository root before model analysis, prints status and diagnostic counts, and gives normalized diagnostics to the review agents as additional evidence. Tool failures do not stop the review. Timeouts, unavailable tools, and execution errors are reported as structured gate statuses.
 
 Each review records local structured memory when `memory.enabled` is true. The summary includes memory state, and each finding can be tagged as `new` or `still_present` based on prior OpenRabbit runs for the same PR.
 
@@ -411,7 +424,7 @@ openrabbit eval --repo owner/repo --compare .openrabbit/reports/previous-eval.js
 openrabbit eval --repo owner/repo --expectations .openrabbit/eval-expectations.json
 ```
 
-Each run captures the command, PR number, provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails. `--compare` adds trend deltas against a previous JSON report. `--expectations` checks minimum or maximum finding counts and category counts for curated regression PRs.
+Each run captures the command, PR number, provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, local quality gate statuses and diagnostics, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails. `--compare` adds trend deltas against a previous JSON report. `--expectations` checks minimum or maximum finding counts and category counts for curated regression PRs.
 
 Example expectations file:
 
