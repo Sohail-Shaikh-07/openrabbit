@@ -91,8 +91,8 @@ The first implementation supports Python, JavaScript, and TypeScript, matching
 the repository's existing AST chunking support. Methods are distinguished from
 top-level functions even though both currently map to function chunks in RAG.
 Nested declarations may be discovered, but a rule is included only when the
-symbol's new-file line span overlaps an added or context line in a changed
-hunk. Deleted-only declarations do not receive new-source AST instructions.
+symbol's new-file line span overlaps an added line in a changed hunk.
+Deleted-only declarations do not receive new-source AST instructions.
 
 ## Matching Rules
 
