@@ -505,7 +505,8 @@ Use `httpx.MockTransport` to verify URL encoding, head SHA query, base64 decodin
 @pytest.mark.asyncio
 async def test_get_file_text_loads_content_at_ref() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path.endswith("/contents/src/api/task%20service.py")
+        raw_path = request.url.raw_path.decode().split("?", 1)[0]
+        assert raw_path.endswith("/contents/src/api/task%20service.py")
         assert request.url.params["ref"] == "abc123"
         return httpx.Response(
             200,
@@ -728,10 +729,17 @@ async def prepare_review_controls(
         ]
     )
     enriched = _payload_with_files(initial.filtered_payload, [item.file for item in files])
-    return apply_review_controls(
+    enriched_result = apply_review_controls(
         enriched,
         settings,
         source_warnings=[item.warning for item in files if item.warning is not None],
+    )
+    return ReviewControlResult(
+        filtered_payload=enriched_result.filtered_payload,
+        skipped_paths=initial.skipped_paths,
+        ast_matches=enriched_result.ast_matches,
+        warnings=enriched_result.warnings,
+        unsupported_paths=enriched_result.unsupported_paths,
     )
 ```
 
@@ -782,6 +790,7 @@ class ReviewControlResult:
     skipped_paths: list[SkippedPath]
     ast_matches: list[AstInstructionMatch] = field(default_factory=list)
     warnings: list[ReviewControlWarning] = field(default_factory=list)
+    unsupported_paths: list[str] = field(default_factory=list)
 ```
 
 Extend `_attach_control_metadata`. The filtered payload receives:
@@ -792,7 +801,7 @@ openrabbit_ast_instructions = ast_matches
 openrabbit_control_warnings = [warning.as_dict() for warning in warnings]
 ```
 
-`apply_review_controls` computes `match_ast_instructions` for kept files with source. Keep path instructions and skipped paths unchanged.
+`apply_review_controls` computes `match_ast_instructions` for kept files with source. Wrap each parser call in `try/except Exception`, log only the path and exception type, and add `ReviewControlWarning(path=path, reason=f"parser_{type(exc).__name__}")` without stopping other files. Record paths with unsupported source extensions in `unsupported_paths` only when at least one AST rule matches their path. Keep path instructions and skipped paths unchanged.
 
 - [ ] **Step 5: Add prompt provenance tests and implementation**
 
@@ -843,6 +852,7 @@ git commit -m "feat(op-94): prepare AST scoped review context"
 - Consumes: `prepare_review_controls` and `ReviewControlResult`.
 - Extends: `run_agent_review(..., controls_result: ReviewControlResult | None = None)`.
 - Produces summary fields: `ast_instruction_count`, `review_control_warning_count`, and `review_control_warnings`.
+- Produces summary field: `ast_unsupported_path_count`.
 
 - [ ] **Step 1: Write a failing pipeline reuse test**
 
@@ -897,9 +907,10 @@ Also assert excluded files do not reach RAG loaders, grounding, or improvement p
 
 - [ ] **Step 5: Prepare controls inside each open GitHub client scope**
 
-Immediately after `PullRequestParser(handle).parse(number)`:
+Retain the unfiltered payload for PR statistics and immediately prepare a filtered payload after `PullRequestParser(handle).parse(number)`:
 
 ```python
+original_payload = payload
 controls_result = await prepare_review_controls(
     payload,
     settings.review,
@@ -912,7 +923,7 @@ controls_result = await prepare_review_controls(
 payload = controls_result.filtered_payload
 ```
 
-Keep this inside the client lifetime so source requests finish before `client.aclose()`. Pass `controls_result` to `run_agent_review`. Describe, ask, and improve use the filtered payload directly for RAG, prompting, grounding, and publishing.
+Keep this inside the client lifetime so source requests finish before `client.aclose()`. Pass `controls_result` to `run_agent_review`. Describe, ask, and improve use the filtered payload directly for RAG, prompting, grounding, and publishing. Compute `files_changed`, `binary_files`, and `hunks` from `original_payload` so review controls do not alter PR metadata.
 
 - [ ] **Step 6: Add summary metadata and concise rendering**
 
@@ -922,9 +933,10 @@ All four command summaries include:
 "ast_instruction_count": len(controls_result.ast_matches),
 "review_control_warning_count": len(controls_result.warnings),
 "review_control_warnings": [item.as_dict() for item in controls_result.warnings],
+"ast_unsupported_path_count": len(controls_result.unsupported_paths),
 ```
 
-`review` text output prints `AST rules: N matched` only when N is nonzero and `Control warnings: N` only when warnings exist. Existing JSON and Markdown renderers carry the structured fields without printing source text.
+`review` text output prints `AST rules: N matched` only when N is nonzero, `Control warnings: N` only when warnings exist, and `Unsupported AST files: N` only when N is nonzero. Existing JSON and Markdown renderers carry the structured fields without printing source text.
 
 - [ ] **Step 7: Run all command tests**
 
