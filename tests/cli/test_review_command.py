@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 from pathlib import Path
@@ -10,11 +11,15 @@ import httpx
 import respx
 from typer.testing import CliRunner
 
-from agents.models import Finding, Severity
+from agents.base import BaseReviewAgent
+from agents.models import AgentResult, Finding, ReviewState, Severity
+from agents.prompting import format_prompt_diff
 from cli.commands.review import render_summary, run_review
-from cli.commands.review_pipeline import ReviewPipelineResult
+from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.main import app
 from configs import load_settings
+from configs.schema import AstInstruction
+from configs.settings import Settings
 from github_ import GitHubAPIError
 from memory.store import SQLitePullRequestMemory
 from quality.models import ToolDiagnostic, ToolRunResult, ToolStatus
@@ -23,6 +28,12 @@ from ranking.ranker import RankedFinding
 
 _BASE = "https://api.github.com"
 _RUNNER = CliRunner()
+_AST_INSTRUCTION = "Validate query input before use."
+_EXPECTED_AST_PROMPT = (
+    "- AST instructions:\n"
+    "  - src/search.py:1-2 [python function search]\n"
+    f"    {_AST_INSTRUCTION}"
+)
 
 
 def _pr_json() -> dict[str, object]:
@@ -40,6 +51,71 @@ def _pr_json() -> dict[str, object]:
         "body": "Body",
         "merged": False,
     }
+
+
+def _mock_controlled_pr() -> None:
+    source = b"def search(query):\n    return query\n"
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "filename": "src/search.py",
+                    "status": "modified",
+                    "additions": 2,
+                    "deletions": 1,
+                    "changes": 3,
+                    "patch": (
+                        "@@ -1,1 +1,2 @@\n-def search():\n+def search(query):\n"
+                        "+    return query\n"
+                    ),
+                },
+                {
+                    "filename": "docs/hidden.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 1,
+                    "changes": 2,
+                    "patch": "@@ -1,1 +1,1 @@\n-old = 1\n+hidden = 2\n",
+                },
+                {
+                    "filename": "assets/logo.png",
+                    "status": "added",
+                    "additions": 0,
+                    "deletions": 0,
+                    "changes": 0,
+                },
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/commits").mock(
+        return_value=httpx.Response(200, json=[{"sha": "c" * 40, "commit": {"message": "msg"}}])
+    )
+    respx.get(f"{_BASE}/repos/o/r/contents/src/search.py").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "type": "file",
+                "encoding": "base64",
+                "content": base64.b64encode(source).decode(),
+                "size": len(source),
+            },
+        )
+    )
+
+
+def _enable_ast_controls(settings: Settings) -> None:
+    settings.review.path_include = ["src/**"]
+    settings.review.ast_instructions = [
+        AstInstruction(
+            path="src/**",
+            languages=["python"],
+            symbols=["function"],
+            name_pattern="search",
+            instructions=_AST_INSTRUCTION,
+        )
+    ]
 
 
 async def _empty_context_loader(_payload: object) -> None:
@@ -239,6 +315,101 @@ async def test_run_review_returns_skipped_path_summary(scaffold_repo: Path) -> N
 
     assert summary["skipped_paths_count"] == 1
     assert summary["skipped_paths"] == [{"path": "docs/usage.md", "reason": "path_not_included"}]
+
+
+@respx.mock
+async def test_run_review_reuses_prepared_controls_across_downstream_steps(
+    scaffold_repo: Path,
+) -> None:
+    _mock_controlled_pr()
+    context_paths: list[list[str]] = []
+    runner_payloads: list[object] = []
+    controls_results: list[object] = []
+    agent_payloads: list[object] = []
+    published: list[dict[str, object]] = []
+
+    class ControlledAgent(BaseReviewAgent):
+        name = "controlled"
+
+        async def run(self, state: ReviewState) -> AgentResult:
+            agent_payloads.append(state["pr_payload"])
+            return AgentResult(
+                agent=self.name,
+                findings=[
+                    Finding(
+                        severity=Severity.high,
+                        category="bug",
+                        file="src/search.py",
+                        line=2,
+                        confidence=0.9,
+                        title="Validate query",
+                        reason="The changed query is returned without validation.",
+                        suggestion="Validate the query before returning it.",
+                        fix="",
+                    ),
+                    Finding(
+                        severity=Severity.high,
+                        category="bug",
+                        file="docs/hidden.py",
+                        line=1,
+                        confidence=0.9,
+                        title="Excluded finding",
+                        reason="This path is excluded from review.",
+                        suggestion="Do not publish this finding.",
+                        fix="",
+                    ),
+                ],
+                confidence=0.9,
+                execution_time=0.01,
+            )
+
+    async def capture_context(payload: object) -> None:
+        context_paths.append([file_.path for file_ in payload.files])
+        return None
+
+    async def fake_runner(*args: object, **kwargs: object) -> ReviewPipelineResult:
+        runner_payloads.append(args[0])
+        controls_results.append(kwargs["controls_result"])
+        return await run_agent_review(
+            args[0],
+            settings=settings,
+            agents=[ControlledAgent()],
+            controls_result=kwargs["controls_result"],
+        )
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+    _enable_ast_controls(settings)
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=capture_context,
+        publisher=fake_publisher,
+    )
+
+    controls_result = controls_results[0]
+    assert runner_payloads[0] is controls_result.filtered_payload
+    assert agent_payloads == [runner_payloads[0]]
+    assert context_paths == [["src/search.py"]]
+    assert _EXPECTED_AST_PROMPT in format_prompt_diff(runner_payloads[0])
+    assert summary["files_changed"] == 3
+    assert summary["binary_files"] == 1
+    assert summary["hunks"] == 2
+    assert summary["skipped_paths_count"] == 2
+    assert summary["ast_instruction_count"] == 1
+    assert summary["review_control_warning_count"] == 0
+    assert summary["review_control_warnings"] == []
+    assert summary["ast_unsupported_path_count"] == 0
+    assert summary["dropped_findings_count"] == 1
+    assert len(published) == 1
+    ranked = published[0]["ranked"]
+    assert [item.finding.file for item in ranked] == ["src/search.py"]
 
 
 @respx.mock
@@ -996,6 +1167,9 @@ def test_render_summary_prints_every_field() -> None:
         "mode": "incremental",
         "published_findings_count": 0,
         "publish_status": "no_findings",
+        "ast_instruction_count": 0,
+        "review_control_warning_count": 0,
+        "ast_unsupported_path_count": 0,
     }
     out = io.StringIO()
     render_summary(summary, out)
@@ -1008,6 +1182,9 @@ def test_render_summary_prints_every_field() -> None:
     assert "Commits:" in text
     assert "Context:      diff only" in text
     assert "no findings to post" in text
+    assert "AST rules:" not in text
+    assert "Control warnings:" not in text
+    assert "Unsupported AST files:" not in text
 
 
 def test_cli_review_accepts_mode_flag(scaffold_repo: Path) -> None:
@@ -1169,6 +1346,9 @@ def test_render_summary_prints_skipped_paths() -> None:
             {"path": "dist/app.js", "reason": "generated"},
         ],
         "publish_status": "no_findings",
+        "ast_instruction_count": 2,
+        "review_control_warning_count": 1,
+        "ast_unsupported_path_count": 3,
         "findings": [],
     }
     out = io.StringIO()
@@ -1178,3 +1358,6 @@ def test_render_summary_prints_skipped_paths() -> None:
     assert "Skipped:     2 paths" in text
     assert "docs/usage.md (path_not_included)" in text
     assert "dist/app.js (generated)" in text
+    assert "AST rules: 2 matched" in text
+    assert "Control warnings: 1" in text
+    assert "Unsupported AST files: 3" in text

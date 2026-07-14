@@ -29,6 +29,7 @@ from memory.store import SQLitePullRequestMemory
 from quality.models import ToolRunResult
 from quality.runner import LocalQualityRunner
 from ranking.ranker import RankedFinding
+from review_controls import prepare_review_controls
 
 _log = get_logger(__name__)
 
@@ -81,6 +82,13 @@ async def run_review(
     try:
         handle = RepositoryHandle.from_full_name(target, client)
         payload = await PullRequestParser(handle).parse(number)
+        original_payload = payload
+        controls_result = await prepare_review_controls(
+            payload,
+            settings.review,
+            source_loader=handle.get_file_text,
+        )
+        payload = controls_result.filtered_payload
         pr_history_result = await load_pr_history(
             settings,
             handle=handle,
@@ -90,8 +98,8 @@ async def run_review(
     finally:
         await client.aclose()
 
-    hunk_total = sum(len(f.hunks) for f in payload.files)
-    binary_count = sum(1 for f in payload.files if f.is_binary)
+    hunk_total = sum(len(f.hunks) for f in original_payload.files)
+    binary_count = sum(1 for f in original_payload.files if f.is_binary)
     ranked: list[RankedFinding] = []
     dropped_findings_count = 0
     retrieval_result: Any | None = None
@@ -103,6 +111,7 @@ async def run_review(
     memory_error = pr_history_result.error
     quality_results: list[ToolRunResult] = []
     quality_error: str | None = None
+    skipped_paths = [item.as_dict() for item in controls_result.skipped_paths]
 
     if run_agents and settings.quality.enabled:
         quality_runner = quality_gate_runner or run_local_quality_gates
@@ -137,14 +146,13 @@ async def run_review(
             retrieval_result=retrieval_result,
             pr_history=pr_history,
             quality_results=quality_results,
+            controls_result=controls_result,
             env=env,
         )
         ranked = pipeline_result.ranked_findings
         dropped_findings_count = pipeline_result.dropped_findings_count
-        skipped_paths = pipeline_result.skipped_paths or []
-    else:
-        skipped_paths = []
-
+        if pipeline_result.skipped_paths is not None:
+            skipped_paths = pipeline_result.skipped_paths
     context_loaded = _has_retrieval_context(retrieval_result)
     if memory_enabled and memory_store_for_run is not None:
         try:
@@ -211,10 +219,10 @@ async def run_review(
         "title": payload.pull_request.title,
         "state": payload.pull_request.state,
         "head_sha": payload.head_sha[:12],
-        "files_changed": len(payload.files),
+        "files_changed": len(original_payload.files),
         "binary_files": binary_count,
         "hunks": hunk_total,
-        "commits": len(payload.commits),
+        "commits": len(original_payload.commits),
         "dry_run": dry_run,
         "mode": review_mode.value,
         "findings_count": len(ranked),
@@ -222,6 +230,10 @@ async def run_review(
         "dropped_findings_count": dropped_findings_count,
         "skipped_paths_count": len(skipped_paths),
         "skipped_paths": skipped_paths,
+        "ast_instruction_count": len(controls_result.ast_matches),
+        "review_control_warning_count": len(controls_result.warnings),
+        "review_control_warnings": [item.as_dict() for item in controls_result.warnings],
+        "ast_unsupported_path_count": len(controls_result.unsupported_paths),
         "context_loaded": context_loaded,
         "context_provenance": context_provenance,
         "findings": _serialize_ranked_findings(ranked, memory_comparison),
@@ -233,7 +245,7 @@ async def run_review(
         "learning_count": pr_history_result.learning_count,
         "conversation_count": pr_history_result.conversation_count,
         "guideline_sources": _guideline_sources(context_provenance),
-        "linked_issue_count": len(payload.linked_issues),
+        "linked_issue_count": len(original_payload.linked_issues),
         "memory_status_counts": _memory_status_counts(memory_comparison),
         "memory_error": memory_error,
         "quality_gates": [result.as_dict() for result in quality_results],
@@ -277,6 +289,15 @@ def render_summary(summary: dict[str, object], out: TextIO) -> None:
             path = str(item.get("path", "")).strip()
             reason = str(item.get("reason", "")).strip()
             print(f"    - {path} ({reason})", file=out)
+    ast_instruction_count = summary.get("ast_instruction_count")
+    if isinstance(ast_instruction_count, int) and ast_instruction_count > 0:
+        print(f"  AST rules: {ast_instruction_count} matched", file=out)
+    warning_count = summary.get("review_control_warning_count")
+    if isinstance(warning_count, int) and warning_count > 0:
+        print(f"  Control warnings: {warning_count}", file=out)
+    unsupported_count = summary.get("ast_unsupported_path_count")
+    if isinstance(unsupported_count, int) and unsupported_count > 0:
+        print(f"  Unsupported AST files: {unsupported_count}", file=out)
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)

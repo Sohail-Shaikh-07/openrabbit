@@ -32,6 +32,7 @@ from cli.logging import get_logger
 from configs.settings import Settings
 from github_ import GitHubClient, PullRequestParser, RepositoryHandle
 from memory.history import PullRequestHistory
+from review_controls import prepare_review_controls
 
 _log = get_logger(__name__)
 
@@ -132,6 +133,13 @@ async def run_ask(
     try:
         handle = RepositoryHandle.from_full_name(target, client)
         payload = await PullRequestParser(handle).parse(number)
+        original_payload = payload
+        controls_result = await prepare_review_controls(
+            payload,
+            settings.review,
+            source_loader=handle.get_file_text,
+        )
+        payload = controls_result.filtered_payload
         pr_history_result = await load_pr_history(settings, handle=handle, payload=payload)
     finally:
         await client.aclose()
@@ -158,18 +166,22 @@ async def run_ask(
         env=env,
     )
 
-    hunk_total = sum(len(f.hunks) for f in payload.files)
-    binary_count = sum(1 for f in payload.files if f.is_binary)
+    hunk_total = sum(len(f.hunks) for f in original_payload.files)
+    binary_count = sum(1 for f in original_payload.files if f.is_binary)
     return {
         "repo": handle.full_name,
         "number": payload.number,
         "title": payload.pull_request.title,
         "state": payload.pull_request.state,
         "head_sha": payload.head_sha[:12],
-        "files_changed": len(payload.files),
+        "files_changed": len(original_payload.files),
         "binary_files": binary_count,
         "hunks": hunk_total,
-        "commits": len(payload.commits),
+        "commits": len(original_payload.commits),
+        "ast_instruction_count": len(controls_result.ast_matches),
+        "review_control_warning_count": len(controls_result.warnings),
+        "review_control_warnings": [item.as_dict() for item in controls_result.warnings],
+        "ast_unsupported_path_count": len(controls_result.unsupported_paths),
         "context_loaded": _has_retrieval_context(retrieval_result),
         "conversation_count": pr_history_result.conversation_count,
         "learning_count": pr_history_result.learning_count,

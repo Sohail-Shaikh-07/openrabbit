@@ -12,6 +12,7 @@ from cli.commands.review_pipeline import run_agent_review
 from configs.schema import ReviewSettings
 from configs.settings import Settings
 from github_.diff import DiffLine, Hunk
+from review_controls import apply_review_controls
 
 
 class StubAgent(BaseReviewAgent):
@@ -78,8 +79,10 @@ class CapturingAgent(BaseReviewAgent):
 
     def __init__(self) -> None:
         self.paths: list[str] = []
+        self.payload: object | None = None
 
     async def run(self, state: ReviewState) -> AgentResult:
+        self.payload = state["pr_payload"]
         self.paths = [file_.path for file_ in state["pr_payload"].files]
         return AgentResult(agent=self.name, findings=[], confidence=0.0, execution_time=0.01)
 
@@ -181,6 +184,42 @@ async def test_run_agent_review_applies_review_controls_before_agents() -> None:
     assert result.skipped_paths_count == 1
     assert result.skipped_paths[0]["path"] == "docs/usage.md"
     assert result.skipped_paths[0]["reason"] == "path_not_included"
+
+
+@pytest.mark.asyncio
+async def test_run_agent_review_reuses_prepared_controls() -> None:
+    pr_payload = MagicMock()
+    pr_payload.files = [
+        MagicMock(
+            path="src/app.py",
+            additions=1,
+            deletions=0,
+            changes=1,
+            is_binary=False,
+            hunks=[],
+        ),
+        MagicMock(
+            path="docs/usage.md",
+            additions=1,
+            deletions=0,
+            changes=1,
+            is_binary=False,
+            hunks=[],
+        ),
+    ]
+    settings = Settings(review=ReviewSettings(path_include=["src/**"]))
+    prepared = apply_review_controls(pr_payload, settings.review)
+    agent = CapturingAgent()
+
+    result = await run_agent_review(
+        pr_payload,
+        settings=settings,
+        agents=[agent],
+        controls_result=prepared,
+    )
+
+    assert agent.payload is prepared.filtered_payload
+    assert result.skipped_paths == [item.as_dict() for item in prepared.skipped_paths]
 
 
 @pytest.mark.asyncio
