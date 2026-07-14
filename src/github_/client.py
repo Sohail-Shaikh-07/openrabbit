@@ -50,6 +50,7 @@ DEFAULT_BASE_URL = "https://api.github.com"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 4
 RETRY_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_BASE64_ASCII_WHITESPACE = str.maketrans("", "", " \t\r\n")
 
 
 class GitHubAuthError(RuntimeError):
@@ -178,8 +179,8 @@ class GitHubClient:
         )
         try:
             item = RepositoryFileContent.model_validate(data)
-        except ValidationError as exc:
-            raise GitHubAPIError(422, "repository file content payload is invalid") from exc
+        except ValidationError:
+            raise GitHubAPIError(422, "repository file content payload is invalid") from None
         if item.type != "file":
             raise GitHubAPIError(422, "repository content is not a file")
         if item.size > max_bytes:
@@ -187,7 +188,10 @@ class GitHubClient:
         if item.encoding != "base64" or item.content is None:
             raise GitHubAPIError(422, "repository file content is not base64 encoded")
         try:
-            decoded = base64.b64decode(item.content, validate=False)
+            decoded = base64.b64decode(
+                item.content.translate(_BASE64_ASCII_WHITESPACE),
+                validate=True,
+            )
         except (ValueError, binascii.Error) as exc:
             raise GitHubAPIError(422, "repository file content is invalid base64") from exc
         if len(decoded) > max_bytes:

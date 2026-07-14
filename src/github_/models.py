@@ -43,6 +43,12 @@ class Repository(_APIObject):
 class RepositoryFileContent(_APIObject):
     """Repository content metadata and encoded bytes returned by GitHub."""
 
+    model_config = ConfigDict(
+        extra="ignore",
+        populate_by_name=True,
+        hide_input_in_errors=True,
+    )
+
     type: str
     encoding: str | None = None
     content: str | None = None

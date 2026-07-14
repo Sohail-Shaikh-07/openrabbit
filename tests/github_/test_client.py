@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import base64
+import traceback
 
 import httpx
 import pytest
 import respx
+from pydantic import ValidationError
 
 from configs import Settings
 from github_ import (
@@ -15,6 +17,7 @@ from github_ import (
     GitHubClient,
     ReviewComment,
 )
+from github_.models import RepositoryFileContent
 
 _BASE = "https://api.github.com"
 
@@ -333,6 +336,74 @@ async def test_get_file_text_rejects_invalid_payload_without_exposing_content() 
             await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=6)
 
     assert source not in str(exc.value)
+
+
+async def test_get_file_text_hides_invalid_payload_source_from_full_traceback() -> None:
+    source = "op94secret"
+    payload = {"type": "file", "encoding": "base64", "content": [source], "size": 1}
+
+    async with GitHubClient(
+        "token",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+    ) as client:
+        with pytest.raises(GitHubAPIError) as exc:
+            await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=6)
+
+    formatted = "".join(traceback.format_exception(exc.type, exc.value, exc.tb))
+    assert exc.value.__cause__ is None
+    assert source not in formatted
+
+
+def test_repository_file_content_hides_invalid_source_input() -> None:
+    source = "op94secret"
+    payload = {"type": "file", "encoding": "base64", "content": [source], "size": 1}
+
+    with pytest.raises(ValidationError) as exc:
+        RepositoryFileContent.model_validate(payload)
+
+    assert source not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "%%%",
+        base64.b64encode(b"valid source").decode() + "!",
+    ],
+)
+async def test_get_file_text_rejects_base64_garbage(content: str) -> None:
+    payload = {
+        "type": "file",
+        "encoding": "base64",
+        "content": content,
+        "size": 1,
+    }
+
+    async with GitHubClient(
+        "token",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+    ) as client:
+        with pytest.raises(GitHubAPIError, match="repository file content is invalid base64"):
+            await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=1024)
+
+
+async def test_get_file_text_decodes_line_wrapped_base64() -> None:
+    source = b"line wrapped GitHub content"
+    encoded = base64.b64encode(source).decode()
+    payload = {
+        "type": "file",
+        "encoding": "base64",
+        "content": f"{encoded[:8]}\r\n\t {encoded[8:]}",
+        "size": len(source),
+    }
+
+    async with GitHubClient(
+        "token",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+    ) as client:
+        text = await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=1024)
+
+    assert text == source.decode()
 
 
 @respx.mock
