@@ -29,6 +29,15 @@ review:
   path_include: []
   path_exclude: []
   path_instructions: []
+  # Apply guidance only when an added line belongs to a matching symbol.
+  ast_instructions: []
+  # Example:
+  # ast_instructions:
+  #   - path: "src/api/**"
+  #     languages: [python]
+  #     symbols: [function, method]
+  #     name_pattern: "*_task"
+  #     instructions: "Require explicit authorization before mutations."
   max_files: 80
   max_changed_lines: 4000
   include_generated: false
