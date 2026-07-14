@@ -129,6 +129,60 @@ def test_review_controls_can_include_generated_files() -> None:
     assert result.skipped_paths == []
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "generated/client.py",
+        "dist/app.js",
+        "build/app.ts",
+        "src/generated/client.py",
+        "web/dist/app.js",
+        "packages/build/app.ts",
+        r"generated\client.py",
+        r"dist\app.js",
+        r"build\app.ts",
+        r"src\generated\client.py",
+        r"web\dist\app.js",
+        r"packages\build\app.ts",
+    ],
+)
+def test_review_controls_classify_generated_directories_at_any_depth(path: str) -> None:
+    result = apply_review_controls(_payload([_file(path)]), ReviewSettings())
+
+    assert result.filtered_payload.files == []
+    assert [(item.path, item.reason) for item in result.skipped_paths] == [(path, "generated")]
+
+
+@pytest.mark.asyncio
+async def test_prepare_review_controls_never_loads_generated_directory_sources() -> None:
+    paths = [
+        "generated/client.py",
+        "src/generated/client.py",
+        "dist/app.js",
+        "web/dist/app.js",
+        "build/app.ts",
+        "packages/build/app.ts",
+        r"generated\client.py",
+        r"src\generated\client.py",
+    ]
+    calls: list[tuple[str, str, int]] = []
+
+    async def load(path: str, ref: str, *, max_bytes: int) -> str:
+        calls.append((path, ref, max_bytes))
+        return "def update_task():\n    return changed\n"
+
+    result = await prepare_review_controls(
+        _payload_with_sha([_parsed_file(path) for path in paths]),
+        ReviewSettings(ast_instructions=[_ast_rule(path="**", languages=[])]),
+        source_loader=load,
+    )
+
+    assert calls == []
+    assert [(item.path, item.reason) for item in result.skipped_paths] == [
+        (path, "generated") for path in paths
+    ]
+
+
 def test_review_controls_enforce_max_files_and_changed_lines() -> None:
     settings = ReviewSettings(max_files=1, max_changed_lines=5)
     result = apply_review_controls(
@@ -242,7 +296,7 @@ async def test_prepare_review_controls_uses_segment_aware_ast_rule_paths() -> No
 async def test_prepare_review_controls_loads_and_matches_ast_source() -> None:
     calls: list[tuple[str, str, int]] = []
 
-    async def load(path: str, ref: str, max_bytes: int) -> str:
+    async def load(path: str, ref: str, *, max_bytes: int) -> str:
         calls.append((path, ref, max_bytes))
         return "def update_task():\n    return changed\n"
 

@@ -6,9 +6,8 @@ import asyncio
 import copy
 import fnmatch
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, is_dataclass, replace
-from typing import Any
+from typing import Any, Protocol
 
 from configs.schema import AstInstruction, PathInstruction, ReviewSettings
 from review_controls.ast import AstInstructionMatch, language_for_path, match_ast_instructions
@@ -17,16 +16,15 @@ logger = logging.getLogger(__name__)
 
 MAX_AST_SOURCE_BYTES = 524288
 MAX_AST_SOURCE_CONCURRENCY = 4
-SourceLoader = Callable[[str, str, int], Awaitable[str]]
 
-_GENERATED_PATH_MARKERS = (
-    "/generated/",
-    "\\generated\\",
-    "/dist/",
-    "\\dist\\",
-    "/build/",
-    "\\build\\",
-)
+
+class SourceLoader(Protocol):
+    """Load repository source with the production keyword-only byte limit."""
+
+    async def __call__(self, path: str, ref: str, *, max_bytes: int) -> str: ...
+
+
+_GENERATED_DIRECTORIES = {"generated", "dist", "build"}
 _GENERATED_SUFFIXES = (
     ".generated.py",
     ".generated.ts",
@@ -224,7 +222,7 @@ async def _load_ast_source(
 
     try:
         async with semaphore:
-            source = await source_loader(path, head_sha, MAX_AST_SOURCE_BYTES)
+            source = await source_loader(path, head_sha, max_bytes=MAX_AST_SOURCE_BYTES)
     except Exception as exc:
         reason = type(exc).__name__
         logger.warning("AST source unavailable for %s (%s)", path, reason)
@@ -380,17 +378,23 @@ def _matches_ast_path(path: str, pattern: str) -> bool:
 
 
 def _repository_path_parts(value: str) -> list[str]:
-    normalized = value.replace("\\", "/")
+    normalized = _normalize_repository_path(value)
     return normalized.split("/") if normalized else []
 
 
+def _normalize_repository_path(value: str) -> str:
+    return "/".join(part for part in value.replace("\\", "/").split("/") if part)
+
+
 def _is_generated_path(path: str) -> bool:
-    lowered = path.lower()
-    name = lowered.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    parts = [part.lower() for part in _repository_path_parts(path)]
+    if not parts:
+        return False
+    name = parts[-1]
     return (
         name in _GENERATED_FILENAMES
-        or lowered.endswith(_GENERATED_SUFFIXES)
-        or any(marker in lowered for marker in _GENERATED_PATH_MARKERS)
+        or name.endswith(_GENERATED_SUFFIXES)
+        or any(part in _GENERATED_DIRECTORIES for part in parts[:-1])
     )
 
 
