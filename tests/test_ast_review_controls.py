@@ -6,8 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from configs.schema import AstInstruction
+from configs.schema import AstInstruction, ReviewSettings
 from github_.diff import DiffLine, Hunk
+from review_controls import apply_review_controls
 from review_controls.ast import (
     added_lines,
     extract_ast_symbols,
@@ -300,3 +301,17 @@ def test_match_ast_rules_use_case_sensitive_repository_path_globs() -> None:
     matches = match_ast_instructions(file_, rules)
 
     assert [(item.rule_index, item.instructions) for item in matches] == [(3, "Matching rule.")]
+
+
+def test_apply_review_controls_counts_path_matched_unsupported_ast_files() -> None:
+    files = [
+        SimpleNamespace(path="src/main.go", source_text="func main() {}", hunks=[]),
+        SimpleNamespace(path="docs/readme.md", source_text="# Readme", hunks=[]),
+    ]
+
+    result = apply_review_controls(
+        SimpleNamespace(files=files),
+        ReviewSettings(ast_instructions=[_rule(path="src/**")]),
+    )
+
+    assert result.unsupported_paths == ["src/main.go"]
