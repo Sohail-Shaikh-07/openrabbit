@@ -46,6 +46,8 @@ class ParsedFile:
 
     file: PullRequestFile
     hunks: list[Hunk]
+    source_text: str | None = field(default=None, repr=False)
+    source_warning: str | None = None
 
     @property
     def path(self) -> str:

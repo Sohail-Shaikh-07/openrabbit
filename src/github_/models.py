@@ -40,6 +40,15 @@ class Repository(_APIObject):
     private: bool
 
 
+class RepositoryFileContent(_APIObject):
+    """Repository content metadata and encoded bytes returned by GitHub."""
+
+    type: str
+    encoding: str | None = None
+    content: str | None = None
+    size: int
+
+
 class BranchCommit(_APIObject):
     """The commit at the tip of a branch."""
 

@@ -56,6 +56,15 @@ class RepositoryHandle:
     async def get(self) -> Repository:
         return await self.client.get_repository(self.owner, self.repo)
 
+    async def get_file_text(self, path: str, ref: str, *, max_bytes: int) -> str:
+        return await self.client.get_file_text(
+            self.owner,
+            self.repo,
+            path,
+            ref,
+            max_bytes=max_bytes,
+        )
+
     async def list_branches(self) -> list[Branch]:
         return await self.client.list_branches(self.owner, self.repo)
 

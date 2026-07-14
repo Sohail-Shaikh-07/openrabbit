@@ -66,6 +66,9 @@ async def test_parse_combines_pr_files_and_commits() -> None:
             json=[{"sha": "c" * 40, "commit": {"message": "msg"}}],
         )
     )
+    contents_route = respx.get(url__regex=rf"{_BASE}/repos/o/r/contents/.*").mock(
+        return_value=httpx.Response(500)
+    )
 
     async with _client() as client:
         handle = RepositoryHandle(owner="o", repo="r", client=client)
@@ -79,6 +82,9 @@ async def test_parse_combines_pr_files_and_commits() -> None:
     assert parsed.status == "modified"
     assert not parsed.is_binary
     assert [h.new_start for h in parsed.hunks] == [1]
+    assert parsed.source_text is None
+    assert parsed.source_warning is None
+    assert not contents_route.called
     assert len(payload.commits) == 1
 
 

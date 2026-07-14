@@ -8,12 +8,15 @@ consumers.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from collections.abc import Mapping
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import quote
 
 import httpx
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -35,6 +38,7 @@ from github_.models import (
     PullRequestState,
     PullRequestSummary,
     Repository,
+    RepositoryFileContent,
     Review,
     ReviewComment,
     ReviewEvent,
@@ -156,6 +160,39 @@ class GitHubClient:
     async def get_repository(self, owner: str, repo: str) -> Repository:
         data = await self._get(f"/repos/{owner}/{repo}")
         return Repository.model_validate(data)
+
+    async def get_file_text(
+        self,
+        owner: str,
+        repo: str,
+        path: str,
+        ref: str,
+        *,
+        max_bytes: int,
+    ) -> str:
+        """Load bounded UTF-8 repository content at an exact Git reference."""
+        encoded_path = quote(path, safe="/")
+        data = await self._get(
+            f"/repos/{owner}/{repo}/contents/{encoded_path}",
+            params={"ref": ref},
+        )
+        try:
+            item = RepositoryFileContent.model_validate(data)
+        except ValidationError as exc:
+            raise GitHubAPIError(422, "repository file content payload is invalid") from exc
+        if item.type != "file":
+            raise GitHubAPIError(422, "repository content is not a file")
+        if item.size > max_bytes:
+            raise GitHubAPIError(422, "repository file exceeds AST source limit")
+        if item.encoding != "base64" or item.content is None:
+            raise GitHubAPIError(422, "repository file content is not base64 encoded")
+        try:
+            decoded = base64.b64decode(item.content, validate=False)
+        except (ValueError, binascii.Error) as exc:
+            raise GitHubAPIError(422, "repository file content is invalid base64") from exc
+        if len(decoded) > max_bytes:
+            raise GitHubAPIError(422, "repository file exceeds AST source limit")
+        return decoded.decode("utf-8", errors="replace")
 
     async def list_branches(
         self,

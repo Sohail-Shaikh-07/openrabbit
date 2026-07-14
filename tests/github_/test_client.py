@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 import httpx
 import pytest
 import respx
@@ -221,6 +223,116 @@ async def test_get_issue_returns_compact_issue_metadata() -> None:
     assert issue.number == 12
     assert issue.title == "Search endpoint should be safe"
     assert [label.name for label in issue.labels] == ["security", "api"]
+
+
+async def test_get_file_text_loads_base64_content_at_ref() -> None:
+    source = b"def update_task():\n    pass\n"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raw_path = request.url.raw_path.decode().split("?", 1)[0]
+        assert raw_path.endswith("/contents/src/api/task%20service.py")
+        assert request.url.params["ref"] == "abc123"
+        return httpx.Response(
+            200,
+            json={
+                "type": "file",
+                "encoding": "base64",
+                "content": base64.b64encode(source).decode(),
+                "size": len(source),
+            },
+        )
+
+    async with GitHubClient("token", transport=httpx.MockTransport(handler)) as client:
+        text = await client.get_file_text(
+            "owner", "repo", "src/api/task service.py", "abc123", max_bytes=524288
+        )
+
+    assert text == source.decode()
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            {"type": "dir", "encoding": "base64", "content": "c2VjcmV0", "size": 6},
+            "repository content is not a file",
+        ),
+        (
+            {"type": "file", "encoding": "utf-8", "content": "highly sensitive", "size": 1},
+            "repository file content is not base64 encoded",
+        ),
+        (
+            {"type": "file", "encoding": "base64", "content": "c2VjcmV0", "size": 7},
+            "repository file exceeds AST source limit",
+        ),
+    ],
+)
+async def test_get_file_text_rejects_invalid_declared_content(
+    payload: dict[str, object],
+    message: str,
+) -> None:
+    async with GitHubClient(
+        "token",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+    ) as client:
+        with pytest.raises(GitHubAPIError, match=message) as exc:
+            await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=6)
+
+    assert "highly sensitive" not in str(exc.value)
+
+
+async def test_get_file_text_rejects_decoded_content_over_limit() -> None:
+    source = b"too large"
+    payload = {
+        "type": "file",
+        "encoding": "base64",
+        "content": base64.b64encode(source).decode(),
+        "size": 1,
+    }
+
+    async with GitHubClient(
+        "token",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+    ) as client:
+        with pytest.raises(GitHubAPIError, match="repository file exceeds AST source limit"):
+            await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=3)
+
+
+async def test_get_file_text_rejects_invalid_base64_without_exposing_content() -> None:
+    encoded_source = "a"
+    payload = {
+        "type": "file",
+        "encoding": "base64",
+        "content": encoded_source,
+        "size": 1,
+    }
+
+    async with GitHubClient(
+        "token",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+    ) as client:
+        with pytest.raises(
+            GitHubAPIError, match="repository file content is invalid base64"
+        ) as exc:
+            await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=6)
+
+    assert str(exc.value) == "GitHub API error 422: repository file content is invalid base64"
+
+
+async def test_get_file_text_rejects_invalid_payload_without_exposing_content() -> None:
+    source = "highly sensitive source"
+    payload = {"type": "file", "encoding": "base64", "content": source}
+
+    async with GitHubClient(
+        "token",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+    ) as client:
+        with pytest.raises(
+            GitHubAPIError, match="repository file content payload is invalid"
+        ) as exc:
+            await client.get_file_text("owner", "repo", "src/task.py", "abc123", max_bytes=6)
+
+    assert source not in str(exc.value)
 
 
 @respx.mock
