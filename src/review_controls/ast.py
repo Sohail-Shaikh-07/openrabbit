@@ -99,14 +99,14 @@ def match_ast_instructions(
     matches: list[AstInstructionMatch] = []
     seen: set[tuple[int, str, AstSymbolKind, str, int, int]] = set()
     for rule_index, rule in enumerate(rules):
-        if not fnmatch.fnmatch(path, rule.path):
+        if not _matches_repository_path(path, rule.path):
             continue
         if rule.languages and language not in rule.languages:
             continue
         for symbol in symbols:
             if symbol.kind.value not in rule.symbols:
                 continue
-            if not fnmatch.fnmatch(symbol.name, rule.name_pattern):
+            if not fnmatch.fnmatchcase(symbol.name, rule.name_pattern):
                 continue
             if not any(symbol.start_line <= line <= symbol.end_line for line in additions):
                 continue
@@ -139,10 +139,19 @@ def _node_name(node: Node, source_bytes: bytes) -> str:
     return source_bytes[name.start_byte : name.end_byte].decode("utf-8", errors="replace")
 
 
-def _contains_arrow_function(node: Node) -> bool:
-    return any(
-        child.type == "arrow_function" or _contains_arrow_function(child) for child in node.children
-    )
+def _is_arrow_function_declarator(node: Node) -> bool:
+    value = node.child_by_field_name("value")
+    while value is not None and value.type in {
+        "parenthesized_expression",
+        "as_expression",
+        "satisfies_expression",
+        "type_assertion",
+    }:
+        named_children = value.named_children
+        if not named_children:
+            return False
+        value = named_children[-1] if value.type == "type_assertion" else named_children[0]
+    return value is not None and value.type == "arrow_function"
 
 
 def _append_symbol(
@@ -172,53 +181,81 @@ def _walk(
     *,
     inside_class: bool,
 ) -> None:
-    for child in node.children:
-        if child.type in _CLASS_NODES:
+    stack: list[tuple[Node, bool]] = [(child, inside_class) for child in reversed(node.children)]
+    while stack:
+        current, current_inside_class = stack.pop()
+        child_inside_class = current_inside_class and current.type != "function_definition"
+        if current.type in _CLASS_NODES:
             _append_symbol(
                 out,
-                node=child,
+                node=current,
                 language=language,
                 kind=AstSymbolKind.klass,
                 source_bytes=source_bytes,
             )
-            _walk(child, source_bytes, language, out, inside_class=True)
-            continue
-        if child.type == "function_definition":
+            child_inside_class = True
+        elif current.type == "function_definition":
             _append_symbol(
                 out,
-                node=child,
+                node=current,
                 language=language,
-                kind=AstSymbolKind.method if inside_class else AstSymbolKind.function,
+                kind=AstSymbolKind.method if current_inside_class else AstSymbolKind.function,
                 source_bytes=source_bytes,
             )
-        elif child.type == "function_declaration":
+        elif current.type == "function_declaration":
             _append_symbol(
                 out,
-                node=child,
+                node=current,
                 language=language,
                 kind=AstSymbolKind.function,
                 source_bytes=source_bytes,
             )
-        elif child.type == "method_definition":
+        elif current.type == "method_definition":
             _append_symbol(
                 out,
-                node=child,
+                node=current,
                 language=language,
                 kind=AstSymbolKind.method,
                 source_bytes=source_bytes,
             )
-        elif child.type == "variable_declarator" and _contains_arrow_function(child):
+        elif current.type == "variable_declarator" and _is_arrow_function_declarator(current):
             _append_symbol(
                 out,
-                node=child,
+                node=current,
                 language=language,
                 kind=AstSymbolKind.function,
                 source_bytes=source_bytes,
             )
-        _walk(
-            child,
-            source_bytes,
-            language,
-            out,
-            inside_class=inside_class and child.type != "function_definition",
-        )
+        stack.extend((child, child_inside_class) for child in reversed(current.children))
+
+
+def _matches_repository_path(path: str, pattern: str) -> bool:
+    path_parts = _repository_path_parts(path)
+    pattern_parts = _repository_path_parts(pattern)
+    stack = [(0, 0)]
+    seen: set[tuple[int, int]] = set()
+
+    while stack:
+        pattern_index, path_index = stack.pop()
+        state = (pattern_index, path_index)
+        if state in seen:
+            continue
+        seen.add(state)
+        if pattern_index == len(pattern_parts):
+            if path_index == len(path_parts):
+                return True
+            continue
+
+        part = pattern_parts[pattern_index]
+        if part == "**":
+            stack.append((pattern_index + 1, path_index))
+            if path_index < len(path_parts):
+                stack.append((pattern_index, path_index + 1))
+        elif path_index < len(path_parts) and fnmatch.fnmatchcase(path_parts[path_index], part):
+            stack.append((pattern_index + 1, path_index + 1))
+    return False
+
+
+def _repository_path_parts(value: str) -> list[str]:
+    normalized = value.replace("\\", "/")
+    return normalized.split("/") if normalized else []

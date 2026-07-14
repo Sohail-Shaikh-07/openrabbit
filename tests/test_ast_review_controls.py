@@ -98,6 +98,34 @@ class TaskService {
     ]
 
 
+def test_extract_ast_symbols_handles_deeply_nested_javascript() -> None:
+    depth = 1_204
+    source = "const value = " + "wrap(" * depth + "0" + ")" * depth + ";\n"
+
+    assert extract_ast_symbols(source, "javascript") == []
+
+
+def test_extract_javascript_arrow_symbols_require_direct_initializer() -> None:
+    source = """const direct = () => 1;
+const parenthesized = (() => 2);
+const value = consume(() => 3);
+"""
+
+    symbols = extract_ast_symbols(source, "javascript")
+
+    assert [item.name for item in symbols] == ["direct", "parenthesized"]
+
+
+def test_extract_typescript_arrow_symbols_allow_type_assertion_wrapper() -> None:
+    source = """const typed = (() => 2) as () => number;
+const value = consume(() => 3);
+"""
+
+    symbols = extract_ast_symbols(source, "typescript")
+
+    assert [item.name for item in symbols] == ["typed"]
+
+
 @pytest.mark.parametrize(
     ("path", "language"),
     [
@@ -245,3 +273,30 @@ def test_match_ast_rules_preserve_configuration_order_and_deduplicate() -> None:
         (0, "First instruction."),
         (1, "Second instruction."),
     ]
+
+
+def test_match_ast_rules_use_case_sensitive_repository_path_globs() -> None:
+    file_ = _parsed_file(
+        "src/api/tasks.py",
+        source="def update_task():\n    return changed\n",
+        hunk=Hunk(
+            old_start=1,
+            old_lines=2,
+            new_start=1,
+            new_lines=2,
+            lines=[
+                DiffLine(kind="context", text="def update_task():"),
+                DiffLine(kind="addition", text="    return changed"),
+            ],
+        ),
+    )
+    rules = [
+        _rule(path="src/API/**", instructions="Path case mismatch."),
+        _rule(path="src/*.py", instructions="Single star crosses directories."),
+        _rule(path="src/**/*.py", name_pattern="UPDATE_*", instructions="Name case mismatch."),
+        _rule(path="src/**/*.py", name_pattern="update_*", instructions="Matching rule."),
+    ]
+
+    matches = match_ast_instructions(file_, rules)
+
+    assert [(item.rule_index, item.instructions) for item in matches] == [(3, "Matching rule.")]
