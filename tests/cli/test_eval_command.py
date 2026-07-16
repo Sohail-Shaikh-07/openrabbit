@@ -144,7 +144,12 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["context_sources"]["memory_contexts"] == {"loaded": 1, "disabled": 1}
     assert data["tool_findings"]["tools"]["ruff"]["diagnostics"] == 2
     assert report["output_path"] == str(output)
-    assert "OpenRabbit Evaluation Report" in markdown.read_text(encoding="utf-8")
+    markdown_text = markdown.read_text(encoding="utf-8")
+    assert "OpenRabbit Evaluation Report" in markdown_text
+    assert "## Dashboard Summary" in markdown_text
+    assert "## Scenario Groups" in markdown_text
+    assert "## Context Sources" in markdown_text
+    assert "## Tool Findings" in markdown_text
 
 
 @pytest.mark.asyncio

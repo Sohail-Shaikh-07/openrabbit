@@ -441,6 +441,7 @@ def _markdown_report(report: dict[str, object]) -> str:
         f"- Failures: {totals.get('failures', 0)}",
         f"- Quality diagnostics: {totals.get('quality_diagnostics', 0)}",
         "",
+        *_markdown_dashboard_sections(report),
         "| PR | Context | Memory | Quality | Diagnostics | Learnings | Guidelines | Linked Issues | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
         "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |",
     ]
@@ -476,6 +477,58 @@ def _markdown_report(report: dict[str, object]) -> str:
     if assertions:
         lines.extend(_markdown_assertions(assertions))
     return "\n".join(lines) + "\n"
+
+
+def _markdown_dashboard_sections(report: dict[str, object]) -> list[str]:
+    dashboard = _object_dict(report.get("dashboard"))
+    cards = _object_dict(dashboard.get("cards"))
+    context_sources = _object_dict(report.get("context_sources"))
+    tool_findings = _object_dict(report.get("tool_findings"))
+    groups = report.get("scenario_groups")
+    lines = [
+        "## Dashboard Summary",
+        "",
+        f"- PRs: {cards.get('prs', 0)}",
+        f"- Findings: {cards.get('findings', 0)}",
+        f"- Failures: {cards.get('failures', 0)}",
+        f"- Runtime ms: {cards.get('runtime_ms', 0)}",
+        "",
+        "## Scenario Groups",
+        "",
+    ]
+    if isinstance(groups, list):
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            prs = group.get("prs", [])
+            numbers = ", ".join(str(pr) for pr in prs) if isinstance(prs, list) else ""
+            lines.append(f"- {group.get('name')}: {numbers}")
+    lines.extend(
+        [
+            "",
+            "## Context Sources",
+            "",
+            f"- Context modes: {_category_text(context_sources.get('context_modes'))}",
+            f"- Memory contexts: {_category_text(context_sources.get('memory_contexts'))}",
+            f"- Guideline sources: {context_sources.get('guideline_source_count', 0)}",
+            f"- Linked issues: {context_sources.get('linked_issue_count', 0)}",
+            "",
+            "## Tool Findings",
+            "",
+        ]
+    )
+    tools = _object_dict(tool_findings.get("tools"))
+    if tools:
+        for tool, raw in sorted(tools.items()):
+            item = _object_dict(raw)
+            lines.append(
+                f"- {tool}: diagnostics={item.get('diagnostics', 0)}, "
+                f"statuses={_category_text(item.get('statuses'))}"
+            )
+    else:
+        lines.append("- No local quality tool findings recorded.")
+    lines.append("")
+    return lines
 
 
 def _load_json_object(path: Path) -> dict[str, object]:
