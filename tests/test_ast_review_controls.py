@@ -79,6 +79,50 @@ class Service {
     ]
 
 
+@pytest.mark.parametrize("language", ["javascript", "typescript"])
+def test_extract_object_methods_and_named_function_initializers_as_functions(
+    language: str,
+) -> None:
+    source = """const handlers = {
+  onStart() {
+    return 1;
+  },
+  onStop: function namedHandler() {
+    return 2;
+  },
+  onEvent: consume(function namedCallback() {
+    return 3;
+  }),
+};
+
+class Service {
+  updateTask() {
+    return 4;
+  }
+
+  handlers = {
+    nested() {
+      return 5;
+    },
+  };
+}
+
+const named = function innerName() {
+  return 6;
+};
+"""
+
+    symbols = extract_ast_symbols(source, language)
+
+    assert [(item.kind.value, item.name) for item in symbols] == [
+        ("function", "onStart"),
+        ("class", "Service"),
+        ("method", "updateTask"),
+        ("function", "nested"),
+        ("function", "named"),
+    ]
+
+
 def test_extract_typescript_symbols() -> None:
     source = """function parseTask(input: string): string {
   return input;

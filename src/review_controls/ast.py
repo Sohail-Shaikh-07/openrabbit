@@ -145,7 +145,7 @@ def _node_name(node: Node, source_bytes: bytes) -> str:
     return source_bytes[name.start_byte : name.end_byte].decode("utf-8", errors="replace")
 
 
-def _is_arrow_function_declarator(node: Node) -> bool:
+def _is_callable_function_declarator(node: Node) -> bool:
     value = node.child_by_field_name("value")
     while value is not None and value.type in {
         "parenthesized_expression",
@@ -157,7 +157,12 @@ def _is_arrow_function_declarator(node: Node) -> bool:
         if not named_children:
             return False
         value = named_children[-1] if value.type == "type_assertion" else named_children[0]
-    return value is not None and value.type == "arrow_function"
+    return value is not None and value.type in {"arrow_function", "function_expression"}
+
+
+def _is_class_method(node: Node) -> bool:
+    parent = node.parent
+    return parent is not None and parent.type == "class_body"
 
 
 def _append_symbol(
@@ -221,10 +226,12 @@ def _walk(
                 out,
                 node=current,
                 language=language,
-                kind=AstSymbolKind.method,
+                kind=(
+                    AstSymbolKind.method if _is_class_method(current) else AstSymbolKind.function
+                ),
                 source_bytes=source_bytes,
             )
-        elif current.type == "variable_declarator" and _is_arrow_function_declarator(current):
+        elif current.type == "variable_declarator" and _is_callable_function_declarator(current):
             _append_symbol(
                 out,
                 node=current,

@@ -46,6 +46,8 @@ NO_DIFF = "(No diff available.)"
 APPROX_CHARS_PER_TOKEN = 4
 DEFAULT_DIFF_TOKEN_BUDGET = 6000
 DEFAULT_CHANGED_LINE_EVIDENCE_TOKEN_BUDGET = 3000
+_MIN_DIFF_RESERVATION_CHARS = 128
+_MAX_DIFF_RESERVATION_CHARS = 2048
 
 _RISKY_PATH_MARKERS = (
     "auth",
@@ -292,29 +294,31 @@ def format_prompt_diff(
     max_chars = _token_budget_to_chars(max_tokens)
     control_context = format_review_control_context(pr_payload)
     raw_diff = _raw_diff(pr_payload)
-    if raw_diff and len(raw_diff) <= max_chars:
-        return _prepend_control_context(control_context, raw_diff, max_chars=max_chars)
+    files_value = getattr(pr_payload, "files", None)
+    structured_files: list[Any] = files_value if isinstance(files_value, list) else []
+    has_structured_diff = bool(structured_files)
+    has_diff = bool(raw_diff) or has_structured_diff
 
-    files = getattr(pr_payload, "files", None)
-    if isinstance(files, list) and files:
-        return _prepend_control_context(
-            control_context,
-            _format_structured_diff(files, max_chars=max_chars),
-            max_chars=max_chars,
+    reserved_diff_chars = _reserved_diff_chars(max_chars, has_diff=has_diff)
+    control_budget = max(0, max_chars - reserved_diff_chars - 2)
+    bounded_controls = _fit_control_context(control_context, max_chars=control_budget)
+    separator_chars = len(bounded_controls) + 2 if bounded_controls else 0
+    body_budget = max(0, max_chars - separator_chars)
+
+    if raw_diff and (not has_structured_diff or len(raw_diff) <= max_chars):
+        body = _truncate_raw_diff_preserving_evidence(raw_diff, max_chars=body_budget)
+    elif has_structured_diff:
+        body = _format_structured_diff_with_evidence(structured_files, max_chars=body_budget)
+    else:
+        body = _truncate_at_line_boundary(
+            NO_DIFF,
+            max_chars=body_budget,
+            note="... no-diff marker omitted to keep the prompt within budget.",
         )
 
-    if raw_diff:
-        return _prepend_control_context(
-            control_context,
-            _truncate_at_line_boundary(
-                raw_diff,
-                max_chars=max_chars,
-                note="... raw diff omitted to keep the prompt within budget.",
-            ),
-            max_chars=max_chars,
-        )
-
-    return _prepend_control_context(control_context, NO_DIFF, max_chars=max_chars)
+    if not bounded_controls:
+        return body
+    return f"{bounded_controls}\n\n{body}"
 
 
 def format_context(items: Iterable[Any]) -> str:
@@ -412,6 +416,102 @@ def _format_structured_diff(files: list[Any], *, max_chars: int) -> str:
         max_chars=max_chars,
         note="... compressed diff omitted to keep the prompt within budget.",
     )
+
+
+def _format_structured_diff_with_evidence(files: list[Any], *, max_chars: int) -> str:
+    """Pack structured hunks while retaining a compact changed-line signal."""
+    result = _format_structured_diff(files, max_chars=max_chars)
+    if _contains_structured_evidence(result):
+        return result
+
+    evidence = _first_structured_evidence(files)
+    if evidence and len(evidence) <= max_chars:
+        return evidence
+    return result
+
+
+def _first_structured_evidence(files: list[Any]) -> str:
+    for file_ in sorted(files, key=_file_priority_key):
+        path = _file_path(file_)
+        if bool(getattr(file_, "is_binary", False)):
+            return "\n".join(
+                (
+                    f"diff --git a/{path} b/{path}",
+                    "# binary, renamed-without-patch, or too-large patch omitted by GitHub",
+                )
+            )
+        for hunk in getattr(file_, "hunks", []):
+            hunk_lines = getattr(hunk, "lines", None)
+            if not isinstance(hunk_lines, list):
+                continue
+            for line in hunk_lines:
+                kind = str(getattr(line, "kind", ""))
+                if kind in {"addition", "deletion"}:
+                    text = str(getattr(line, "text", ""))
+                    return "\n".join(
+                        (f"diff --git a/{path} b/{path}", f"{_diff_prefix(kind)}{text}")
+                    )
+        if getattr(file_, "hunks", None):
+            return f"diff --git a/{path} b/{path}"
+    return ""
+
+
+def _contains_structured_evidence(text: str) -> bool:
+    return (
+        any(
+            line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+            for line in text.splitlines()
+        )
+        or "binary, renamed-without-patch" in text
+    )
+
+
+def _truncate_raw_diff_preserving_evidence(raw_diff: str, *, max_chars: int) -> str:
+    if len(raw_diff) <= max_chars:
+        return raw_diff
+    if max_chars <= 0:
+        return ""
+
+    lines = raw_diff.splitlines()
+    evidence_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+        ),
+        None,
+    )
+    if evidence_index is None:
+        evidence_index = next((index for index, line in enumerate(lines) if line.strip()), None)
+
+    if evidence_index is not None:
+        evidence = lines[evidence_index]
+        prefix = "\n".join(lines[: evidence_index + 1])
+        if len(prefix) <= max_chars:
+            return prefix
+        if len(evidence) <= max_chars:
+            return evidence
+
+    return _truncate_at_line_boundary(
+        raw_diff,
+        max_chars=max_chars,
+        note="... raw diff omitted to keep the prompt within budget.",
+    )
+
+
+def _reserved_diff_chars(max_chars: int, *, has_diff: bool) -> int:
+    """Reserve up to half the prompt for diff evidence, with explicit bounds."""
+    if not has_diff or max_chars <= 0:
+        return 0
+    bounded_half = min(_MAX_DIFF_RESERVATION_CHARS, max_chars // 2)
+    return min(max_chars, max(_MIN_DIFF_RESERVATION_CHARS, bounded_half))
+
+
+def _fit_control_context(control_context: str, *, max_chars: int) -> str:
+    if len(control_context) <= max_chars:
+        return control_context
+    lines, _ = _fit_lines(control_context.splitlines(), max_chars)
+    return "\n".join(lines)
 
 
 def _diff_section_for_file(file_: Any) -> tuple[list[str], int]:
@@ -551,17 +651,6 @@ def _truncate_at_line_boundary(text: str, *, max_chars: int, note: str) -> str:
     if boundary > 0:
         head = head[:boundary]
     return f"{head}\n{note}"
-
-
-def _prepend_control_context(control_context: str, body: str, *, max_chars: int) -> str:
-    if not control_context:
-        return body
-    combined = f"{control_context}\n\n{body}"
-    return _truncate_at_line_boundary(
-        combined,
-        max_chars=max_chars,
-        note="... review controls or diff omitted to keep the prompt within budget.",
-    )
 
 
 def _context_item_parts(item: Any) -> tuple[str, str]:
