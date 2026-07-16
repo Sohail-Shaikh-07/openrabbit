@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 import httpx
 import pytest
 import respx
@@ -81,6 +83,31 @@ async def test_handle_delegates_get_repository() -> None:
         repo = await handle.get()
 
     assert repo.full_name == "o/r"
+
+
+async def test_handle_delegates_get_file_text() -> None:
+    source = b"print('hello')\n"
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["ref"] = request.url.params["ref"]
+        return httpx.Response(
+            200,
+            json={
+                "type": "file",
+                "encoding": "base64",
+                "content": base64.b64encode(source).decode(),
+                "size": len(source),
+            },
+        )
+
+    async with GitHubClient("token", transport=httpx.MockTransport(handler)) as client:
+        handle = RepositoryHandle(owner="o", repo="r", client=client)
+        text = await handle.get_file_text("src/task.py", "head-sha", max_bytes=1024)
+
+    assert text == source.decode()
+    assert captured == {"path": "/repos/o/r/contents/src/task.py", "ref": "head-sha"}
 
 
 @respx.mock

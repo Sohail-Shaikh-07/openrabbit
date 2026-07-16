@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from cli.templates import CONFIG_YML
 from configs import (
@@ -14,6 +15,7 @@ from configs import (
     find_user_config_file,
     load_settings,
 )
+from configs.schema import ReviewSettings
 
 
 def _write_config(tmp_path: Path, body: str, subdir: str = ".openrabbit") -> Path:
@@ -131,6 +133,40 @@ review:
     assert settings.review.max_changed_lines == 500
     assert settings.review.include_generated is False
     assert settings.review.path_instructions[0].path == "src/api/**"
+
+
+def test_review_settings_normalise_ast_instructions() -> None:
+    settings = ReviewSettings(
+        ast_instructions=[
+            {
+                "path": " src/api/** ",
+                "languages": ["python"],
+                "symbols": ["function", "method"],
+                "name_pattern": " *_task ",
+                "instructions": " Require authorization. ",
+            }
+        ]
+    )
+
+    rule = settings.ast_instructions[0]
+    assert rule.path == "src/api/**"
+    assert rule.name_pattern == "*_task"
+    assert rule.instructions == "Require authorization."
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"path": "", "symbols": ["function"], "instructions": "Rule"},
+        {"path": "**", "symbols": [], "instructions": "Rule"},
+        {"path": "**", "symbols": ["module"], "instructions": "Rule"},
+        {"path": "**", "languages": ["go"], "symbols": ["function"], "instructions": "Rule"},
+        {"path": "**", "symbols": ["function"], "instructions": ""},
+    ],
+)
+def test_review_settings_reject_invalid_ast_instructions(rule: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        ReviewSettings(ast_instructions=[rule])
 
 
 def test_review_profile_rejects_unknown_value(tmp_path: Path) -> None:

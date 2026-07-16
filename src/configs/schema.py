@@ -11,6 +11,34 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+AstLanguage = Literal["python", "javascript", "typescript"]
+AstSymbolKind = Literal["function", "method", "class"]
+
+
+class AstInstruction(BaseModel):
+    """Review guidance scoped to changed AST symbols."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    languages: list[AstLanguage] = Field(default_factory=list)
+    symbols: list[AstSymbolKind] = Field(min_length=1)
+    name_pattern: str = "*"
+    instructions: str
+
+    @field_validator("path", "name_pattern", "instructions")
+    @classmethod
+    def _normalise_required_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("AST instruction text fields must be non-empty")
+        return stripped
+
+    @field_validator("languages", "symbols")
+    @classmethod
+    def _deduplicate_values(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(values))
+
 
 class PathInstruction(BaseModel):
     """Path-specific review guidance."""
@@ -44,6 +72,7 @@ class ReviewSettings(BaseModel):
     path_include: list[str] = Field(default_factory=list)
     path_exclude: list[str] = Field(default_factory=list)
     path_instructions: list[PathInstruction] = Field(default_factory=list)
+    ast_instructions: list[AstInstruction] = Field(default_factory=list)
     max_files: int = Field(default=80, ge=1, le=500)
     max_changed_lines: int = Field(default=4000, ge=1, le=50000)
     include_generated: bool = False

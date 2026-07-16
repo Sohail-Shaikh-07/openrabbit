@@ -12,7 +12,7 @@ from agents.models import AgentResult, ReviewState
 from configs.settings import Settings
 from ranking.grounding import filter_grounded_findings
 from ranking.ranker import CommentRanker, RankedFinding
-from review_controls import apply_review_controls
+from review_controls import ReviewControlResult, apply_review_controls
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,7 @@ async def run_agent_review(
     retrieval_result: Any | None = None,
     pr_history: Any | None = None,
     quality_results: list[Any] | None = None,
+    controls_result: ReviewControlResult | None = None,
     env: dict[str, str] | None = None,
     ranker: CommentRanker | None = None,
 ) -> ReviewPipelineResult:
@@ -48,8 +49,10 @@ async def run_agent_review(
 
     effective_payload = pr_payload
     skipped_paths: list[dict[str, str]] = []
-    if settings is not None:
+    control_result = controls_result
+    if control_result is None and settings is not None:
         control_result = apply_review_controls(pr_payload, settings.review)
+    if control_result is not None:
         effective_payload = control_result.filtered_payload
         skipped_paths = [item.as_dict() for item in control_result.skipped_paths]
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -207,6 +208,60 @@ def test_prune_before_deletes_old_runs_and_findings(tmp_path: Path) -> None:
     assert deleted == {"review_runs": 1, "findings": 1}
     assert payload["review_runs"] == []
     assert payload["findings"] == []
+
+
+def test_compare_preserves_diff_prefixed_and_backslash_paths(tmp_path: Path) -> None:
+    store = SQLitePullRequestMemory(tmp_path / "openrabbit.db")
+    findings = [
+        _finding(title="a hidden"),
+        _finding(title="b hidden"),
+        _finding(title="slash hidden"),
+    ]
+    findings[0] = replace(findings[0], file="a/docs/hidden.py")
+    findings[1] = replace(findings[1], file="b/docs/hidden.py")
+    findings[2] = replace(findings[2], file=r"docs\hidden.py")
+    store.record_review(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="oldsha",
+        findings=findings,
+        context_loaded=False,
+        comments_posted=False,
+    )
+
+    comparison = store.compare_with_history(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="newsha",
+        current_findings=[],
+        preserve_paths=["docs/hidden.py"],
+    )
+
+    assert comparison.resolved == []
+
+
+def test_compare_keeps_literal_top_level_prefix_path_exact(tmp_path: Path) -> None:
+    store = SQLitePullRequestMemory(tmp_path / "openrabbit.db")
+    finding = _finding()
+    finding = replace(finding, file="a/docs/hidden.py")
+    store.record_review(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="oldsha",
+        findings=[finding],
+        context_loaded=False,
+        comments_posted=False,
+    )
+
+    comparison = store.compare_with_history(
+        repo="owner/repo",
+        pr_number=7,
+        head_sha="newsha",
+        current_findings=[],
+        preserve_paths=["a/docs/hidden.py"],
+    )
+
+    assert comparison.resolved == []
 
 
 def _far_future() -> datetime:
