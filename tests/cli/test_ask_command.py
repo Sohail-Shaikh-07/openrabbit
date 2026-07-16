@@ -10,6 +10,7 @@ import httpx
 import pytest
 import respx
 
+from agents.models import Finding, Severity
 from agents.prompting import format_prompt_diff
 from cli.commands.ask import (
     AnswerEvidence,
@@ -18,6 +19,9 @@ from cli.commands.ask import (
     render_answer_json,
     render_answer_markdown,
     run_ask,
+)
+from cli.commands.ask import (
+    _build_prompt as _build_ask_prompt,
 )
 from configs import load_settings
 from configs.schema import AstInstruction
@@ -123,6 +127,100 @@ def _mock_controlled_pr() -> None:
             },
         )
     )
+    _mock_context_conversation()
+
+
+def _mock_context_conversation() -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/reviews").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 10,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "GENERAL_CONVERSATION_CONTEXT",
+                    "state": "COMMENTED",
+                    "commit_id": "c" * 40,
+                    "submitted_at": "2026-01-01T00:00:00Z",
+                    "html_url": "https://example/review/10",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 20,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "SKIPPED_CONVERSATION_CONTEXT",
+                    "path": "docs/hidden.py",
+                    "line": 1,
+                    "commit_id": "c" * 40,
+                    "created_at": "2026-01-01T00:01:00Z",
+                    "updated_at": "2026-01-01T00:01:00Z",
+                    "html_url": "https://example/comment/20",
+                },
+                {
+                    "id": 21,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "UNCHANGED_CONVERSATION_CONTEXT",
+                    "path": "docs/architecture.md",
+                    "line": 8,
+                    "commit_id": "c" * 40,
+                    "created_at": "2026-01-01T00:02:00Z",
+                    "updated_at": "2026-01-01T00:02:00Z",
+                    "html_url": "https://example/comment/21",
+                },
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+
+def _context_retrieval() -> RetrievalResult:
+    return RetrievalResult(
+        architecture=[
+            {
+                "score": 0.9,
+                "payload": {
+                    "source_path": "docs/hidden.py",
+                    "text": "SKIPPED_RETRIEVAL_CONTEXT",
+                },
+            },
+            {
+                "score": 0.8,
+                "payload": {
+                    "source_path": "src/search.py",
+                    "text": "ALLOWED_RETRIEVAL_CONTEXT",
+                },
+            },
+            {
+                "score": 0.7,
+                "payload": {
+                    "source_path": "docs/architecture.md",
+                    "text": "UNCHANGED_RETRIEVAL_CONTEXT",
+                },
+            },
+            {"score": 0.6, "payload": {"text": "GENERAL_RETRIEVAL_CONTEXT"}},
+        ]
+    )
+
+
+def _context_finding(path: str, title: str) -> Finding:
+    return Finding(
+        severity=Severity.high,
+        category="bug",
+        file=path,
+        line=1,
+        confidence=0.9,
+        title=title,
+        reason=f"{title} reason",
+        suggestion=f"{title} suggestion",
+    )
 
 
 def _enable_ast_controls(settings: Settings) -> None:
@@ -189,18 +287,38 @@ async def test_run_ask_uses_prepared_controls_for_context_and_model(scaffold_rep
     _mock_controlled_pr()
     context_payloads: list[object] = []
     generator_payloads: list[object] = []
+    model_prompts: list[str] = []
 
-    async def capture_context(payload: object) -> None:
+    async def capture_context(payload: object) -> RetrievalResult:
         context_payloads.append(payload)
-        return None
+        return _context_retrieval()
 
-    async def fake_generator(*args: object, **_kwargs: object) -> PullRequestAnswer:
+    async def fake_generator(*args: object, **kwargs: object) -> PullRequestAnswer:
         generator_payloads.append(args[0])
+        model_prompts.append(
+            _build_ask_prompt(
+                args[0], kwargs["question"], kwargs["retrieval_result"], kwargs["pr_history"]
+            )
+        )
         paths = [file_.path for file_ in args[0].files]
         return PullRequestAnswer(answer=", ".join(paths))
 
     settings = load_settings(scaffold_repo, env={})
     _enable_ast_controls(settings)
+    store = SQLitePullRequestMemory(settings.resolved_memory_path())
+    store.record_review(
+        repo="o/r",
+        pr_number=42,
+        head_sha="previous-sha",
+        findings=[
+            _context_finding("docs/hidden.py", "SKIPPED_PREVIOUS_FINDING"),
+            _context_finding("src/search.py", "ALLOWED_PREVIOUS_FINDING"),
+            _context_finding("docs/architecture.md", "UNCHANGED_PREVIOUS_FINDING"),
+        ],
+        context_loaded=True,
+        comments_posted=False,
+    )
+    store.add_learning(repo="o/r", instruction="GENERAL_REPOSITORY_LEARNING")
 
     summary = await run_ask(
         settings,
@@ -215,6 +333,24 @@ async def test_run_ask_uses_prepared_controls_for_context_and_model(scaffold_rep
     assert generator_payloads == context_payloads
     assert [file_.path for file_ in generator_payloads[0].files] == ["src/search.py"]
     assert _EXPECTED_AST_PROMPT in format_prompt_diff(generator_payloads[0])
+    prompt = model_prompts[0]
+    for excluded in (
+        "SKIPPED_RETRIEVAL_CONTEXT",
+        "SKIPPED_PREVIOUS_FINDING",
+        "SKIPPED_CONVERSATION_CONTEXT",
+    ):
+        assert excluded not in prompt
+    for expected in (
+        "ALLOWED_RETRIEVAL_CONTEXT",
+        "UNCHANGED_RETRIEVAL_CONTEXT",
+        "GENERAL_RETRIEVAL_CONTEXT",
+        "ALLOWED_PREVIOUS_FINDING",
+        "UNCHANGED_PREVIOUS_FINDING",
+        "UNCHANGED_CONVERSATION_CONTEXT",
+        "GENERAL_CONVERSATION_CONTEXT",
+        "GENERAL_REPOSITORY_LEARNING",
+    ):
+        assert expected in prompt
     assert summary["files_changed"] == 3
     assert summary["binary_files"] == 1
     assert summary["hunks"] == 2

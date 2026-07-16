@@ -5,22 +5,24 @@ from __future__ import annotations
 import base64
 import io
 import json
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import httpx
 import respx
 from typer.testing import CliRunner
 
-from agents.base import BaseReviewAgent
-from agents.models import AgentResult, Finding, ReviewState, Severity
-from agents.prompting import format_prompt_diff
+from agents.models import Finding, ReviewState, Severity
+from agents.prompting import collect_context, collect_history_context, format_prompt_diff
 from cli.commands.review import render_summary, run_review
-from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
+from cli.commands.review_pipeline import ReviewPipelineResult
 from cli.main import app
 from configs import load_settings
 from configs.schema import AstInstruction
 from configs.settings import Settings
 from github_ import GitHubAPIError
+from memory.models import FindingComparison, PullRequestMemoryHistory, ReviewMemoryWrite
 from memory.store import SQLitePullRequestMemory
 from quality.models import ToolDiagnostic, ToolRunResult, ToolStatus
 from rag.retriever import RetrievalResult
@@ -34,6 +36,43 @@ _EXPECTED_AST_PROMPT = (
     "  - src/search.py:1-2 [python function search]\n"
     f"    {_AST_INSTRUCTION}"
 )
+
+
+class _LegacyMemoryBackend:
+    def __init__(self) -> None:
+        self.compare_calls: list[list[Finding]] = []
+        self.record_calls: list[list[Finding]] = []
+
+    def load_history(self, repo: str, pr_number: int) -> PullRequestMemoryHistory:
+        return PullRequestMemoryHistory(repo=repo, pr_number=pr_number)
+
+    def compare_with_history(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        head_sha: str,
+        current_findings: Iterable[Finding],
+    ) -> FindingComparison:
+        del repo, pr_number, head_sha
+        findings = list(current_findings)
+        self.compare_calls.append(findings)
+        return FindingComparison(current=[], resolved=[])
+
+    def record_review(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        head_sha: str,
+        findings: Iterable[Finding],
+        context_loaded: bool,
+        comments_posted: bool,
+    ) -> ReviewMemoryWrite:
+        del repo, pr_number, head_sha, context_loaded, comments_posted
+        findings_list = list(findings)
+        self.record_calls.append(findings_list)
+        return ReviewMemoryWrite(review_id=1, comparison=FindingComparison(current=[], resolved=[]))
 
 
 def _pr_json() -> dict[str, object]:
@@ -103,6 +142,96 @@ def _mock_controlled_pr() -> None:
             },
         )
     )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/reviews").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 10,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "GENERAL_CONVERSATION_CONTEXT",
+                    "state": "COMMENTED",
+                    "commit_id": "c" * 40,
+                    "submitted_at": "2026-01-01T00:00:00Z",
+                    "html_url": "https://example/review/10",
+                }
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls/42/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 20,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "SKIPPED_CONVERSATION_CONTEXT",
+                    "path": "docs/hidden.py",
+                    "line": 1,
+                    "commit_id": "c" * 40,
+                    "created_at": "2026-01-01T00:01:00Z",
+                    "updated_at": "2026-01-01T00:01:00Z",
+                    "html_url": "https://example/comment/20",
+                },
+                {
+                    "id": 21,
+                    "user": {"login": "reviewer", "id": 2},
+                    "body": "UNCHANGED_CONVERSATION_CONTEXT",
+                    "path": "docs/architecture.md",
+                    "line": 8,
+                    "commit_id": "c" * 40,
+                    "created_at": "2026-01-01T00:02:00Z",
+                    "updated_at": "2026-01-01T00:02:00Z",
+                    "html_url": "https://example/comment/21",
+                },
+            ],
+        )
+    )
+    respx.get(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+
+def _context_retrieval() -> RetrievalResult:
+    return RetrievalResult(
+        security=[
+            {
+                "score": 0.9,
+                "payload": {
+                    "source_path": "docs/hidden.py",
+                    "text": "SKIPPED_RETRIEVAL_CONTEXT",
+                },
+            },
+            {
+                "score": 0.8,
+                "payload": {
+                    "source_path": "src/search.py",
+                    "text": "ALLOWED_RETRIEVAL_CONTEXT",
+                },
+            },
+            {
+                "score": 0.7,
+                "payload": {
+                    "source_path": "docs/architecture.md",
+                    "text": "UNCHANGED_RETRIEVAL_CONTEXT",
+                },
+            },
+            {"score": 0.6, "payload": {"text": "GENERAL_RETRIEVAL_CONTEXT"}},
+        ]
+    )
+
+
+def _context_finding(path: str, title: str) -> Finding:
+    return Finding(
+        severity=Severity.high,
+        category="bug",
+        file=path,
+        line=1,
+        confidence=0.9,
+        title=title,
+        reason=f"{title} reason",
+        suggestion=f"{title} suggestion",
+    )
 
 
 def _enable_ast_controls(settings: Settings) -> None:
@@ -170,6 +299,27 @@ async def test_run_review_returns_summary(scaffold_repo: Path) -> None:
     assert summary["hunks"] == 1
     assert summary["commits"] == 1
     assert summary["head_sha"] == "abcdef012345"
+
+
+@respx.mock
+async def test_run_review_adapts_legacy_memory_backend_signatures(scaffold_repo: Path) -> None:
+    _mock_controlled_pr()
+    backend = _LegacyMemoryBackend()
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        run_agents=False,
+        dry_run=True,
+        memory_store=backend,
+    )
+
+    assert len(backend.compare_calls) == 1
+    assert len(backend.record_calls) == 1
+    assert summary["memory_error"] is None
 
 
 @respx.mock
@@ -324,80 +474,127 @@ async def test_run_review_reuses_prepared_controls_across_downstream_steps(
     _mock_controlled_pr()
     context_paths: list[list[str]] = []
     runner_payloads: list[object] = []
-    controls_results: list[object] = []
-    agent_payloads: list[object] = []
+    model_contexts: list[str] = []
     published: list[dict[str, object]] = []
+    allowed_finding = _context_finding("src/search.py", "Validate query")
+    skipped_finding = _context_finding("docs/hidden.py", "Excluded finding")
 
-    class ControlledAgent(BaseReviewAgent):
-        name = "controlled"
-
-        async def run(self, state: ReviewState) -> AgentResult:
-            agent_payloads.append(state["pr_payload"])
-            return AgentResult(
-                agent=self.name,
-                findings=[
-                    Finding(
-                        severity=Severity.high,
-                        category="bug",
-                        file="src/search.py",
-                        line=2,
-                        confidence=0.9,
-                        title="Validate query",
-                        reason="The changed query is returned without validation.",
-                        suggestion="Validate the query before returning it.",
-                        fix="",
-                    ),
-                    Finding(
-                        severity=Severity.high,
-                        category="bug",
-                        file="docs/hidden.py",
-                        line=1,
-                        confidence=0.9,
-                        title="Excluded finding",
-                        reason="This path is excluded from review.",
-                        suggestion="Do not publish this finding.",
-                        fix="",
-                    ),
-                ],
-                confidence=0.9,
-                execution_time=0.01,
-            )
-
-    async def capture_context(payload: object) -> None:
+    async def capture_context(payload: Any) -> RetrievalResult:
         context_paths.append([file_.path for file_ in payload.files])
-        return None
+        return _context_retrieval()
 
-    async def fake_runner(*args: object, **kwargs: object) -> ReviewPipelineResult:
-        runner_payloads.append(args[0])
-        controls_results.append(kwargs["controls_result"])
-        return await run_agent_review(
-            args[0],
-            settings=settings,
-            agents=[ControlledAgent()],
-            controls_result=kwargs["controls_result"],
+    async def strict_runner(
+        pr_payload: Any,
+        *,
+        settings: Settings,
+        retrieval_result: Any | None,
+        pr_history: Any | None,
+        quality_results: list[ToolRunResult],
+        env: dict[str, str] | None,
+    ) -> ReviewPipelineResult:
+        del settings, env
+        runner_payloads.append(pr_payload)
+        state: ReviewState = {
+            "pr_payload": pr_payload,
+            "retrieval_result": retrieval_result,
+            "pr_history": pr_history,
+            "quality_results": quality_results,
+        }
+        model_contexts.append(
+            "\n".join(
+                [
+                    collect_context(state, "security"),
+                    collect_history_context(state),
+                ]
+            )
         )
+        return ReviewPipelineResult(
+            agent_results=[],
+            ranked_findings=[
+                RankedFinding(finding=allowed_finding, score=2.7),
+                RankedFinding(finding=skipped_finding, score=2.7),
+            ],
+        )
+
+    async def fake_quality_runner(*_args: object) -> list[ToolRunResult]:
+        return [
+            ToolRunResult(
+                tool="ruff",
+                status=ToolStatus.failed,
+                command=("ruff", "check"),
+                exit_code=1,
+                duration_ms=1.0,
+                summary="four diagnostics",
+                diagnostics=(
+                    ToolDiagnostic(
+                        message="SKIPPED_QUALITY_CONTEXT", file="docs/hidden.py", severity="error"
+                    ),
+                    ToolDiagnostic(
+                        message="ALLOWED_QUALITY_CONTEXT", file="src/search.py", severity="error"
+                    ),
+                    ToolDiagnostic(
+                        message="UNCHANGED_QUALITY_CONTEXT",
+                        file="docs/architecture.md",
+                        severity="warning",
+                    ),
+                    ToolDiagnostic(message="GENERAL_QUALITY_CONTEXT", severity="warning"),
+                ),
+            )
+        ]
 
     async def fake_publisher(**kwargs: object) -> None:
         published.append(kwargs)
 
     settings = load_settings(scaffold_repo, env={})
     _enable_ast_controls(settings)
+    settings.quality.enabled = True
+    store = SQLitePullRequestMemory(scaffold_repo / ".openrabbit" / "state" / "controls.db")
+    store.record_review(
+        repo="o/r",
+        pr_number=42,
+        head_sha="previous-sha",
+        findings=[
+            _context_finding("docs/hidden.py", "SKIPPED_PREVIOUS_FINDING"),
+            _context_finding("src/search.py", "ALLOWED_PREVIOUS_FINDING"),
+            _context_finding("docs/architecture.md", "UNCHANGED_PREVIOUS_FINDING"),
+        ],
+        context_loaded=True,
+        comments_posted=False,
+    )
 
     summary = await run_review(
         settings,
         number=42,
         repo="o/r",
         env={"GITHUB_TOKEN": "tkn"},
-        agent_runner=fake_runner,
+        agent_runner=strict_runner,
         context_loader=capture_context,
         publisher=fake_publisher,
+        memory_store=store,
+        quality_gate_runner=fake_quality_runner,
     )
 
-    controls_result = controls_results[0]
-    assert runner_payloads[0] is controls_result.filtered_payload
-    assert agent_payloads == [runner_payloads[0]]
     assert context_paths == [["src/search.py"]]
+    assert [file_.path for file_ in runner_payloads[0].files] == ["src/search.py"]
     assert _EXPECTED_AST_PROMPT in format_prompt_diff(runner_payloads[0])
+    model_context = model_contexts[0]
+    assert "SKIPPED_RETRIEVAL_CONTEXT" not in model_context
+    assert "SKIPPED_PREVIOUS_FINDING" not in model_context
+    assert "SKIPPED_CONVERSATION_CONTEXT" not in model_context
+    assert "SKIPPED_QUALITY_CONTEXT" not in model_context
+    for expected in (
+        "ALLOWED_RETRIEVAL_CONTEXT",
+        "UNCHANGED_RETRIEVAL_CONTEXT",
+        "GENERAL_RETRIEVAL_CONTEXT",
+        "ALLOWED_PREVIOUS_FINDING",
+        "UNCHANGED_PREVIOUS_FINDING",
+        "UNCHANGED_CONVERSATION_CONTEXT",
+        "GENERAL_CONVERSATION_CONTEXT",
+        "ALLOWED_QUALITY_CONTEXT",
+        "UNCHANGED_QUALITY_CONTEXT",
+        "GENERAL_QUALITY_CONTEXT",
+    ):
+        assert expected in model_context
     assert summary["files_changed"] == 3
     assert summary["binary_files"] == 1
     assert summary["hunks"] == 2
@@ -407,9 +604,94 @@ async def test_run_review_reuses_prepared_controls_across_downstream_steps(
     assert summary["review_control_warnings"] == []
     assert summary["ast_unsupported_path_count"] == 0
     assert summary["dropped_findings_count"] == 1
+    assert summary["quality_diagnostics_count"] == 4
     assert len(published) == 1
     ranked = published[0]["ranked"]
     assert [item.finding.file for item in ranked] == ["src/search.py"]
+
+
+@respx.mock
+async def test_run_review_preserves_skipped_memory_without_suppressing_later_incremental(
+    scaffold_repo: Path,
+) -> None:
+    _mock_controlled_pr()
+    prior = _context_finding("docs/hidden.py", "Prior hidden finding")
+    store = SQLitePullRequestMemory(scaffold_repo / ".openrabbit" / "state" / "scoped.db")
+    store.record_review(
+        repo="o/r",
+        pr_number=42,
+        head_sha="previous-sha",
+        findings=[prior],
+        context_loaded=False,
+        comments_posted=False,
+    )
+    published: list[dict[str, object]] = []
+
+    async def empty_runner(
+        pr_payload: Any,
+        *,
+        settings: Settings,
+        retrieval_result: Any | None,
+        pr_history: Any | None,
+        quality_results: list[ToolRunResult],
+        env: dict[str, str] | None,
+    ) -> ReviewPipelineResult:
+        del pr_payload, settings, retrieval_result, pr_history, quality_results, env
+        return ReviewPipelineResult(agent_results=[], ranked_findings=[])
+
+    async def finding_runner(
+        pr_payload: Any,
+        *,
+        settings: Settings,
+        retrieval_result: Any | None,
+        pr_history: Any | None,
+        quality_results: list[ToolRunResult],
+        env: dict[str, str] | None,
+    ) -> ReviewPipelineResult:
+        del pr_payload, settings, retrieval_result, pr_history, quality_results, env
+        return ReviewPipelineResult(
+            agent_results=[],
+            ranked_findings=[RankedFinding(finding=prior, score=2.7)],
+        )
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+    settings.review.path_include = ["src/**"]
+    scoped = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=empty_runner,
+        context_loader=_empty_context_loader,
+        memory_store=store,
+        mode="incremental",
+    )
+
+    retained = store.load_history("o/r", 42).previous_findings[0]
+    assert retained.status.value == "new"
+    assert retained.last_seen_sha == "previous-sha"
+    assert scoped["findings"] == []
+    assert scoped["memory_status_counts"] == {}
+
+    settings.review.path_include = []
+    later = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=finding_runner,
+        context_loader=_empty_context_loader,
+        memory_store=store,
+        publisher=fake_publisher,
+        mode="incremental",
+    )
+
+    assert later["findings"][0]["memory_status"] == "new"
+    assert later["publish_status"] == "posted"
+    assert len(published) == 1
 
 
 @respx.mock

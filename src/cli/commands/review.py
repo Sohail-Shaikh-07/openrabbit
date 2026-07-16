@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from cli.commands.history import load_pr_history
+from cli.commands.review_context import (
+    filter_model_review_context,
+    repository_path_key,
+    skipped_path_keys,
+)
 from cli.commands.review_pipeline import ReviewPipelineResult, run_agent_review
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -21,7 +26,12 @@ from configs.schema import QualitySettings
 from configs.settings import Settings
 from github_ import GitHubAuthError, GitHubClient, PullRequestParser, RepositoryHandle
 from github_.publisher import GitHubPublisher
-from memory.backends import PullRequestMemoryBackend
+from memory.backends import (
+    PullRequestMemoryBackend,
+    compare_with_history_compat,
+    paths_match_any,
+    record_review_compat,
+)
 from memory.fingerprints import fingerprint_finding
 from memory.history import PullRequestHistory
 from memory.models import FindingComparison, FindingStatus
@@ -139,28 +149,57 @@ async def run_review(
                 error_type=type(exc).__name__,
             )
             retrieval_result = None
-        runner = agent_runner or run_agent_review
-        pipeline_result = await runner(
-            payload,
-            settings=settings,
+        model_context = filter_model_review_context(
+            controls_result,
             retrieval_result=retrieval_result,
             pr_history=pr_history,
             quality_results=quality_results,
-            controls_result=controls_result,
-            env=env,
         )
+        retrieval_result = model_context.retrieval_result
+        if agent_runner is None:
+            pipeline_result = await run_agent_review(
+                payload,
+                settings=settings,
+                retrieval_result=retrieval_result,
+                pr_history=model_context.pr_history,
+                quality_results=model_context.quality_results,
+                controls_result=controls_result,
+                env=env,
+            )
+        else:
+            pipeline_result = await agent_runner(
+                payload,
+                settings=settings,
+                retrieval_result=retrieval_result,
+                pr_history=model_context.pr_history,
+                quality_results=model_context.quality_results,
+                env=env,
+            )
         ranked = pipeline_result.ranked_findings
         dropped_findings_count = pipeline_result.dropped_findings_count
+        if agent_runner is not None:
+            ranked, skipped_findings = _exclude_skipped_ranked(
+                ranked,
+                skipped_path_keys(controls_result),
+                repository_paths={
+                    repository_path_key(file_.path)
+                    for file_ in controls_result.filtered_payload.files
+                }
+                | {item.path for item in controls_result.skipped_paths},
+            )
+            dropped_findings_count += skipped_findings
         if pipeline_result.skipped_paths is not None:
             skipped_paths = pipeline_result.skipped_paths
     context_loaded = _has_retrieval_context(retrieval_result)
     if memory_enabled and memory_store_for_run is not None:
         try:
-            memory_comparison = memory_store_for_run.compare_with_history(
+            memory_comparison = compare_with_history_compat(
+                memory_store_for_run,
                 repo=handle.full_name,
                 pr_number=payload.number,
                 head_sha=payload.head_sha,
                 current_findings=[rf.finding for rf in ranked],
+                preserve_paths=tuple(item.path for item in controls_result.skipped_paths),
             )
         except Exception as exc:
             memory_error = type(exc).__name__
@@ -195,13 +234,15 @@ async def run_review(
                 or memory_store
                 or SQLitePullRequestMemory(settings.resolved_memory_path())
             )
-            write = store.record_review(
+            write = record_review_compat(
+                store,
                 repo=handle.full_name,
                 pr_number=payload.number,
                 head_sha=payload.head_sha,
                 findings=[rf.finding for rf in ranked],
                 context_loaded=context_loaded,
                 comments_posted=comments_posted,
+                preserve_paths=tuple(item.path for item in controls_result.skipped_paths),
             )
             memory_comparison = write.comparison
         except Exception as exc:
@@ -404,6 +445,21 @@ def _quality_status_counts(results: list[ToolRunResult]) -> dict[str, int]:
         status = result.status.value
         counts[status] = counts.get(status, 0) + 1
     return counts
+
+
+def _exclude_skipped_ranked(
+    ranked: list[RankedFinding],
+    skipped: set[str],
+    *,
+    repository_paths: set[str] | None = None,
+) -> tuple[list[RankedFinding], int]:
+    known_paths = repository_paths or set()
+    kept = [
+        item
+        for item in ranked
+        if not paths_match_any(item.finding.file, skipped, repository_paths=known_paths)
+    ]
+    return kept, len(ranked) - len(kept)
 
 
 def _serialize_ranked_finding(

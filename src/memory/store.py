@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from agents.models import Finding
+from memory.backends import repository_path_key, repository_paths_match
 from memory.fingerprints import fingerprint_finding
 from memory.models import (
     FindingComparison,
@@ -234,10 +235,12 @@ class SQLitePullRequestMemory:
         pr_number: int,
         head_sha: str,
         current_findings: Iterable[Finding],
+        preserve_paths: Iterable[str] = (),
     ) -> FindingComparison:
         """Compare current findings to stored memory without writing a run."""
         history = self.load_history(repo, pr_number)
         previous = {record.fingerprint: record for record in history.previous_findings}
+        preserved = tuple(repository_path_key(path) for path in preserve_paths)
         current_records: list[FindingMemoryRecord] = []
         seen: set[str] = set()
         now = _now()
@@ -246,7 +249,13 @@ class SQLitePullRequestMemory:
             fingerprint = fingerprint_finding(finding)
             seen.add(fingerprint)
             old = previous.get(fingerprint)
-            status = FindingStatus.STILL_PRESENT if old else FindingStatus.NEW
+            status = (
+                FindingStatus.STILL_PRESENT
+                if old is not None
+                and old.status in {FindingStatus.NEW, FindingStatus.STILL_PRESENT}
+                and old.last_seen_sha == history.last_reviewed_sha
+                else FindingStatus.NEW
+            )
             current_records.append(
                 _record_from_finding(
                     finding,
@@ -268,6 +277,10 @@ class SQLitePullRequestMemory:
             )
             for fingerprint, record in previous.items()
             if fingerprint not in seen
+            and not any(
+                repository_paths_match(record.file, path, repository_paths=preserved)
+                for path in preserved
+            )
         ]
         return FindingComparison(current=current_records, resolved=resolved)
 
@@ -280,6 +293,7 @@ class SQLitePullRequestMemory:
         findings: Iterable[Finding],
         context_loaded: bool,
         comments_posted: bool,
+        preserve_paths: Iterable[str] = (),
     ) -> ReviewMemoryWrite:
         """Persist one review run and its finding comparison."""
         findings_list = list(findings)
@@ -288,6 +302,7 @@ class SQLitePullRequestMemory:
             pr_number=pr_number,
             head_sha=head_sha,
             current_findings=findings_list,
+            preserve_paths=preserve_paths,
         )
         now = _now()
         with self._connect() as con:

@@ -26,6 +26,7 @@ from agents.prompting import (
 )
 from cli.commands.history import load_pr_history
 from cli.commands.review import ContextLoader, _has_retrieval_context, _load_review_context
+from cli.commands.review_context import filter_model_review_context
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
@@ -173,12 +174,19 @@ async def run_improve(
         )
         retrieval_result = None
 
+    model_context = filter_model_review_context(
+        controls_result,
+        retrieval_result=retrieval_result,
+        pr_history=pr_history_result.history,
+    )
+    retrieval_result = model_context.retrieval_result
+
     improve = generator or _generate_improvements
     raw_suggestions = await improve(
         payload,
         settings=settings,
         retrieval_result=retrieval_result,
-        pr_history=pr_history_result.history,
+        pr_history=model_context.pr_history,
         env=env,
     )
     result = _ground_suggestions(raw_suggestions, payload)
