@@ -158,6 +158,11 @@ async def run_eval(
             expectations_path=expectations,
         )
 
+    report["command_outcomes"] = _command_outcomes(runs)
+    report["context_sources"] = _context_sources(runs)
+    report["tool_findings"] = _tool_findings(runs)
+    report["dashboard"] = _dashboard_summary(report)
+
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -309,6 +314,117 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
         "quality_diagnostics": sum(_int_run(run, "quality_diagnostics_count") for run in runs),
         "quality_status_counts": quality_statuses,
         "runtime_ms": round(sum(_float_run(run, "runtime_ms") for run in runs), 2),
+    }
+
+
+def _command_outcomes(runs: list[dict[str, object]]) -> dict[str, object]:
+    failures = [
+        {"pr": run.get("pr"), "command": run.get("command"), "failure": run.get("failure")}
+        for run in runs
+        if run.get("failure")
+    ]
+    return {
+        "successes": len(runs) - len(failures),
+        "failures": len(failures),
+        "failed_runs": failures,
+    }
+
+
+def _count_strings(values: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
+    context_modes = _count_strings([str(run.get("context_mode", "unknown")) for run in runs])
+    memory_modes = _count_strings([str(run.get("memory_context", "unknown")) for run in runs])
+    guideline_sources = sorted(
+        {source for run in runs for source in _string_list(run.get("guideline_sources"))}
+    )
+    return {
+        "context_modes": context_modes,
+        "memory_contexts": memory_modes,
+        "guideline_sources": guideline_sources,
+        "guideline_source_count": len(guideline_sources),
+        "linked_issue_count": sum(_int_run(run, "linked_issue_count") for run in runs),
+        "learning_count": sum(_int_run(run, "learning_count") for run in runs),
+    }
+
+
+def _tool_findings(runs: list[dict[str, object]]) -> dict[str, object]:
+    tools: dict[str, dict[str, object]] = {}
+    for run in runs:
+        for gate in _dict_list(run.get("quality_gates")):
+            tool = str(gate.get("tool", "") or "unknown")
+            status = str(gate.get("status", "") or "unknown")
+            item = tools.setdefault(
+                tool,
+                {"runs": 0, "diagnostics": 0, "statuses": {}},
+            )
+            item["runs"] = _coerce_int(item.get("runs")) + 1
+            item["diagnostics"] = _coerce_int(item.get("diagnostics")) + _coerce_int(
+                gate.get("diagnostics_count")
+            )
+            statuses = _object_dict(item.get("statuses"))
+            statuses[status] = _coerce_int(statuses.get(status)) + 1
+            item["statuses"] = statuses
+    return {"tools": tools}
+
+
+def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
+    totals = _object_dict(report.get("totals"))
+    raw_runs = report.get("runs")
+    runs = [run for run in raw_runs if isinstance(run, dict)] if isinstance(raw_runs, list) else []
+    context_sources = _context_sources(runs)
+    dashboard: dict[str, object] = {
+        "cards": {
+            "prs": _coerce_int(totals.get("prs")),
+            "findings": _coerce_int(totals.get("findings")),
+            "failures": _coerce_int(totals.get("failures")),
+            "dropped_findings": _coerce_int(totals.get("dropped_findings")),
+            "quality_diagnostics": _coerce_int(totals.get("quality_diagnostics")),
+            "runtime_ms": _coerce_float(totals.get("runtime_ms")),
+        },
+        "charts": {
+            "findings_by_pr": [
+                {
+                    "pr": run.get("pr"),
+                    "findings": _int_run(run, "findings_count"),
+                    "scenario_group": run.get("scenario_group", "ungrouped"),
+                }
+                for run in runs
+            ],
+            "runtime_by_pr": [
+                {
+                    "pr": run.get("pr"),
+                    "runtime_ms": _float_run(run, "runtime_ms"),
+                    "scenario_group": run.get("scenario_group", "ungrouped"),
+                }
+                for run in runs
+            ],
+            "context_modes": context_sources.get("context_modes", {}),
+            "quality_statuses": totals.get("quality_status_counts", {}),
+            "categories": totals.get("categories", {}),
+        },
+    }
+    comparison = _object_dict(report.get("comparison"))
+    if comparison:
+        dashboard["trend"] = _dashboard_trends(comparison)
+    return dashboard
+
+
+def _dashboard_trends(comparison: dict[str, object]) -> dict[str, object]:
+    raw_runs = comparison.get("runs")
+    runs = raw_runs if isinstance(raw_runs, list) else []
+    return {
+        "totals_delta": _object_dict(comparison.get("totals_delta")),
+        "runs": [
+            {str(key): value for key, value in item.items()}
+            for item in runs
+            if isinstance(item, dict)
+        ],
     }
 
 
