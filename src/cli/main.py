@@ -31,6 +31,7 @@ from cli.commands.describe import (
 )
 from cli.commands.eval import (
     parse_pr_numbers,
+    parse_scenario_groups,
     render_eval_summary,
     run_eval_blocking,
 )
@@ -515,12 +516,18 @@ def eval_command(
         "--expectations",
         help="JSON file with expected finding assertions.",
     ),
+    scenario_group: list[str] | None = typer.Option(
+        None,
+        "--scenario-group",
+        help="Named scenario group in NAME=1,2 format. Repeat for multiple groups.",
+    ),
 ) -> None:
     """Run a local evaluation over selected pull requests and write a test log."""
     workspace = workspace.resolve()
     settings = _load_settings_or_exit(workspace)
     try:
         pr_numbers = parse_pr_numbers(prs)
+        groups = parse_scenario_groups(scenario_group, pr_numbers)
         report = run_eval_blocking(
             settings,  # type: ignore[arg-type]
             repo=repo,
@@ -529,6 +536,7 @@ def eval_command(
             markdown=markdown,
             compare=compare,
             expectations=expectations,
+            scenario_groups=groups,
         )
     except ValueError as exc:
         _err.print(f"[red]{exc}[/red]")

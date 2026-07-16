@@ -37,6 +37,29 @@ def parse_pr_numbers(value: str) -> list[int]:
     return numbers
 
 
+def parse_scenario_groups(
+    values: list[str] | None,
+    selected_prs: list[int],
+) -> dict[str, list[int]]:
+    """Parse named scenario groups from NAME=1,2 strings."""
+    if not values:
+        return {"default": list(selected_prs)}
+
+    selected = set(selected_prs)
+    groups: dict[str, list[int]] = {}
+    for value in values:
+        name, separator, raw_numbers = value.partition("=")
+        name = name.strip()
+        if not separator or not name or not raw_numbers.strip():
+            raise ValueError("scenario groups must use NAME=1,2 format")
+        numbers = parse_pr_numbers(raw_numbers)
+        unknown = [number for number in numbers if number not in selected]
+        if unknown:
+            raise ValueError("scenario group PRs must be included in the selected PRs")
+        groups[name] = numbers
+    return groups
+
+
 async def run_eval(
     settings: Settings,
     *,
@@ -46,6 +69,7 @@ async def run_eval(
     markdown: Path | None,
     compare: Path | None = None,
     expectations: Path | None = None,
+    scenario_groups: dict[str, list[int]] | None = None,
     env: dict[str, str] | None = None,
     review_runner: ReviewRunner | None = None,
 ) -> dict[str, object]:
@@ -54,6 +78,7 @@ async def run_eval(
     runner = review_runner or run_review
     generated_at = datetime.now(UTC).isoformat()
     pr_numbers = prs or list(_DEFAULT_PRS)
+    groups = scenario_groups or parse_scenario_groups(None, pr_numbers)
     runs: list[dict[str, object]] = []
 
     for number in pr_numbers:
@@ -76,6 +101,7 @@ async def run_eval(
                     repo=target_repo,
                     provider=settings.model.provider,
                     model_name=settings.model.model_name,
+                    scenario_group=_scenario_group_for_pr(number, groups),
                     runtime_ms=runtime_ms,
                     failure=None,
                 )
@@ -89,6 +115,7 @@ async def run_eval(
                     "pr": number,
                     "provider": settings.model.provider,
                     "model_name": settings.model.model_name,
+                    "scenario_group": _scenario_group_for_pr(number, groups),
                     "context_mode": "unknown",
                     "findings_count": 0,
                     "categories": {},
@@ -113,6 +140,7 @@ async def run_eval(
         "provider": settings.model.provider,
         "model_name": settings.model.model_name,
         "prs": pr_numbers,
+        "scenario_groups": _scenario_group_records(groups),
         "totals": _totals(runs),
         "runs": runs,
     }
@@ -153,6 +181,7 @@ def run_eval_blocking(
     markdown: Path | None,
     compare: Path | None = None,
     expectations: Path | None = None,
+    scenario_groups: dict[str, list[int]] | None = None,
 ) -> dict[str, object]:
     """Synchronous wrapper for Typer."""
     return asyncio.run(
@@ -164,6 +193,7 @@ def run_eval_blocking(
             markdown=markdown,
             compare=compare,
             expectations=expectations,
+            scenario_groups=scenario_groups,
         )
     )
 
@@ -199,6 +229,7 @@ def _run_record_from_summary(
     repo: str,
     provider: str,
     model_name: str,
+    scenario_group: str,
     runtime_ms: float,
     failure: str | None,
 ) -> dict[str, object]:
@@ -212,6 +243,7 @@ def _run_record_from_summary(
         "head_sha": str(summary.get("head_sha", "")),
         "provider": provider,
         "model_name": model_name,
+        "scenario_group": scenario_group,
         "context_mode": "loaded" if summary.get("context_loaded") is True else "diff only",
         "findings_count": len(finding_items),
         "categories": _categories(finding_items),
@@ -227,6 +259,15 @@ def _run_record_from_summary(
         "runtime_ms": round(runtime_ms, 2),
         "failure": failure,
     }
+
+
+def _scenario_group_for_pr(pr_number: int, groups: dict[str, list[int]]) -> str:
+    matches = [name for name, numbers in groups.items() if pr_number in numbers]
+    return matches[0] if matches else "ungrouped"
+
+
+def _scenario_group_records(groups: dict[str, list[int]]) -> list[dict[str, object]]:
+    return [{"name": name, "prs": list(numbers)} for name, numbers in sorted(groups.items())]
 
 
 def _categories(findings: list[object]) -> dict[str, int]:
