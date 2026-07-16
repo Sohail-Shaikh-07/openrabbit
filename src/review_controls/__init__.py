@@ -10,7 +10,12 @@ from dataclasses import dataclass, field, is_dataclass, replace
 from typing import Any, Protocol
 
 from configs.schema import AstInstruction, PathInstruction, ReviewSettings
-from review_controls.ast import AstInstructionMatch, language_for_path, match_ast_instructions
+from review_controls.ast import (
+    AstInstructionMatch,
+    AstParseError,
+    language_for_path,
+    match_ast_instructions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +259,10 @@ def _ast_control_metadata(
             continue
         try:
             matches.extend(match_ast_instructions(file_, rules))
+        except AstParseError:
+            reason = "parser_unparsable_source"
+            logger.warning("AST parsing unavailable for %s (%s)", path, reason)
+            warnings.append(ReviewControlWarning(path=path, reason=reason))
         except Exception as exc:
             reason = f"parser_{type(exc).__name__}"
             logger.warning("AST parsing unavailable for %s (%s)", path, reason)

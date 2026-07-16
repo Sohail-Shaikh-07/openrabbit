@@ -425,6 +425,61 @@ def test_apply_review_controls_sanitizes_parser_errors_and_keeps_matching_files(
     assert "parser-source-secret" not in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("path", "source", "language"),
+    [
+        ("src/api/broken.py", "def broken(:\n    return source-secret\n", "python"),
+        (
+            "src/api/broken.js",
+            "function broken( { return source-secret; }\n",
+            "javascript",
+        ),
+        (
+            "src/api/broken.ts",
+            "function broken(value: string { return source-secret; }\n",
+            "typescript",
+        ),
+    ],
+)
+def test_apply_review_controls_fails_open_for_unparsable_source(
+    path: str,
+    source: str,
+    language: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="review_controls")
+    healthy_extension = {"python": "py", "javascript": "js", "typescript": "ts"}[language]
+    healthy_source = (
+        "def update_task():\n    return changed\n"
+        if language == "python"
+        else "function update_task() { return changed; }\n"
+    )
+    result = apply_review_controls(
+        _payload_with_sha(
+            [
+                _parsed_file(path, source_text=source),
+                _parsed_file(
+                    f"src/api/healthy.{healthy_extension}",
+                    source_text=healthy_source,
+                ),
+            ]
+        ),
+        ReviewSettings(
+            ast_instructions=[_ast_rule(languages=[language], instructions="guidance-secret")]
+        ),
+    )
+
+    assert [item.path for item in result.ast_matches] == [f"src/api/healthy.{healthy_extension}"]
+    assert [(item.path, item.reason) for item in result.warnings] == [
+        (path, "parser_unparsable_source")
+    ]
+    assert [item.path for item in result.filtered_payload.openrabbit_ast_instructions] == [
+        f"src/api/healthy.{healthy_extension}"
+    ]
+    assert "source-secret" not in caplog.text
+    assert "guidance-secret" not in caplog.text
+
+
 def test_apply_review_controls_preserves_deterministic_ast_metadata() -> None:
     rules = [
         _ast_rule(instructions="First rule."),

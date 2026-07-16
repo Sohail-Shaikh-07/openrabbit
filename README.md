@@ -193,6 +193,7 @@ review:
   path_include: []
   path_exclude: []
   path_instructions: []
+  ast_instructions: []
   max_files: 80
   max_changed_lines: 4000
   include_generated: false
@@ -274,6 +275,21 @@ review:
     - path: "app/api/**"
       instructions: "Require explicit authorization checks before mutations."
 ```
+
+Compact AST-scoped guidance example:
+
+```yaml
+review:
+  ast_instructions:
+    - path: "src/api/**"
+      languages: [python]
+      symbols: [function, method]
+      name_pattern: "*_task"
+      instructions: "Require authorization before mutations."
+```
+
+See [AST review controls](docs/ast-review-controls.md) for symbol matching,
+source limits, fallback behavior, and security boundaries.
 
 OpenRabbit loads configuration in layers:
 

@@ -10,6 +10,7 @@ from configs.schema import AstInstruction, ReviewSettings
 from github_.diff import DiffLine, Hunk
 from review_controls import apply_review_controls
 from review_controls.ast import (
+    AstParseError,
     added_lines,
     extract_ast_symbols,
     language_for_path,
@@ -142,6 +143,22 @@ def test_language_for_path(path: str, language: str | None) -> None:
 
 def test_extract_ast_symbols_returns_no_symbols_for_unsupported_language() -> None:
     assert extract_ast_symbols("func main() {}", "go") == []
+
+
+@pytest.mark.parametrize(
+    ("language", "source"),
+    [
+        ("python", "def broken(:\n    return secret\n"),
+        ("javascript", "function broken( { return secret; }\n"),
+        ("typescript", "function broken(value: string { return value; }\n"),
+    ],
+)
+def test_extract_ast_symbols_rejects_tree_sitter_parse_errors(
+    language: str,
+    source: str,
+) -> None:
+    with pytest.raises(AstParseError):
+        extract_ast_symbols(source, language)
 
 
 def test_added_lines_counts_only_additions() -> None:

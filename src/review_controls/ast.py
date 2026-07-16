@@ -22,6 +22,10 @@ class AstSymbolKind(StrEnum):
     klass = "class"
 
 
+class AstParseError(ValueError):
+    """Raised when Tree-sitter cannot parse the complete source tree."""
+
+
 @dataclass(frozen=True)
 class AstSymbol:
     """A named source symbol with a one-based inclusive line span."""
@@ -64,6 +68,8 @@ def extract_ast_symbols(source: str, language: str) -> list[AstSymbol]:
     parser = get_parser(language)
     source_bytes = source.encode("utf-8")
     root = parser.parse(source_bytes).root_node
+    if root.has_error:
+        raise AstParseError
     symbols: list[AstSymbol] = []
     _walk(root, source_bytes, language, symbols, inside_class=False)
     return symbols
