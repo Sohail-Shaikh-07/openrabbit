@@ -37,6 +37,29 @@ def parse_pr_numbers(value: str) -> list[int]:
     return numbers
 
 
+def parse_scenario_groups(
+    values: list[str] | None,
+    selected_prs: list[int],
+) -> dict[str, list[int]]:
+    """Parse named scenario groups from NAME=1,2 strings."""
+    if not values:
+        return {"default": list(selected_prs)}
+
+    selected = set(selected_prs)
+    groups: dict[str, list[int]] = {}
+    for value in values:
+        name, separator, raw_numbers = value.partition("=")
+        name = name.strip()
+        if not separator or not name or not raw_numbers.strip():
+            raise ValueError("scenario groups must use NAME=1,2 format")
+        numbers = parse_pr_numbers(raw_numbers)
+        unknown = [number for number in numbers if number not in selected]
+        if unknown:
+            raise ValueError("scenario group PRs must be included in the selected PRs")
+        groups[name] = numbers
+    return groups
+
+
 async def run_eval(
     settings: Settings,
     *,
@@ -46,6 +69,7 @@ async def run_eval(
     markdown: Path | None,
     compare: Path | None = None,
     expectations: Path | None = None,
+    scenario_groups: dict[str, list[int]] | None = None,
     env: dict[str, str] | None = None,
     review_runner: ReviewRunner | None = None,
 ) -> dict[str, object]:
@@ -54,6 +78,7 @@ async def run_eval(
     runner = review_runner or run_review
     generated_at = datetime.now(UTC).isoformat()
     pr_numbers = prs or list(_DEFAULT_PRS)
+    groups = scenario_groups or parse_scenario_groups(None, pr_numbers)
     runs: list[dict[str, object]] = []
 
     for number in pr_numbers:
@@ -76,6 +101,7 @@ async def run_eval(
                     repo=target_repo,
                     provider=settings.model.provider,
                     model_name=settings.model.model_name,
+                    scenario_group=_scenario_group_for_pr(number, groups),
                     runtime_ms=runtime_ms,
                     failure=None,
                 )
@@ -89,6 +115,7 @@ async def run_eval(
                     "pr": number,
                     "provider": settings.model.provider,
                     "model_name": settings.model.model_name,
+                    "scenario_group": _scenario_group_for_pr(number, groups),
                     "context_mode": "unknown",
                     "findings_count": 0,
                     "categories": {},
@@ -113,6 +140,7 @@ async def run_eval(
         "provider": settings.model.provider,
         "model_name": settings.model.model_name,
         "prs": pr_numbers,
+        "scenario_groups": _scenario_group_records(groups),
         "totals": _totals(runs),
         "runs": runs,
     }
@@ -129,6 +157,11 @@ async def run_eval(
             expectations=_load_expectations(expectations),
             expectations_path=expectations,
         )
+
+    report["command_outcomes"] = _command_outcomes(runs)
+    report["context_sources"] = _context_sources(runs)
+    report["tool_findings"] = _tool_findings(runs)
+    report["dashboard"] = _dashboard_summary(report)
 
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -153,6 +186,7 @@ def run_eval_blocking(
     markdown: Path | None,
     compare: Path | None = None,
     expectations: Path | None = None,
+    scenario_groups: dict[str, list[int]] | None = None,
 ) -> dict[str, object]:
     """Synchronous wrapper for Typer."""
     return asyncio.run(
@@ -164,6 +198,7 @@ def run_eval_blocking(
             markdown=markdown,
             compare=compare,
             expectations=expectations,
+            scenario_groups=scenario_groups,
         )
     )
 
@@ -199,6 +234,7 @@ def _run_record_from_summary(
     repo: str,
     provider: str,
     model_name: str,
+    scenario_group: str,
     runtime_ms: float,
     failure: str | None,
 ) -> dict[str, object]:
@@ -212,6 +248,7 @@ def _run_record_from_summary(
         "head_sha": str(summary.get("head_sha", "")),
         "provider": provider,
         "model_name": model_name,
+        "scenario_group": scenario_group,
         "context_mode": "loaded" if summary.get("context_loaded") is True else "diff only",
         "findings_count": len(finding_items),
         "categories": _categories(finding_items),
@@ -227,6 +264,15 @@ def _run_record_from_summary(
         "runtime_ms": round(runtime_ms, 2),
         "failure": failure,
     }
+
+
+def _scenario_group_for_pr(pr_number: int, groups: dict[str, list[int]]) -> str:
+    matches = [name for name, numbers in groups.items() if pr_number in numbers]
+    return matches[0] if matches else "ungrouped"
+
+
+def _scenario_group_records(groups: dict[str, list[int]]) -> list[dict[str, object]]:
+    return [{"name": name, "prs": list(numbers)} for name, numbers in sorted(groups.items())]
 
 
 def _categories(findings: list[object]) -> dict[str, int]:
@@ -271,6 +317,117 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
+def _command_outcomes(runs: list[dict[str, object]]) -> dict[str, object]:
+    failures = [
+        {"pr": run.get("pr"), "command": run.get("command"), "failure": run.get("failure")}
+        for run in runs
+        if run.get("failure")
+    ]
+    return {
+        "successes": len(runs) - len(failures),
+        "failures": len(failures),
+        "failed_runs": failures,
+    }
+
+
+def _count_strings(values: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
+    context_modes = _count_strings([str(run.get("context_mode", "unknown")) for run in runs])
+    memory_modes = _count_strings([str(run.get("memory_context", "unknown")) for run in runs])
+    guideline_sources = sorted(
+        {source for run in runs for source in _string_list(run.get("guideline_sources"))}
+    )
+    return {
+        "context_modes": context_modes,
+        "memory_contexts": memory_modes,
+        "guideline_sources": guideline_sources,
+        "guideline_source_count": len(guideline_sources),
+        "linked_issue_count": sum(_int_run(run, "linked_issue_count") for run in runs),
+        "learning_count": sum(_int_run(run, "learning_count") for run in runs),
+    }
+
+
+def _tool_findings(runs: list[dict[str, object]]) -> dict[str, object]:
+    tools: dict[str, dict[str, object]] = {}
+    for run in runs:
+        for gate in _dict_list(run.get("quality_gates")):
+            tool = str(gate.get("tool", "") or "unknown")
+            status = str(gate.get("status", "") or "unknown")
+            item = tools.setdefault(
+                tool,
+                {"runs": 0, "diagnostics": 0, "statuses": {}},
+            )
+            item["runs"] = _coerce_int(item.get("runs")) + 1
+            item["diagnostics"] = _coerce_int(item.get("diagnostics")) + _coerce_int(
+                gate.get("diagnostics_count")
+            )
+            statuses = _object_dict(item.get("statuses"))
+            statuses[status] = _coerce_int(statuses.get(status)) + 1
+            item["statuses"] = statuses
+    return {"tools": tools}
+
+
+def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
+    totals = _object_dict(report.get("totals"))
+    raw_runs = report.get("runs")
+    runs = [run for run in raw_runs if isinstance(run, dict)] if isinstance(raw_runs, list) else []
+    context_sources = _context_sources(runs)
+    dashboard: dict[str, object] = {
+        "cards": {
+            "prs": _coerce_int(totals.get("prs")),
+            "findings": _coerce_int(totals.get("findings")),
+            "failures": _coerce_int(totals.get("failures")),
+            "dropped_findings": _coerce_int(totals.get("dropped_findings")),
+            "quality_diagnostics": _coerce_int(totals.get("quality_diagnostics")),
+            "runtime_ms": _coerce_float(totals.get("runtime_ms")),
+        },
+        "charts": {
+            "findings_by_pr": [
+                {
+                    "pr": run.get("pr"),
+                    "findings": _int_run(run, "findings_count"),
+                    "scenario_group": run.get("scenario_group", "ungrouped"),
+                }
+                for run in runs
+            ],
+            "runtime_by_pr": [
+                {
+                    "pr": run.get("pr"),
+                    "runtime_ms": _float_run(run, "runtime_ms"),
+                    "scenario_group": run.get("scenario_group", "ungrouped"),
+                }
+                for run in runs
+            ],
+            "context_modes": context_sources.get("context_modes", {}),
+            "quality_statuses": totals.get("quality_status_counts", {}),
+            "categories": totals.get("categories", {}),
+        },
+    }
+    comparison = _object_dict(report.get("comparison"))
+    if comparison:
+        dashboard["trend"] = _dashboard_trends(comparison)
+    return dashboard
+
+
+def _dashboard_trends(comparison: dict[str, object]) -> dict[str, object]:
+    raw_runs = comparison.get("runs")
+    runs = raw_runs if isinstance(raw_runs, list) else []
+    return {
+        "totals_delta": _object_dict(comparison.get("totals_delta")),
+        "runs": [
+            {str(key): value for key, value in item.items()}
+            for item in runs
+            if isinstance(item, dict)
+        ],
+    }
+
+
 def _markdown_report(report: dict[str, object]) -> str:
     totals = _object_dict(report.get("totals"))
     lines = [
@@ -284,6 +441,7 @@ def _markdown_report(report: dict[str, object]) -> str:
         f"- Failures: {totals.get('failures', 0)}",
         f"- Quality diagnostics: {totals.get('quality_diagnostics', 0)}",
         "",
+        *_markdown_dashboard_sections(report),
         "| PR | Context | Memory | Quality | Diagnostics | Learnings | Guidelines | Linked Issues | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
         "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |",
     ]
@@ -319,6 +477,58 @@ def _markdown_report(report: dict[str, object]) -> str:
     if assertions:
         lines.extend(_markdown_assertions(assertions))
     return "\n".join(lines) + "\n"
+
+
+def _markdown_dashboard_sections(report: dict[str, object]) -> list[str]:
+    dashboard = _object_dict(report.get("dashboard"))
+    cards = _object_dict(dashboard.get("cards"))
+    context_sources = _object_dict(report.get("context_sources"))
+    tool_findings = _object_dict(report.get("tool_findings"))
+    groups = report.get("scenario_groups")
+    lines = [
+        "## Dashboard Summary",
+        "",
+        f"- PRs: {cards.get('prs', 0)}",
+        f"- Findings: {cards.get('findings', 0)}",
+        f"- Failures: {cards.get('failures', 0)}",
+        f"- Runtime ms: {cards.get('runtime_ms', 0)}",
+        "",
+        "## Scenario Groups",
+        "",
+    ]
+    if isinstance(groups, list):
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            prs = group.get("prs", [])
+            numbers = ", ".join(str(pr) for pr in prs) if isinstance(prs, list) else ""
+            lines.append(f"- {group.get('name')}: {numbers}")
+    lines.extend(
+        [
+            "",
+            "## Context Sources",
+            "",
+            f"- Context modes: {_category_text(context_sources.get('context_modes'))}",
+            f"- Memory contexts: {_category_text(context_sources.get('memory_contexts'))}",
+            f"- Guideline sources: {context_sources.get('guideline_source_count', 0)}",
+            f"- Linked issues: {context_sources.get('linked_issue_count', 0)}",
+            "",
+            "## Tool Findings",
+            "",
+        ]
+    )
+    tools = _object_dict(tool_findings.get("tools"))
+    if tools:
+        for tool, raw in sorted(tools.items()):
+            item = _object_dict(raw)
+            lines.append(
+                f"- {tool}: diagnostics={item.get('diagnostics', 0)}, "
+                f"statuses={_category_text(item.get('statuses'))}"
+            )
+    else:
+        lines.append("- No local quality tool findings recorded.")
+    lines.append("")
+    return lines
 
 
 def _load_json_object(path: Path) -> dict[str, object]:

@@ -12,6 +12,12 @@ def test_readme_links_to_ast_review_controls_guide() -> None:
     assert "ast_instructions:" in readme
 
 
+def test_readme_links_to_eval_reporting_guide() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="ascii")
+
+    assert "[docs/eval-reporting.md](docs/eval-reporting.md)" in readme
+
+
 def test_ast_review_controls_guide_documents_contract() -> None:
     guide = (ROOT / "docs" / "ast-review-controls.md").read_text(encoding="ascii").lower()
 
