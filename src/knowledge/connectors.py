@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from math import isfinite
 from typing import Protocol, runtime_checkable
 
@@ -31,7 +31,7 @@ _SECRET_PATTERNS = (
 )
 
 
-class KnowledgeSourceKind(str, Enum):
+class KnowledgeSourceKind(StrEnum):
     """Supported optional knowledge source categories."""
 
     MCP = "mcp"
