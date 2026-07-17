@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
+from math import isfinite
 from typing import Protocol, runtime_checkable
 
 SECRET_REDACTION = "[REDACTED]"
@@ -149,7 +150,7 @@ def normalize_knowledge_items(
                 url=sanitize_knowledge_text(item.url, max_chars=300),
                 repo=sanitize_knowledge_text(item.repo, max_chars=120),
                 path=sanitize_knowledge_text(item.path, max_chars=300),
-                score=item.score,
+                score=_normalize_score(item.score),
                 metadata=metadata,
             )
         )
@@ -164,3 +165,9 @@ def _redact_secret_match(match: re.Match[str]) -> str:
     if match.lastindex and match.lastindex >= 2:
         return f"{match.group(1)}{SECRET_REDACTION}"
     return SECRET_REDACTION
+
+
+def _normalize_score(score: float | None) -> float | None:
+    if score is None or not isfinite(score):
+        return None
+    return min(max(score, 0.0), 1.0)

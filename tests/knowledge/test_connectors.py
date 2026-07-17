@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import inf, nan
+
 import pytest
 
 from knowledge.connectors import (
@@ -95,3 +97,45 @@ def test_normalize_knowledge_items_filters_empty_and_bounds_items() -> None:
     assert [item.source_id for item in normalized] == ["two", "one"]
     assert "super-secret-value" not in normalized[1].body
     assert normalized[1].body == "token=[REDACTED]"
+
+
+def test_normalize_knowledge_items_bounds_invalid_scores() -> None:
+    items = [
+        KnowledgeItem(
+            source_id="nan",
+            source_kind=KnowledgeSourceKind.MCP,
+            title="NaN",
+            body="Bad score",
+            score=nan,
+        ),
+        KnowledgeItem(
+            source_id="inf",
+            source_kind=KnowledgeSourceKind.MCP,
+            title="Inf",
+            body="Bad score",
+            score=inf,
+        ),
+        KnowledgeItem(
+            source_id="high",
+            source_kind=KnowledgeSourceKind.MCP,
+            title="High",
+            body="Clamped score",
+            score=4.0,
+        ),
+        KnowledgeItem(
+            source_id="normal",
+            source_kind=KnowledgeSourceKind.MCP,
+            title="Normal",
+            body="Valid score",
+            score=0.6,
+        ),
+    ]
+
+    normalized = normalize_knowledge_items(items)
+
+    assert [(item.source_id, item.score) for item in normalized] == [
+        ("high", 1.0),
+        ("normal", 0.6),
+        ("inf", None),
+        ("nan", None),
+    ]
