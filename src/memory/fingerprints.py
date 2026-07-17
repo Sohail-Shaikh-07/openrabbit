@@ -18,7 +18,6 @@ _TOKEN_RE = re.compile(r"[^a-z0-9]+")
 def fingerprint_finding(finding: Finding) -> str:
     """Return a stable identifier for a finding's root cause."""
     parts = (
-        _normalise_text(finding.category),
         _normalise_path(finding.file),
         _issue_kind(finding),
         _line_bucket(finding.line),

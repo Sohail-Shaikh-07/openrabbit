@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, TextIO
@@ -190,7 +191,7 @@ async def run_improve(
         env=env,
     )
     result = _ground_suggestions(raw_suggestions, payload)
-    publish_plan = _build_publish_plan(result.suggestions)
+    publish_plan = _build_publish_plan(result.suggestions, payload)
 
     publish_status = "dry_run"
     published_inline_count = 0
@@ -431,13 +432,18 @@ def _ground_suggestions(
     return ImprovementResult(suggestions=kept, dropped_suggestions_count=dropped)
 
 
-def _build_publish_plan(suggestions: list[ImprovementSuggestion]) -> ImprovementPublishPlan:
+def _build_publish_plan(
+    suggestions: list[ImprovementSuggestion],
+    pr_payload: Any | None = None,
+) -> ImprovementPublishPlan:
     inline: list[ReviewComment] = []
     inline_source: list[ImprovementSuggestion] = []
     summary: list[ImprovementSuggestion] = []
     dropped = 0
+    source_by_path = _source_text_by_path(pr_payload)
     for suggestion in suggestions:
-        if not _is_actionable(suggestion):
+        source_text = source_by_path.get(_normalise_path(suggestion.file))
+        if not _is_actionable(suggestion, source_text=source_text):
             dropped += 1
             continue
         if _has_safe_replacement(suggestion):
@@ -523,7 +529,11 @@ def _build_publish_body(plan: ImprovementPublishPlan) -> str:
     return "".join(lines)
 
 
-def _is_actionable(suggestion: ImprovementSuggestion) -> bool:
+def _is_actionable(
+    suggestion: ImprovementSuggestion,
+    *,
+    source_text: str | None = None,
+) -> bool:
     text = " ".join(
         (suggestion.title, suggestion.reason, suggestion.suggestion, suggestion.fix)
     ).lower()
@@ -535,7 +545,14 @@ def _is_actionable(suggestion: ImprovementSuggestion) -> bool:
         return False
     if "refactor" in suggestion.suggestion.lower() and not suggestion.fix:
         return False
-    return not (suggestion.fix and _is_comment_only_fix(suggestion.fix))
+    if not suggestion.fix:
+        return True
+    if _is_comment_only_fix(suggestion.fix) or _has_placeholder_fix_comment(suggestion.fix):
+        return False
+    return not _introduces_unavailable_security_dependency(
+        suggestion.fix,
+        source_text=source_text,
+    )
 
 
 def _has_safe_replacement(suggestion: ImprovementSuggestion) -> bool:
@@ -553,6 +570,60 @@ def _is_comment_only_fix(fix: str) -> bool:
         return False
     prefixes = ("#", "//", "/*", "*", "<!--")
     return all(line.startswith(prefixes) for line in lines)
+
+
+def _has_placeholder_fix_comment(fix: str) -> bool:
+    comment_lines = [line.strip().lower() for line in fix.splitlines() if line.strip()]
+    placeholders = (
+        "# add ",
+        "# replace ",
+        "# implement ",
+        "// add ",
+        "// replace ",
+        "// implement ",
+    )
+    return any(line.startswith(placeholders) for line in comment_lines)
+
+
+def _introduces_unavailable_security_dependency(
+    fix: str,
+    *,
+    source_text: str | None,
+) -> bool:
+    introduced = set(re.findall(r"\brequire_[A-Za-z_][A-Za-z0-9_]*\b", fix))
+    if not introduced:
+        return False
+    available_text = "\n".join((source_text or "", fix))
+    for name in introduced:
+        if _security_dependency_available(name, available_text):
+            continue
+        return True
+    return False
+
+
+def _security_dependency_available(name: str, text: str) -> bool:
+    patterns = (
+        rf"\bimport\s+{re.escape(name)}\b",
+        rf"\bimport\s+.*\b{re.escape(name)}\b",
+        rf"\bdef\s+{re.escape(name)}\s*\(",
+        rf"\bclass\s+{re.escape(name)}\b",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _source_text_by_path(pr_payload: Any | None) -> dict[str, str]:
+    if pr_payload is None:
+        return {}
+    files = getattr(pr_payload, "files", None)
+    if not isinstance(files, list):
+        return {}
+    sources: dict[str, str] = {}
+    for file_ in files:
+        path = _normalise_path(str(getattr(file_, "path", "") or ""))
+        source_text = getattr(file_, "source_text", None)
+        if path and isinstance(source_text, str) and source_text:
+            sources[path] = source_text
+    return sources
 
 
 def _is_grounded(suggestion: ImprovementSuggestion, index: DiffGroundingIndex) -> bool:

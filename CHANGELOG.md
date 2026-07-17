@@ -4,7 +4,8 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
-No unreleased changes yet.
+- Stabilized real-world review memory and ranking by ignoring agent category drift in finding fingerprints, merging repeated audit-trail and pagination findings, and loading repository guideline files directly when Qdrant/RAG context is unavailable.
+- Hardened `openrabbit improve --publish` so placeholder fixes and snippets that introduce unavailable `require_*` security dependencies are dropped instead of being posted to GitHub.
 
 ## v1.5.0 - 2026-07-17
 

@@ -15,6 +15,8 @@ def _finding(
     file: str = "app.py",
     line: int = 10,
     category: str = "security",
+    reason: str = "reason",
+    suggestion: str = "suggestion",
 ) -> Finding:
     return Finding(
         severity=severity,
@@ -23,8 +25,8 @@ def _finding(
         line=line,
         confidence=confidence,
         title=title,
-        reason="reason",
-        suggestion="suggestion",
+        reason=reason,
+        suggestion=suggestion,
         fix="",
     )
 
@@ -138,6 +140,139 @@ def test_ranker_deduplicates_same_root_cause_from_multiple_agents() -> None:
         "SQL Injection vulnerability in advanced_search method",
         "Insufficient test coverage for advanced search edge cases",
     ]
+
+
+def test_ranker_deduplicates_repeated_authorization_findings_same_line() -> None:
+    first = _finding(
+        "Missing authorization check on admin task reassignment endpoint",
+        severity=Severity.high,
+        confidence=0.92,
+        file="app/api/routes/tasks.py",
+        line=70,
+        category="security",
+    )
+    second = _finding(
+        "Missing explicit authorization check before sensitive admin task reassignment",
+        severity=Severity.high,
+        confidence=0.90,
+        file="app/api/routes/tasks.py",
+        line=70,
+        category="architecture",
+    )
+
+    ranked = CommentRanker().rank(
+        [
+            _result("security", [first]),
+            _result("architecture", [second]),
+        ]
+    )
+
+    assert len(ranked) == 1
+    assert ranked[0].finding.title == first.title
+
+
+def test_ranker_deduplicates_audit_trail_findings_in_same_file() -> None:
+    first = _finding(
+        "Missing audit logging of reassignment reason",
+        severity=Severity.medium,
+        confidence=0.89,
+        file="app/api/routes/tasks.py",
+        line=24,
+        category="security",
+    )
+    second = _finding(
+        "Reassignment reason is collected but not logged or stored",
+        severity=Severity.medium,
+        confidence=0.88,
+        file="app/api/routes/tasks.py",
+        line=81,
+        category="architecture",
+    )
+
+    ranked = CommentRanker().rank(
+        [
+            _result("security", [first]),
+            _result("architecture", [second]),
+        ]
+    )
+
+    assert len(ranked) == 1
+    assert ranked[0].finding.title == first.title
+
+
+def test_ranker_prefers_audit_kind_when_audit_finding_mentions_admin() -> None:
+    first = _finding(
+        "Missing audit logging or persistence of reassignment reason",
+        severity=Severity.medium,
+        confidence=0.89,
+        file="app/api/routes/tasks.py",
+        line=81,
+        category="security",
+        reason=(
+            "The AdminReassignmentRequest collects a reason field, but this reason is "
+            "neither logged nor stored. This breaks the audit trail contract expected "
+            "for sensitive admin operations."
+        ),
+    )
+    second = _finding(
+        "Missing audit logging of reassignment reason",
+        severity=Severity.medium,
+        confidence=0.88,
+        file="app/api/routes/tasks.py",
+        line=70,
+        category="performance",
+        reason=(
+            "The reassignment reason is collected in the payload but not logged or "
+            "stored, which may lead to lack of traceability and auditing."
+        ),
+    )
+
+    ranked = CommentRanker().rank(
+        [
+            _result("security", [first]),
+            _result("performance", [second]),
+        ]
+    )
+
+    assert len(ranked) == 1
+    assert ranked[0].finding.title == first.title
+
+
+def test_ranker_deduplicates_export_pagination_completeness_findings() -> None:
+    first = _finding(
+        "Fixed pagination parameters limit export completeness",
+        severity=Severity.medium,
+        confidence=0.90,
+        file="app/api/routes/tasks.py",
+        line=74,
+        category="performance",
+        reason=(
+            "The endpoint calls list_tasks with a fixed limit=100 and offset=0, "
+            "which may truncate exported results when more than 100 tasks match."
+        ),
+    )
+    second = _finding(
+        "Hardcoded pagination limit may limit export completeness",
+        severity=Severity.medium,
+        confidence=0.89,
+        file="app/api/routes/tasks.py",
+        line=74,
+        category="architecture",
+        reason=(
+            "The export endpoint has a hardcoded limit of 100 with offset 0, "
+            "which can return incomplete export data for larger task sets."
+        ),
+    )
+
+    ranked = CommentRanker().rank(
+        [
+            _result("performance", [first]),
+            _result("architecture", [second]),
+        ]
+    )
+
+    assert len(ranked) == 1
+    assert ranked[0].finding.title == first.title
 
 
 def test_ranker_keeps_different_lines_as_separate_findings() -> None:

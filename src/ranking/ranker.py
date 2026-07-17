@@ -99,11 +99,14 @@ def _same_exact_finding(a: Finding, b: Finding) -> bool:
 def _same_semantic_finding(a: Finding, b: Finding) -> bool:
     if a.file != b.file:
         return False
-    if abs(a.line - b.line) > _SEMANTIC_LINE_WINDOW:
-        return False
 
     a_kind = _issue_kind(a)
-    return a_kind != "" and a_kind == _issue_kind(b)
+    b_kind = _issue_kind(b)
+    if a_kind == "" or a_kind != b_kind:
+        return False
+    if a_kind == "audit_trail":
+        return True
+    return abs(a.line - b.line) <= _SEMANTIC_LINE_WINDOW
 
 
 def _normalise(title: str) -> str:
@@ -119,6 +122,15 @@ def _issue_kind(finding: Finding) -> str:
         ("dereference", "attribute", "access"),
     ):
         return "null_dereference"
+    if _contains_any(text, ("audit", "traceability", "accountability")) or (
+        "reason" in text and _contains_any(text, ("logged", "stored", "persisted"))
+    ):
+        return "audit_trail"
+    if _contains_any(
+        text,
+        ("pagination", "hardcoded limit", "fixed limit", "offset", "truncate", "incomplete"),
+    ) and _contains_any(text, ("export", "results", "data", "tasks")):
+        return "pagination_completeness"
     if _contains_any(text, ("authorization", "permission", "privilege", "admin")):
         return "authorization"
     return ""
