@@ -129,6 +129,18 @@ def test_ask_command_accepts_format_option() -> None:
     assert "--format" in _plain_help(result.output)
 
 
+def test_start_command_accepts_once_option() -> None:
+    result = runner.invoke(app, ["start", "--help"])
+    assert result.exit_code == 0
+    assert "--once" in _plain_help(result.output)
+
+
+def test_stop_command_accepts_workspace_option() -> None:
+    result = runner.invoke(app, ["stop", "--help"])
+    assert result.exit_code == 0
+    assert "--workspace" in _plain_help(result.output)
+
+
 # ---------------------------------------------------------------------------
 # openrabbit --version
 # ---------------------------------------------------------------------------

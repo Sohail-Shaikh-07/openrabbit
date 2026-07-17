@@ -79,6 +79,12 @@ def _event(kind: str, number: int = 1) -> PollEvent:
     )
 
 
+def _daemon_state_path(workspace: Path) -> Path:
+    from cli.commands.daemon import daemon_state_path
+
+    return daemon_state_path(workspace)
+
+
 def test_resolve_target_flag_wins_over_settings() -> None:
     settings = Settings(repository=RepositorySettings(target="from/settings"))
     assert resolve_target_repo(settings, "from/flag") == "from/flag"
@@ -126,6 +132,50 @@ async def test_run_start_runs_polling_until_cancelled(
 
     assert rounds == [1]
     assert (scaffold_repo / ".openrabbit" / "state.json").is_file()
+
+
+@respx.mock
+async def test_run_start_once_runs_one_poll_without_daemon_state(scaffold_repo: Path) -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(return_value=httpx.Response(200, json=[]))
+    settings = load_settings(scaffold_repo, env={})
+
+    await run_start(
+        settings,
+        workspace=scaffold_repo,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        once=True,
+    )
+
+    assert (scaffold_repo / ".openrabbit" / "state.json").is_file()
+    assert not _daemon_state_path(scaffold_repo).exists()
+
+
+@respx.mock
+async def test_run_start_clears_stale_daemon_state_before_foreground_start(
+    scaffold_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from cli.commands.daemon import write_daemon_state
+
+    async def fake_sleep(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+    write_daemon_state(scaffold_repo, pid=999999, repo="o/r")
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(return_value=httpx.Response(200, json=[]))
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_start(
+            settings,
+            workspace=scaffold_repo,
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+        )
+
+    assert not _daemon_state_path(scaffold_repo).exists()
 
 
 @respx.mock
@@ -554,3 +604,54 @@ def test_run_init_template_sets_no_repository_target(scaffold_repo: Path) -> Non
     run_init(scaffold_repo, force=True)
     settings = load_settings(scaffold_repo, env={})
     assert settings.repository.target is None
+
+
+def test_run_stop_reports_not_running_without_daemon_state(scaffold_repo: Path) -> None:
+    from cli.commands.daemon import run_stop
+
+    result = run_stop(scaffold_repo)
+
+    assert result.status == "not_running"
+    assert result.pid is None
+    assert "not running" in result.message
+
+
+def test_run_stop_removes_stale_daemon_state(scaffold_repo: Path) -> None:
+    from cli.commands.daemon import run_stop, write_daemon_state
+
+    write_daemon_state(scaffold_repo, pid=999999, repo="o/r")
+
+    result = run_stop(scaffold_repo)
+
+    assert result.status == "stale"
+    assert result.pid == 999999
+    assert not _daemon_state_path(scaffold_repo).exists()
+
+
+def test_run_stop_terminates_running_daemon_process(
+    scaffold_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.commands import daemon
+    from cli.commands.daemon import run_stop, write_daemon_state
+
+    pid_checks = [True, False]
+    terminated: list[int] = []
+
+    def fake_pid_exists(_pid: int) -> bool:
+        return pid_checks.pop(0) if pid_checks else False
+
+    def fake_terminate_pid(pid: int) -> str:
+        terminated.append(pid)
+        return "ok"
+
+    monkeypatch.setattr(daemon, "_pid_exists", fake_pid_exists)
+    monkeypatch.setattr(daemon, "_terminate_pid", fake_terminate_pid)
+    write_daemon_state(scaffold_repo, pid=12345, repo="o/r")
+
+    result = run_stop(scaffold_repo, timeout_seconds=5)
+
+    assert result.status == "stopped"
+    assert result.pid == 12345
+    assert terminated == [12345]
+    assert not _daemon_state_path(scaffold_repo).exists()
