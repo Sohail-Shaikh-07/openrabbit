@@ -17,7 +17,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | Quality gates | Optional local Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics and bounded timeouts |
 | PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, sanitized GitHub PR conversation context |
-| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection |
+| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection, optional knowledge connector contracts |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
 
@@ -301,6 +301,8 @@ OpenRabbit loads configuration in layers:
 Use the user config for repeated local defaults such as model provider, model name, polling interval, or `github.token_env`. Keep repository-specific review rules in the repo config. Do not store token values or model API keys in either config file; store secrets in environment variables and reference their names.
 
 OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. Model-facing commands also fetch current GitHub PR reviews, inline review comments, and issue comments as sanitized conversation context when memory is enabled. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md). Future graph and vector memory plugins are planned as optional local-first adapters, documented in [docs/memory-backends.md](docs/memory-backends.md).
+
+Optional MCP, web search, multi-repo, Jira, and Linear knowledge connector boundaries are documented in [docs/knowledge-connectors.md](docs/knowledge-connectors.md). These connectors are design-time extension points today; no external knowledge service is required for the default review loop.
 
 Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 
