@@ -1,8 +1,8 @@
 # OpenRabbit vs PR-Agent Gap Analysis
 
-Date: 2026-07-08
+Date: 2026-07-17
 
-This document compares the current OpenRabbit `v1.4.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
+This document compares the current OpenRabbit `v1.5.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
 
 Sources reviewed:
 
@@ -31,11 +31,12 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Publishing | Manual review publishing and polling-triggered publishing are wired for GitHub |
 | Model layer | Shared provider contract exists; Ollama, official OpenAI, and OpenAI-compatible base URL providers are wired; vLLM and Transformers remain placeholders |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
-| Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal |
+| Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal, path filters, path-specific instructions, profiles, generated-file defaults, and AST-scoped review instructions |
 | RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, automatic review context loading, repository guideline detection, and context provenance |
-| Knowledge sources | Local repository learnings, repository guideline files, and linked GitHub issue context |
+| Knowledge sources | Local repository learnings, repository guideline files, linked GitHub issue context, sanitized PR conversation history, and optional connector contracts for future MCP, web search, multi-repo, Jira, and Linear sources |
+| Local quality gates | Optional Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics |
 | Fine-tuning | QLoRA training/evaluation/packaging pipeline for a Qwen2.5-Coder adapter |
-| Benchmarks | Runner, scorer, profiler, packaged v1.1 regression corpus, and PR-based `openrabbit eval` test logs with v1.3 memory and knowledge context fields |
+| Benchmarks | Runner, scorer, profiler, packaged v1.1 regression corpus, and PR-based `openrabbit eval` reports with dashboard-ready JSON, Markdown dashboards, scenario groups, quality gates, and context fields |
 
 ## PR-Agent Capabilities To Learn From
 

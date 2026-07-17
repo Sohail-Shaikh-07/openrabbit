@@ -47,7 +47,7 @@ The example installs OpenRabbit from the `OPENRABBIT_REF` environment value, whi
 
 ```yaml
 env:
-  OPENRABBIT_REF: "v1.4.0"
+  OPENRABBIT_REF: "v1.5.0"
 ```
 
 Manual `workflow_dispatch` runs default to dry-run mode so you can inspect findings in the logs before posting comments. Set the `dry_run` input to `false` when you intentionally want a manual run to publish review comments. Pull request events publish by default because they use the normal review workflow.

@@ -4,6 +4,24 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## v1.5.0 - 2026-07-17
+
+OpenRabbit v1.5.0 closes the CodeRabbit-parity planning phase with stronger PR memory, command-driven summaries, local quality evidence, AST-scoped review controls, dashboard-ready eval reports, and optional knowledge connector boundaries.
+
+### PR Memory And Conversation Context
+
+- Added sanitized GitHub PR conversation history for `review`, `describe`, `ask`, and `improve`, including reviews, inline review comments, issue comments, and commits.
+- Added stale finding transitions so repeated reviews can distinguish new, still-present, possibly-fixed, and stale findings more clearly.
+- Added clearer review summary output for previous review SHA, memory context, and status counts.
+
+### PR Commands And Managed Summaries
+
+- Expanded polling-mode PR comment commands with `@openrabbit ignore`, `@openrabbit summary`, and `@openrabbit configuration`.
+- Added persisted ignore state and secret-safe configuration replies for polling mode.
+- Added managed PR walkthrough summaries through `openrabbit describe --publish` and `@openrabbit summary`, updating one stable OpenRabbit summary comment instead of posting duplicates.
+
 ### Local Quality Gates
 
 - Added optional local execution for Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test.
@@ -11,13 +29,42 @@ All notable changes to OpenRabbit are documented in this file.
 - Added quality gate evidence to review agent prompts, CLI summaries, and JSON/Markdown eval reports.
 - Added setup, detection, safety, and provider privacy-boundary documentation.
 
-### PR Memory
+### Review Controls
 
-- Added shared PR history loading for `review`, `describe`, `ask`, and `improve` so model prompts include sanitized GitHub PR reviews, inline review comments, and issue comments when memory is enabled.
-- Added prompt-safe conversation redaction and trimming for token-like strings and large comments.
-- Added stale finding transitions and clearer review summary output for previous review SHA and memory status counts.
-- Expanded polling-mode PR comment commands with `@openrabbit ignore`, `@openrabbit summary`, and `@openrabbit configuration`, including persisted ignore state and secret-safe config replies.
-- Added managed PR walkthrough summaries through `openrabbit describe --publish` and `@openrabbit summary`, updating one stable OpenRabbit summary comment instead of posting duplicates.
+- Added AST-scoped review instructions for Python, JavaScript, and TypeScript symbols.
+- Added prompt controls that combine path guidance, diff evidence, and AST matches without starving changed-line evidence.
+- Added CLI summary fields for matched AST rules, unsupported AST files, and sanitized review-control warnings.
+- Added docs for path and symbol matching, source loading limits, provenance, and untrusted repository text handling.
+
+### Evaluation And Dashboards
+
+- Added repeatable eval scenario groups.
+- Added dashboard-ready JSON sections for cards, charts, command outcomes, context sources, tool findings, trend data, and scenario groups.
+- Added Markdown dashboard sections for local evaluation reports.
+- Added documentation for using eval reports as local quality evidence without sending code to a hosted analytics service.
+
+### Knowledge Connector Design
+
+- Added dependency-free optional knowledge connector contracts for future MCP, web search, multi-repo, Jira, Linear, and document context sources.
+- Added prompt-safe connector item sanitization, finite score normalization, bounded output, deterministic ordering, and coverage gates.
+- Documented privacy rules, fail-open behavior, read-only health checks, future configuration shape, and adapter acceptance rules.
+
+### Documentation
+
+- Updated README coverage for local quality gates, AST review controls, eval dashboard reports, managed PR summaries, and optional knowledge connector contracts.
+- Added local quality gate, AST review control, eval reporting, and optional knowledge connector documentation.
+- Updated GitHub Actions release pinning guidance and PR-Agent gap analysis for v1.5.
+- Added v1.5 release notes and plain-text changelog archive entry.
+
+### Release Notes
+
+- Package version is `1.5.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- SQLite remains the only required memory backend.
+- Qdrant remains optional for RAG context and reviews still fall back to diff-only mode when unavailable.
+- Optional knowledge connectors are design-time extension points only in this release and add no mandatory external services.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.
 
 ## v1.4.0 - 2026-07-08
 
