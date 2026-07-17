@@ -254,7 +254,7 @@ async def test_run_eval_records_failures(scaffold_repo: Path, tmp_path: Path) ->
         repo="o/r",
         prs=[1],
         output=tmp_path / "eval.json",
-        markdown=None,
+        markdown=tmp_path / "eval.md",
         review_runner=failing_review_runner,
     )
 
@@ -269,6 +269,10 @@ async def test_run_eval_records_failures(scaffold_repo: Path, tmp_path: Path) ->
     assert report["command_outcomes"]["failures"] == 1
     assert report["command_outcomes"]["failed_runs"][0]["pr"] == 1
     assert report["dashboard"]["cards"]["failures"] == 1
+    assert report["markdown_path"] == str(tmp_path / "eval.md")
+    assert "No local quality tool findings recorded." in (tmp_path / "eval.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_eval_cli_command_exists() -> None:
