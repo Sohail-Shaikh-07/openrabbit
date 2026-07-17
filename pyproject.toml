@@ -24,6 +24,7 @@ packages = [
     { include = "configs", from = "src" },
     { include = "finetuning", from = "src" },
     { include = "github_", from = "src" },
+    { include = "knowledge", from = "src" },
     { include = "memory", from = "src" },
     { include = "models", from = "src" },
     { include = "rag", from = "src" },
@@ -113,7 +114,7 @@ ignore = ["E501"]  # line length handled by black
 "src/cli/**" = ["B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "api", "benchmarks", "cli", "configs", "finetuning", "github_", "memory", "models", "quality", "rag", "ranking", "review_controls"]
+known-first-party = ["agents", "api", "benchmarks", "cli", "configs", "finetuning", "github_", "knowledge", "memory", "models", "quality", "rag", "ranking", "review_controls"]
 
 [tool.black]
 line-length = 100
