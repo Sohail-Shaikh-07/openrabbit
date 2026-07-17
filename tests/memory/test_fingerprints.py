@@ -35,6 +35,21 @@ def test_fingerprint_is_stable_across_severity_and_wording_noise() -> None:
     assert fingerprint_finding(first) == fingerprint_finding(second)
 
 
+def test_fingerprint_is_stable_across_category_drift_for_same_root_cause() -> None:
+    first = _finding(
+        category="security",
+        title="SQL Injection via Unsanitized User Input in advanced_search",
+        reason="Raw SQL is built from user-controlled query parameters.",
+    )
+    second = _finding(
+        category="architecture",
+        title="SQL Injection Risk and Layer Violation in Repository Advanced Search",
+        reason="The repository constructs raw SQL from query and owner values.",
+    )
+
+    assert fingerprint_finding(first) == fingerprint_finding(second)
+
+
 def test_fingerprint_changes_for_different_file_or_issue_kind() -> None:
     base = _finding()
     different_file = _finding(file="app/services/task_service.py")

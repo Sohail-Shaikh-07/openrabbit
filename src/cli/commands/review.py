@@ -38,10 +38,14 @@ from memory.models import FindingComparison, FindingStatus
 from memory.store import SQLitePullRequestMemory
 from quality.models import ToolRunResult
 from quality.runner import LocalQualityRunner
+from rag.retriever import RetrievalResult
+from rag.scanner import FileKind, RepositoryScanner
 from ranking.ranker import RankedFinding
 from review_controls import prepare_review_controls
 
 _log = get_logger(__name__)
+_MAX_DIRECT_GUIDELINES = 8
+_MAX_DIRECT_GUIDELINE_CHARS = 4000
 
 
 AgentRunner = Callable[..., Awaitable[ReviewPipelineResult]]
@@ -149,6 +153,11 @@ async def run_review(
                 error_type=type(exc).__name__,
             )
             retrieval_result = None
+        retrieval_result = _merge_direct_repository_guidelines(
+            retrieval_result,
+            workspace=settings.resolved_workspace_root(),
+            pr_payload=payload,
+        )
         model_context = filter_model_review_context(
             controls_result,
             retrieval_result=retrieval_result,
@@ -553,6 +562,121 @@ def _guideline_sources(provenance: list[dict[str, object]]) -> list[str]:
         seen.add(source)
         sources.append(source)
     return sources
+
+
+def _merge_direct_repository_guidelines(
+    retrieval_result: Any | None,
+    *,
+    workspace: Path,
+    pr_payload: Any,
+) -> Any | None:
+    """Add local repository guideline files even when vector context is unavailable."""
+    guidelines = _direct_repository_guideline_hits(workspace, pr_payload)
+    if not guidelines:
+        return retrieval_result
+    if retrieval_result is None:
+        return RetrievalResult(security=guidelines)
+    security = getattr(retrieval_result, "security", None)
+    if not isinstance(security, list):
+        return retrieval_result
+    seen: set[str] = set()
+    for hit in security:
+        if not isinstance(hit, dict):
+            continue
+        existing_payload = hit.get("payload")
+        if not isinstance(existing_payload, dict):
+            continue
+        source = str(
+            existing_payload.get("guideline_path") or existing_payload.get("source_path") or ""
+        )
+        if source:
+            seen.add(source)
+    for hit in guidelines:
+        payload = hit.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        source = str(payload.get("guideline_path") or payload.get("source_path"))
+        if source and source not in seen:
+            security.append(hit)
+            seen.add(source)
+    return retrieval_result
+
+
+def _direct_repository_guideline_hits(workspace: Path, pr_payload: Any) -> list[dict[str, object]]:
+    changed_paths = _changed_paths(pr_payload)
+    hits: list[dict[str, object]] = []
+    try:
+        records = RepositoryScanner().scan(workspace)
+    except Exception as exc:
+        _log.warning(
+            "review.guideline_scan_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return []
+    for record in records:
+        if record.kind is not FileKind.rules:
+            continue
+        if record.metadata.get("rule_source") != "repository_guideline":
+            continue
+        scope = record.metadata.get("scope_path", ".")
+        if not _guideline_applies(scope, changed_paths):
+            continue
+        try:
+            text = record.absolute_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        text = text.strip()
+        if not text:
+            continue
+        source_path = record.path.as_posix()
+        hits.append(
+            {
+                "id": f"direct-guideline:{source_path}",
+                "score": 1.0,
+                "payload": {
+                    "name": source_path,
+                    "source_path": source_path,
+                    "kind": "repository_guideline",
+                    "text": _bounded_guideline_text(text),
+                    "rule_source": "repository_guideline",
+                    "scope_path": scope or ".",
+                    "guideline_path": record.metadata.get("guideline_path", source_path),
+                    "retrieval_reason": (
+                        "scoped_guideline" if scope and scope != "." else "repository_guideline"
+                    ),
+                },
+            }
+        )
+        if len(hits) >= _MAX_DIRECT_GUIDELINES:
+            break
+    return hits
+
+
+def _changed_paths(pr_payload: Any) -> tuple[str, ...]:
+    files = getattr(pr_payload, "files", None)
+    if not isinstance(files, list):
+        return ()
+    paths: list[str] = []
+    for file_ in files:
+        path = str(getattr(file_, "path", "") or "").strip().replace("\\", "/")
+        if path:
+            paths.append(path)
+    return tuple(paths)
+
+
+def _guideline_applies(scope: str | None, changed_paths: tuple[str, ...]) -> bool:
+    clean_scope = (scope or ".").strip().replace("\\", "/").strip("/")
+    if clean_scope in {"", "."}:
+        return True
+    prefix = f"{clean_scope}/"
+    return any(path == clean_scope or path.startswith(prefix) for path in changed_paths)
+
+
+def _bounded_guideline_text(text: str) -> str:
+    if len(text) <= _MAX_DIRECT_GUIDELINE_CHARS:
+        return text
+    return text[:_MAX_DIRECT_GUIDELINE_CHARS].rsplit("\n", 1)[0].strip()
 
 
 def _publishable_ranked(

@@ -1431,6 +1431,41 @@ async def test_run_review_continues_when_context_loader_fails(scaffold_repo: Pat
     assert summary["context_loaded"] is False
 
 
+@respx.mock
+async def test_run_review_loads_repository_guidelines_when_rag_is_unavailable(
+    scaffold_repo: Path,
+) -> None:
+    _mock_controlled_pr()
+    (scaffold_repo / "AGENTS.md").write_text(
+        "# Repository rules\n\nRequire explicit validation for search inputs.\n",
+        encoding="utf-8",
+    )
+    captured: list[object] = []
+
+    async def fake_runner(*_args: object, **kwargs: object) -> ReviewPipelineResult:
+        captured.append(kwargs.get("retrieval_result"))
+        return ReviewPipelineResult(agent_results=[], ranked_findings=[])
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_review(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        agent_runner=fake_runner,
+        context_loader=_empty_context_loader,
+        dry_run=True,
+    )
+
+    retrieval = captured[0]
+    assert isinstance(retrieval, RetrievalResult)
+    assert retrieval.security
+    assert "Require explicit validation" in retrieval.security[0]["payload"]["text"]
+    assert summary["context_loaded"] is True
+    assert summary["guideline_sources"] == ["AGENTS.md"]
+
+
 def test_render_summary_prints_every_field() -> None:
     summary = {
         "repo": "o/r",

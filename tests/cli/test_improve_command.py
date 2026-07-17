@@ -597,6 +597,49 @@ async def test_run_improve_publish_posts_inline_and_summary_suggestions(
     assert summary_suggestions[0].title == "Normalize query"
 
 
+@respx.mock
+async def test_run_improve_publish_drops_unavailable_security_dependency_fix(
+    scaffold_repo: Path,
+) -> None:
+    _mock_controlled_pr()
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> list[ImprovementSuggestion]:
+        return [
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=2,
+                title="Require admin",
+                reason="The changed route needs an explicit admin dependency.",
+                suggestion="Use the repository admin authorization dependency.",
+                fix="return Depends(require_admin)",
+            )
+        ]
+
+    published: list[dict[str, object]] = []
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+    _enable_ast_controls(settings)
+
+    summary = await run_improve(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+        publisher=fake_publisher,
+    )
+
+    assert summary["publish_status"] == "no_suggestions"
+    assert summary["suggestions_count"] == 0
+    assert summary["dropped_actionability_count"] == 1
+    assert published == []
+
+
 def test_cli_improve_accepts_publish_flags(scaffold_repo: Path) -> None:
     dry = _RUNNER.invoke(
         app,
