@@ -469,11 +469,25 @@ Example expectations file:
 
 ### `openrabbit start`
 
-Runs the polling service in the foreground, records PR polling state under `.openrabbit/state.json`, and reviews new PRs or new head commits automatically.
+Runs the polling service in the foreground, records PR polling state under `.openrabbit/state.json`, writes daemon metadata under `.openrabbit/daemon.json`, and reviews new PRs or new head commits automatically.
 
 ```bash
 openrabbit start --workspace . --repo owner/repo
 ```
+
+For a safe one-cycle check that seeds or updates polling state and exits without writing daemon metadata:
+
+```bash
+openrabbit start --workspace . --repo owner/repo --once
+```
+
+Stop a foreground daemon from another terminal:
+
+```bash
+openrabbit stop --workspace .
+```
+
+`openrabbit stop` is safe to run when no daemon is active. It also removes stale daemon metadata left behind by a crashed process.
 
 The first poll seeds state without reviewing every already-open PR. After that, new PRs and changed head SHAs trigger the same review-and-publish path as `openrabbit review`. Same-SHA updates, such as label or description changes, are logged and skipped.
 

@@ -23,6 +23,7 @@ from cli.commands.ask import (
     render_answer_markdown,
     run_ask_blocking,
 )
+from cli.commands.daemon import run_stop
 from cli.commands.describe import (
     render_description,
     render_description_json,
@@ -172,12 +173,17 @@ def start(
         "-r",
         help="Repository to watch, in owner/repo form. Overrides repository.target.",
     ),
+    once: bool = typer.Option(
+        False,
+        "--once",
+        help="Run one polling cycle and exit.",
+    ),
 ) -> None:
     """Run the polling service in the foreground."""
     workspace = workspace.resolve()
     settings = _load_settings_or_exit(workspace)
     try:
-        run_start_blocking(settings, workspace=workspace, repo=repo)  # type: ignore[arg-type]
+        run_start_blocking(settings, workspace=workspace, repo=repo, once=once)  # type: ignore[arg-type]
     except StartError as exc:
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
@@ -187,9 +193,21 @@ def start(
 
 
 @app.command()
-def stop() -> None:
+def stop(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+) -> None:
     """Stop the running OpenRabbit daemon."""
-    _not_implemented("stop", "Phase 2")
+    result = run_stop(workspace.resolve())
+    if result.status == "failed":
+        _err.print(f"[red]{result.message}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR)
+    color = "green" if result.status == "stopped" else "yellow"
+    _console.print(f"[{color}]{result.message}[/{color}]")
 
 
 @app.command()

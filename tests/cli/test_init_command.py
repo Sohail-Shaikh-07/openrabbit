@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from cli.commands.init import InitConflict, run_init
-from cli.exit_codes import NOT_IMPLEMENTED, OK, USER_ERROR
+from cli.exit_codes import OK, USER_ERROR
 from cli.main import app
 from cli.templates import TEMPLATES
 
@@ -97,11 +97,11 @@ def test_cli_quiet_and_verbose_mutually_exclusive() -> None:
     assert result.exit_code == USER_ERROR
 
 
-@pytest.mark.parametrize("command", ["stop"])
-def test_unimplemented_commands_exit_with_not_implemented(command: str) -> None:
-    """`stop` still belongs to a later phase; `index` is now implemented."""
-    result = _RUNNER.invoke(app, [command])
-    assert result.exit_code == NOT_IMPLEMENTED
+def test_stop_without_running_daemon_exits_ok(tmp_path: Path) -> None:
+    result = _RUNNER.invoke(app, ["stop", "--workspace", str(tmp_path)])
+
+    assert result.exit_code == OK
+    assert "not running" in result.output
 
 
 def test_start_without_config_exits_user_error(tmp_path: Path) -> None:

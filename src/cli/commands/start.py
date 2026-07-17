@@ -8,12 +8,19 @@ while same-SHA metadata updates are logged and skipped.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from collections.abc import Awaitable, Callable
 from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from cli.commands.daemon import (
+    clear_daemon_state,
+    daemon_state_is_running,
+    read_daemon_state,
+    write_daemon_state,
+)
 from cli.commands.pr_summary import publish_pr_summary_body
 from cli.logging import get_logger
 from configs.settings import Settings
@@ -539,9 +546,19 @@ async def run_start(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     review_runner: ReviewRunner | None = None,
+    once: bool = False,
 ) -> None:
     """Run the polling service in the foreground until cancelled."""
     target = resolve_target_repo(settings, repo)
+    if not once:
+        existing = read_daemon_state(workspace)
+        if existing is not None:
+            if daemon_state_is_running(existing):
+                raise StartError(
+                    "OpenRabbit daemon already has local state for "
+                    f"PID {existing.pid}. Run `openrabbit stop` first."
+                )
+            clear_daemon_state(workspace)
     client = GitHubClient.from_settings(settings, env=env)
     handle = RepositoryHandle.from_full_name(target, client)
     state_path = workspace / STATE_SUBDIR / STATE_FILENAME
@@ -576,8 +593,14 @@ async def run_start(
     )
 
     try:
-        await service.run_forever()
+        if once:
+            await service.run_once()
+        else:
+            write_daemon_state(workspace, pid=os.getpid(), repo=handle.full_name)
+            await service.run_forever()
     finally:
+        if not once:
+            clear_daemon_state(workspace)
         await client.aclose()
 
 
@@ -588,12 +611,18 @@ def run_start_blocking(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     review_runner: ReviewRunner | None = None,
+    once: bool = False,
 ) -> None:
     """Synchronous wrapper used by the Typer command."""
     try:
         asyncio.run(
             run_start(
-                settings, workspace=workspace, repo=repo, env=env, review_runner=review_runner
+                settings,
+                workspace=workspace,
+                repo=repo,
+                env=env,
+                review_runner=review_runner,
+                once=once,
             )
         )
     except KeyboardInterrupt:
