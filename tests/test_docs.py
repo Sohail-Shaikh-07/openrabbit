@@ -18,6 +18,12 @@ def test_readme_links_to_eval_reporting_guide() -> None:
     assert "[docs/eval-reporting.md](docs/eval-reporting.md)" in readme
 
 
+def test_readme_links_to_knowledge_connectors_guide() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="ascii")
+
+    assert "[docs/knowledge-connectors.md](docs/knowledge-connectors.md)" in readme
+
+
 def test_ast_review_controls_guide_documents_contract() -> None:
     guide = (ROOT / "docs" / "ast-review-controls.md").read_text(encoding="ascii").lower()
 
@@ -96,3 +102,27 @@ def test_ast_review_controls_guide_documents_contract() -> None:
         'path: "src/services/**"',
     ):
         assert example in guide
+
+
+def test_knowledge_connectors_guide_documents_contract() -> None:
+    guide = (ROOT / "docs" / "knowledge-connectors.md").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "mcp",
+        "web search",
+        "multi-repo",
+        "jira",
+        "linear",
+        "optional",
+        "local-first",
+        "fail open",
+        "read-only",
+        "untrusted context",
+        "no mandatory external services",
+        "no raw tokens",
+        "knowledgeconnector",
+        "knowledgeconnectorrequest",
+        "knowledgeitem",
+        "health check",
+    ):
+        assert claim in guide
