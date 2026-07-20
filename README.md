@@ -389,10 +389,10 @@ Use this after one or more reviews to see the configured memory path, last revie
 When `openrabbit start` is running, maintainers can add explicit local learnings from PR comments:
 
 ```text
-@openrabbit learn Prefer SQLAlchemy bind parameters for any raw SQL in repositories.
+/openrabbit learn Prefer SQLAlchemy bind parameters for any raw SQL in repositories.
 ```
 
-Only explicit `@openrabbit learn ...` commands create learnings. Normal comments are kept as prompt-only conversation context, not permanent instructions.
+Only explicit `/openrabbit learn ...` commands create learnings. Normal comments are kept as prompt-only conversation context, not permanent instructions.
 
 ### `openrabbit describe`
 
@@ -502,18 +502,18 @@ Daemon logs include `start.review_started`, `start.review_skipped`, `start.revie
 While `openrabbit start` is running, OpenRabbit also listens for new PR comments addressed to it:
 
 ```text
-@openrabbit review
-@openrabbit full review
-@openrabbit improve
-@openrabbit ask what changed in the search path?
-@openrabbit summary
-@openrabbit configuration
-@openrabbit pause
-@openrabbit resume
-@openrabbit ignore
+/openrabbit review
+/openrabbit full review
+/openrabbit improve
+/openrabbit ask what changed in the search path?
+/openrabbit summary
+/openrabbit configuration
+/openrabbit pause
+/openrabbit resume
+/openrabbit ignore
 ```
 
-Comment commands are only handled by the polling service. They are not active during one-off CLI commands. `summary` creates or updates the single OpenRabbit-managed PR summary comment, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses review activity, and `ignore` suppresses the PR until `@openrabbit resume` is received. Pause, ignore, and the last processed comment cursor are stored locally under `.openrabbit/commands.json`.
+Comment commands are only handled by the polling service. They are not active during one-off CLI commands. `summary` creates or updates the single OpenRabbit-managed PR summary comment, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses review activity, and `ignore` suppresses the PR until `/openrabbit resume` is received. Pause, ignore, and the last processed comment cursor are stored locally under `.openrabbit/commands.json`.
 
 ### `openrabbit install-model`
 

@@ -108,7 +108,7 @@ Good candidates for embeddings:
 
 - concise prior finding summaries
 - accepted fix summaries
-- explicit `@openrabbit learn` instructions
+- explicit `/openrabbit learn` instructions
 - repository guideline snippets
 - linked issue summaries
 - review examples

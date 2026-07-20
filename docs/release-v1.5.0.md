@@ -6,7 +6,7 @@ OpenRabbit v1.5.0 focuses on CodeRabbit-parity foundations while preserving the 
 
 - Added sanitized PR conversation history for `review`, `describe`, `ask`, and `improve`.
 - Added stale finding transitions and clearer memory status summaries.
-- Added polling commands for `@openrabbit ignore`, `@openrabbit summary`, and `@openrabbit configuration`.
+- Added polling commands for `/openrabbit ignore`, `/openrabbit summary`, and `/openrabbit configuration`.
 - Added `openrabbit describe --publish` for one managed OpenRabbit PR walkthrough comment.
 - Added optional local quality gates for Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test.
 - Added AST-scoped review instructions for Python, JavaScript, and TypeScript symbols.

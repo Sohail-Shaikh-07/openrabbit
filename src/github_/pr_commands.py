@@ -21,7 +21,7 @@ CommandKind = Literal[
     "learn",
 ]
 
-_COMMAND_RE = re.compile(r"^\s*@openrabbit(?:\s+(.+?))?\s*$", re.IGNORECASE | re.DOTALL)
+_COMMAND_RE = re.compile(r"^\s*(?:/|@)openrabbit(?:\s+(.+?))?\s*$", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -200,6 +200,7 @@ def parse_openrabbit_command(body: str) -> PullRequestCommand | None:
 
 def _first_command_line(body: str) -> str | None:
     for line in body.splitlines():
-        if line.strip().lower().startswith("@openrabbit"):
+        stripped = line.strip().lower()
+        if stripped.startswith(("/openrabbit", "@openrabbit")):
             return line
     return None

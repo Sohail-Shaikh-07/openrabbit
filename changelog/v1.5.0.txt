@@ -13,9 +13,9 @@ PR Memory And Conversation Context
 PR Commands And Managed Summaries
 ---------------------------------
 
-- Expanded polling-mode PR comment commands with `@openrabbit ignore`, `@openrabbit summary`, and `@openrabbit configuration`.
+- Expanded polling-mode PR comment commands with `/openrabbit ignore`, `/openrabbit summary`, and `/openrabbit configuration`.
 - Added persisted ignore state and secret-safe configuration replies for polling mode.
-- Added managed PR walkthrough summaries through `openrabbit describe --publish` and `@openrabbit summary`, updating one stable OpenRabbit summary comment instead of posting duplicates.
+- Added managed PR walkthrough summaries through `openrabbit describe --publish` and `/openrabbit summary`, updating one stable OpenRabbit summary comment instead of posting duplicates.
 
 Local Quality Gates
 -------------------

@@ -479,7 +479,7 @@ async def test_run_describe_publish_creates_managed_summary(scaffold_repo: Path)
     assert summary["summary_comment_id"] == 90
     assert SUMMARY_MARKER in str(captured["body"])
     assert "### Walkthrough" in str(captured["body"])
-    assert "@openrabbit review" in str(captured["body"])
+    assert "/openrabbit review" in str(captured["body"])
 
 
 @respx.mock
