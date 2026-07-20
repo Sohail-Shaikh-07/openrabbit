@@ -321,13 +321,13 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
         return_value=httpx.Response(
             200,
             json=[
-                _issue_comment(10, "@openrabbit review"),
-                _issue_comment(11, "@openrabbit full review"),
-                _issue_comment(12, "@openrabbit improve"),
-                _issue_comment(13, "@openrabbit ask what changed?"),
-                _issue_comment(14, "@openrabbit learn Prefer bind parameters for SQL."),
-                _issue_comment(15, "@openrabbit summary"),
-                _issue_comment(16, "@openrabbit configuration"),
+                _issue_comment(10, "/openrabbit review"),
+                _issue_comment(11, "/openrabbit full review"),
+                _issue_comment(12, "/openrabbit improve"),
+                _issue_comment(13, "/openrabbit ask what changed?"),
+                _issue_comment(14, "/openrabbit learn Prefer bind parameters for SQL."),
+                _issue_comment(15, "/openrabbit summary"),
+                _issue_comment(16, "/openrabbit configuration"),
             ],
         )
     )
@@ -418,7 +418,7 @@ async def test_start_command_listener_respects_pause_and_resume(scaffold_repo: P
 
     try:
         respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
-            return_value=httpx.Response(200, json=[_issue_comment(20, "@openrabbit pause")])
+            return_value=httpx.Response(200, json=[_issue_comment(20, "/openrabbit pause")])
         )
         await handler(_event("pull_request_updated"), handle)
         await handler(_event("commit_pushed"), handle)
@@ -426,7 +426,7 @@ async def test_start_command_listener_respects_pause_and_resume(scaffold_repo: P
         assert command_store.load().is_paused(1)
 
         respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
-            return_value=httpx.Response(200, json=[_issue_comment(21, "@openrabbit resume")])
+            return_value=httpx.Response(200, json=[_issue_comment(21, "/openrabbit resume")])
         )
         await handler(_event("pull_request_updated"), handle)
         await handler(_event("commit_pushed"), handle)
@@ -460,7 +460,7 @@ async def test_start_command_listener_respects_ignore_and_resume(scaffold_repo: 
 
     try:
         respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
-            return_value=httpx.Response(200, json=[_issue_comment(30, "@openrabbit ignore")])
+            return_value=httpx.Response(200, json=[_issue_comment(30, "/openrabbit ignore")])
         )
         await handler(_event("pull_request_updated"), handle)
         await handler(_event("commit_pushed"), handle)
@@ -468,7 +468,7 @@ async def test_start_command_listener_respects_ignore_and_resume(scaffold_repo: 
         assert command_store.load().is_ignored(1)
 
         respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
-            return_value=httpx.Response(200, json=[_issue_comment(31, "@openrabbit resume")])
+            return_value=httpx.Response(200, json=[_issue_comment(31, "/openrabbit resume")])
         )
         await handler(_event("pull_request_updated"), handle)
         await handler(_event("commit_pushed"), handle)

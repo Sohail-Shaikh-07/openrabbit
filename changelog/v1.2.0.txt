@@ -16,7 +16,7 @@ Improve Publishing And PR Commands
 
 - Added explicit `openrabbit improve --publish` support for grounded suggestions.
 - Added GitHub suggestion blocks for concrete replacement snippets and grouped broader suggestions in review bodies.
-- Added PR comment command handling in polling mode for `@openrabbit review`, `full review`, `improve`, `ask`, `pause`, and `resume`.
+- Added PR comment command handling in polling mode for `/openrabbit review`, `full review`, `improve`, `ask`, `pause`, and `resume`.
 - Added local paused-state and command cursor persistence under `.openrabbit/`.
 
 Repository Context And Controls

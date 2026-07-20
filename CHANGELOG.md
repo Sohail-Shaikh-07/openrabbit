@@ -7,6 +7,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Stabilized real-world review memory and ranking by ignoring agent category drift in finding fingerprints, merging repeated audit-trail and pagination findings, and loading repository guideline files directly when Qdrant/RAG context is unavailable.
 - Hardened `openrabbit improve --publish` so placeholder fixes and snippets that introduce unavailable `require_*` security dependencies are dropped instead of being posted to GitHub.
 - Added daemon lifecycle support with `openrabbit start --once`, local daemon PID metadata, stale-state cleanup, and a working `openrabbit stop --workspace ...` command.
+- Switched user-facing PR comment command examples and managed summary follow-ups to `/openrabbit ...`, while retaining legacy mention-trigger compatibility.
 
 ## v1.5.0 - 2026-07-17
 
@@ -20,9 +21,9 @@ OpenRabbit v1.5.0 closes the CodeRabbit-parity planning phase with stronger PR m
 
 ### PR Commands And Managed Summaries
 
-- Expanded polling-mode PR comment commands with `@openrabbit ignore`, `@openrabbit summary`, and `@openrabbit configuration`.
+- Expanded polling-mode PR comment commands with `/openrabbit ignore`, `/openrabbit summary`, and `/openrabbit configuration`.
 - Added persisted ignore state and secret-safe configuration replies for polling mode.
-- Added managed PR walkthrough summaries through `openrabbit describe --publish` and `@openrabbit summary`, updating one stable OpenRabbit summary comment instead of posting duplicates.
+- Added managed PR walkthrough summaries through `openrabbit describe --publish` and `/openrabbit summary`, updating one stable OpenRabbit summary comment instead of posting duplicates.
 
 ### Local Quality Gates
 
@@ -126,7 +127,7 @@ OpenRabbit v1.3.0 adds local memory maintenance and the first CodeRabbit-style k
 - Added memory export for deterministic, secret-safe repository memory snapshots.
 - Added memory pruning by date for local SQLite review runs and findings.
 - Added `openrabbit memory --learnings` to inspect active local repository learnings.
-- Added explicit `@openrabbit learn ...` support in polling mode so maintainers can store durable review instructions.
+- Added explicit `/openrabbit learn ...` support in polling mode so maintainers can store durable review instructions.
 
 ### Memory Backend Design
 
@@ -185,7 +186,7 @@ OpenRabbit v1.2.0 adds PR memory, incremental re-review, command-driven automati
 
 - Added explicit `openrabbit improve --publish` support for grounded suggestions.
 - Added GitHub suggestion blocks for concrete replacement snippets and grouped broader suggestions in review bodies.
-- Added PR comment command handling in polling mode for `@openrabbit review`, `full review`, `improve`, `ask`, `pause`, and `resume`.
+- Added PR comment command handling in polling mode for `/openrabbit review`, `full review`, `improve`, `ask`, `pause`, and `resume`.
 - Added local paused-state and command cursor persistence under `.openrabbit/`.
 
 ### Repository Context And Controls

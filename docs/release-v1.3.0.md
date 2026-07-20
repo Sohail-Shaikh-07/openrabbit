@@ -5,7 +5,7 @@ OpenRabbit v1.3.0 focuses on memory and knowledge. The release makes local PR me
 ## Highlights
 
 - Added deterministic memory export and date-based pruning.
-- Added explicit local repository learnings through `@openrabbit learn ...`.
+- Added explicit local repository learnings through `/openrabbit learn ...`.
 - Added memory backend design docs for future graph and vector plugins while keeping SQLite as the only required backend.
 - Added automatic repository guideline detection for common agent and editor instruction files.
 - Added path-local guideline scope metadata, prompt labels, and context provenance.

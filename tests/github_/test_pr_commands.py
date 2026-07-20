@@ -14,19 +14,19 @@ from github_.pr_commands import (
 
 
 def test_parse_openrabbit_commands() -> None:
-    assert parse_openrabbit_command("@openrabbit review").kind == "review"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit full review").kind == "full_review"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit improve").kind == "improve"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit pause").kind == "pause"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit resume").kind == "resume"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit ignore").kind == "ignore"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit summary").kind == "summary"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit configuration").kind == "configuration"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit config").kind == "configuration"  # type: ignore[union-attr]
-    assert parse_openrabbit_command("@openrabbit learn Use repositories for SQL").kind == "learn"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit review").kind == "review"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit full review").kind == "full_review"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit improve").kind == "improve"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit pause").kind == "pause"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit resume").kind == "resume"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit ignore").kind == "ignore"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit summary").kind == "summary"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit configuration").kind == "configuration"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit config").kind == "configuration"  # type: ignore[union-attr]
+    assert parse_openrabbit_command("/openrabbit learn Use repositories for SQL").kind == "learn"  # type: ignore[union-attr]
 
-    ask = parse_openrabbit_command("@openrabbit ask what changed here?")
-    learn = parse_openrabbit_command("@openrabbit learn Prefer bind parameters.")
+    ask = parse_openrabbit_command("/openrabbit ask what changed here?")
+    learn = parse_openrabbit_command("/openrabbit learn Prefer bind parameters.")
 
     assert ask is not None
     assert ask.kind == "ask"
@@ -36,11 +36,20 @@ def test_parse_openrabbit_commands() -> None:
     assert learn.instruction == "Prefer bind parameters."
 
 
+def test_parse_legacy_mention_commands() -> None:
+    assert parse_openrabbit_command("@openrabbit review").kind == "review"  # type: ignore[union-attr]
+    learn = parse_openrabbit_command("@openrabbit learn Prefer bind parameters.")
+
+    assert learn is not None
+    assert learn.kind == "learn"
+    assert learn.instruction == "Prefer bind parameters."
+
+
 def test_parse_ignores_non_commands_and_empty_ask() -> None:
     assert parse_openrabbit_command("please review this") is None
     assert parse_openrabbit_command("@otherbot review") is None
-    assert parse_openrabbit_command("@openrabbit ask") is None
-    assert parse_openrabbit_command("@openrabbit learn") is None
+    assert parse_openrabbit_command("/openrabbit ask") is None
+    assert parse_openrabbit_command("/openrabbit learn") is None
 
 
 def test_in_memory_command_state_tracks_pause_ignore_and_comment_cursor() -> None:

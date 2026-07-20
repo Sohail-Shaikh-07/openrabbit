@@ -146,10 +146,10 @@ def _append_follow_up_commands(lines: list[str]) -> None:
         [
             "",
             "### Follow-up Commands",
-            "- `@openrabbit review`",
-            "- `@openrabbit full review`",
-            "- `@openrabbit improve`",
-            "- `@openrabbit ask <question>`",
-            "- `@openrabbit pause` / `@openrabbit resume`",
+            "- `/openrabbit review`",
+            "- `/openrabbit full review`",
+            "- `/openrabbit improve`",
+            "- `/openrabbit ask <question>`",
+            "- `/openrabbit pause` / `/openrabbit resume`",
         ]
     )

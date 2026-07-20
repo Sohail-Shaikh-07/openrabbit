@@ -9,7 +9,7 @@ Memory Maintenance
 - Added memory export for deterministic, secret-safe repository memory snapshots.
 - Added memory pruning by date for local SQLite review runs and findings.
 - Added `openrabbit memory --learnings` to inspect active local repository learnings.
-- Added explicit `@openrabbit learn ...` support in polling mode so maintainers can store durable review instructions.
+- Added explicit `/openrabbit learn ...` support in polling mode so maintainers can store durable review instructions.
 
 Memory Backend Design
 ---------------------
