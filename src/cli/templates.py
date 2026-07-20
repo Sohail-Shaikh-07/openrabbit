@@ -86,6 +86,40 @@ quality:
   timeout_seconds: 120
   max_output_chars: 20000
   max_diagnostics: 100
+
+knowledge:
+  connectors:
+    # Optional connectors are disabled by default. Store tokens in environment
+    # variables and reference their names here instead of writing secrets to
+    # this file.
+    mcp:
+      enabled: false
+      servers: []
+      max_items: 8
+      timeout_seconds: 10
+    web_search:
+      enabled: false
+      # Web search is routed through an explicitly configured MCP server.
+      # mcp_server: docs
+      allow_private_code_queries: false
+      max_items: 5
+    multi_repo:
+      enabled: false
+      repositories: []
+      max_items: 8
+    jira:
+      enabled: false
+      # base_url: https://example.atlassian.net
+      token_env: JIRA_API_TOKEN
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
+    linear:
+      enabled: false
+      token_env: LINEAR_API_KEY
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
 """
 
 GITIGNORE: Final[str] = """\

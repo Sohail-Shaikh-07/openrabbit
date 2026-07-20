@@ -8,6 +8,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Hardened `openrabbit improve --publish` so placeholder fixes and snippets that introduce unavailable `require_*` security dependencies are dropped instead of being posted to GitHub.
 - Added daemon lifecycle support with `openrabbit start --once`, local daemon PID metadata, stale-state cleanup, and a working `openrabbit stop --workspace ...` command.
 - Switched user-facing PR comment command examples and managed summary follow-ups to `/openrabbit ...`, while retaining legacy mention-trigger compatibility.
+- Added disabled-by-default connector configuration, a connector registry, and `openrabbit connector-health` for read-only MCP, web search, multi-repo, Jira, and Linear readiness checks.
 
 ## v1.5.0 - 2026-07-17
 

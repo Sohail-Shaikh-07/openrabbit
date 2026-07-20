@@ -23,6 +23,7 @@ from cli.commands.ask import (
     render_answer_markdown,
     run_ask_blocking,
 )
+from cli.commands.connector_health import run_connector_health_check
 from cli.commands.daemon import run_stop
 from cli.commands.describe import (
     render_description,
@@ -281,6 +282,34 @@ def model_health(
         return
     _err.print(f"[red]{detail}[/red]")
     raise typer.Exit(code=exit_codes.USER_ERROR)
+
+
+@app.command("connector-health")
+def connector_health(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+) -> None:
+    """List optional connector configuration and read-only health state."""
+    settings = _load_settings_or_exit(workspace.resolve())
+    results = run_connector_health_check(settings)  # type: ignore[arg-type]
+    has_unavailable_enabled = False
+    for result in results:
+        if result.enabled and not result.available:
+            has_unavailable_enabled = True
+        color = "green" if result.available else ("red" if result.enabled else "yellow")
+        state = (
+            "available" if result.available else ("unavailable" if result.enabled else "disabled")
+        )
+        _console.print(
+            f"[{color}]{result.name}[/{color}] "
+            f"({result.source_kind}): {state} - {result.reason}"
+        )
+    if has_unavailable_enabled:
+        raise typer.Exit(code=exit_codes.USER_ERROR)
 
 
 @app.command()

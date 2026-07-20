@@ -50,6 +50,91 @@ def test_quality_gate_settings_are_safe_by_default(scaffold_repo: Path) -> None:
     assert settings.quality.max_diagnostics == 100
 
 
+def test_connector_settings_are_disabled_by_default(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
+
+    assert settings.knowledge.connectors.mcp.enabled is False
+    assert settings.knowledge.connectors.web_search.enabled is False
+    assert settings.knowledge.connectors.multi_repo.enabled is False
+    assert settings.knowledge.connectors.jira.enabled is False
+    assert settings.knowledge.connectors.linear.enabled is False
+    assert settings.knowledge.connectors.jira.token_env == "JIRA_API_TOKEN"
+    assert settings.knowledge.connectors.linear.token_env == "LINEAR_API_KEY"
+
+
+def test_connector_settings_load_explicit_config(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        """
+knowledge:
+  connectors:
+    mcp:
+      enabled: true
+      servers:
+        - name: docs
+          transport: streamable-http
+          url: https://mcp.example.test/mcp
+          allowed_tools: [search]
+    web_search:
+      enabled: true
+      mcp_server: docs
+    multi_repo:
+      enabled: true
+      repositories:
+        - name: shared
+          path: ../shared
+    jira:
+      enabled: true
+      base_url: https://example.atlassian.net
+      token_env: TEAM_JIRA_TOKEN
+    linear:
+      enabled: true
+      token_env: TEAM_LINEAR_TOKEN
+""",
+    )
+
+    settings = load_settings(tmp_path, env={})
+
+    connectors = settings.knowledge.connectors
+    assert connectors.mcp.servers[0].name == "docs"
+    assert connectors.web_search.mcp_server == "docs"
+    assert connectors.multi_repo.repositories[0].path == "../shared"
+    assert connectors.jira.base_url == "https://example.atlassian.net"
+    assert connectors.linear.token_env == "TEAM_LINEAR_TOKEN"
+
+
+def test_connector_env_override_preserves_default_token_env(tmp_path: Path) -> None:
+    _write_config(tmp_path, "review:\n  security: true\n")
+
+    settings = load_settings(
+        tmp_path,
+        env={"OPENRABBIT_KNOWLEDGE__CONNECTORS__LINEAR__ENABLED": "true"},
+    )
+
+    assert settings.knowledge.connectors.linear.enabled is True
+    assert settings.knowledge.connectors.linear.token_env == "LINEAR_API_KEY"
+
+
+def test_connector_settings_reject_inline_secrets(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        """
+knowledge:
+  connectors:
+    jira:
+      enabled: true
+      token: secret-value
+""",
+    )
+
+    with pytest.raises(ValueError) as exc:
+        load_settings(tmp_path, env={})
+
+    message = str(exc.value)
+    assert "knowledge.connectors.jira.token" in message
+    assert "secret-value" not in message
+
+
 def test_quality_gate_settings_validate_tools(tmp_path: Path) -> None:
     _write_config(
         tmp_path,

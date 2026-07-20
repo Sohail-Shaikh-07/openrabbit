@@ -7,7 +7,7 @@ variables prefixed with ``OPENRABBIT_`` override individual fields using a
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -232,3 +232,186 @@ class QualitySettings(BaseModel):
             if tool not in normalized:
                 normalized.append(tool)
         return normalized
+
+
+class McpServerSettings(BaseModel):
+    """One explicitly configured MCP server endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    transport: Literal["stdio", "streamable-http"] = "stdio"
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    url: str | None = None
+    allowed_tools: list[str] = Field(default_factory=list)
+    allowed_resources: list[str] = Field(default_factory=list)
+    timeout_seconds: int = Field(default=10, ge=1, le=120)
+
+    @field_validator("name")
+    @classmethod
+    def _non_empty_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("MCP server name must be non-empty")
+        return stripped
+
+    @field_validator("command", "url")
+    @classmethod
+    def _normalise_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("allowed_tools", "allowed_resources", "args")
+    @classmethod
+    def _normalise_text_list(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @model_validator(mode="after")
+    def _validate_transport_shape(self) -> Self:
+        if self.transport == "stdio" and not self.command:
+            raise ValueError("stdio MCP servers require command")
+        if self.transport == "streamable-http":
+            if not self.url:
+                raise ValueError("streamable-http MCP servers require url")
+            if not self.url.startswith(("http://", "https://")):
+                raise ValueError("MCP server url must start with http:// or https://")
+        return self
+
+
+class McpConnectorSettings(BaseModel):
+    """Runtime configuration for MCP-backed knowledge connectors."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    servers: list[McpServerSettings] = Field(default_factory=list)
+    max_items: int = Field(default=8, ge=1, le=50)
+    timeout_seconds: int = Field(default=10, ge=1, le=120)
+
+
+class WebSearchConnectorSettings(BaseModel):
+    """Configuration for opt-in web search through an MCP server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    mcp_server: str | None = None
+    allow_private_code_queries: bool = False
+    max_items: int = Field(default=5, ge=1, le=20)
+
+    @field_validator("mcp_server")
+    @classmethod
+    def _normalise_mcp_server(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class MultiRepoReferenceSettings(BaseModel):
+    """One explicitly allowed repository used for optional context."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    path: str | None = None
+    repo: str | None = None
+
+    @field_validator("name", "path", "repo")
+    @classmethod
+    def _normalise_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("repo")
+    @classmethod
+    def _validate_repo_handle(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value.count("/") != 1 or not all(part.strip() for part in value.split("/")):
+            raise ValueError("multi_repo repositories must use owner/repo form")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> Self:
+        if not self.path and not self.repo:
+            raise ValueError("multi_repo repositories require path or repo")
+        return self
+
+
+class MultiRepoConnectorSettings(BaseModel):
+    """Configuration for explicit multi-repository context loading."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    repositories: list[MultiRepoReferenceSettings] = Field(default_factory=list)
+    max_items: int = Field(default=8, ge=1, le=50)
+
+
+class IssueTrackerConnectorSettings(BaseModel):
+    """Shared settings for Jira and Linear connector health."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    base_url: str | None = None
+    token_env: str
+    write_enabled: bool = False
+    managed_comments: bool = True
+    max_items: int = Field(default=8, ge=1, le=50)
+
+    @field_validator("base_url")
+    @classmethod
+    def _normalise_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().rstrip("/")
+        if stripped and not stripped.startswith(("http://", "https://")):
+            raise ValueError("connector base_url must start with http:// or https://")
+        return stripped or None
+
+    @field_validator("token_env")
+    @classmethod
+    def _non_empty_token_env(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("connector token_env must be a non-empty environment variable name")
+        return stripped
+
+
+class JiraConnectorSettings(IssueTrackerConnectorSettings):
+    """Jira connector settings with Jira's default token env name."""
+
+    token_env: str = "JIRA_API_TOKEN"
+
+
+class LinearConnectorSettings(IssueTrackerConnectorSettings):
+    """Linear connector settings with Linear's default token env name."""
+
+    token_env: str = "LINEAR_API_KEY"
+
+
+class KnowledgeConnectorsSettings(BaseModel):
+    """Optional connector settings grouped under ``knowledge.connectors``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mcp: McpConnectorSettings = McpConnectorSettings()
+    web_search: WebSearchConnectorSettings = WebSearchConnectorSettings()
+    multi_repo: MultiRepoConnectorSettings = MultiRepoConnectorSettings()
+    jira: JiraConnectorSettings = JiraConnectorSettings()
+    linear: LinearConnectorSettings = LinearConnectorSettings()
+
+
+class KnowledgeSettings(BaseModel):
+    """Optional knowledge-source configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    connectors: KnowledgeConnectorsSettings = KnowledgeConnectorsSettings()

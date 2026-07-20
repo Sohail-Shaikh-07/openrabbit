@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from configs.schema import (
     GithubSettings,
+    KnowledgeSettings,
     MemorySettings,
     ModelSettings,
     PollingSettings,
@@ -36,6 +37,8 @@ ENV_PREFIX = "OPENRABBIT_"
 ENV_DELIMITER = "__"
 _MODEL_SECRET_KEY_MARKERS = ("api_key", "secret", "token", "password", "credential")
 _MODEL_SECRET_SAFE_KEYS = {"api_key_env"}
+_CONNECTOR_SECRET_KEY_MARKERS = ("api_key", "secret", "token", "password", "credential")
+_CONNECTOR_SECRET_SAFE_KEYS = {"api_key_env", "token_env"}
 
 
 class ConfigNotFoundError(FileNotFoundError):
@@ -54,6 +57,7 @@ class Settings(BaseModel):
     repository: RepositorySettings = RepositorySettings()
     memory: MemorySettings = MemorySettings()
     quality: QualitySettings = QualitySettings()
+    knowledge: KnowledgeSettings = KnowledgeSettings()
     _config_dir: Path | None = PrivateAttr(default=None)
     _workspace_root: Path | None = PrivateAttr(default=None)
 
@@ -176,6 +180,7 @@ def load_settings(
     raw = _deep_merge(user_raw, repo_raw)
     overrides = _env_overrides(env_map)
     _reject_inline_model_secrets(overrides)
+    _reject_inline_connector_secrets(overrides)
     merged = _deep_merge(raw, overrides)
     settings = Settings.model_validate(merged)
     if repo_config_path is not None:
@@ -203,6 +208,7 @@ def _read_optional_config(path: Path | None) -> dict[str, Any]:
         return {}
     raw = _read_yaml(path)
     _reject_inline_model_secrets(raw)
+    _reject_inline_connector_secrets(raw)
     return raw
 
 
@@ -280,6 +286,29 @@ def _reject_inline_model_secrets(config: dict[str, Any]) -> None:
                 f"model.{key} is not supported. Store provider secrets in an "
                 "environment variable and set model.api_key_env to that variable name."
             )
+
+
+def _reject_inline_connector_secrets(config: dict[str, Any]) -> None:
+    knowledge_config = config.get("knowledge")
+    if isinstance(knowledge_config, dict):
+        _reject_inline_secret_keys(knowledge_config, path=("knowledge",))
+
+
+def _reject_inline_secret_keys(config: dict[str, Any], *, path: tuple[str, ...]) -> None:
+    for key, value in config.items():
+        key_text = str(key).strip()
+        normalized = key_text.lower()
+        current_path = (*path, key_text)
+        if normalized not in _CONNECTOR_SECRET_SAFE_KEYS and any(
+            marker in normalized for marker in _CONNECTOR_SECRET_KEY_MARKERS
+        ):
+            dotted = ".".join(current_path)
+            raise ValueError(
+                f"{dotted} is not supported. Store connector secrets in an "
+                "environment variable and set token_env or api_key_env to that variable name."
+            )
+        if isinstance(value, dict):
+            _reject_inline_secret_keys(value, path=current_path)
 
 
 def _persistent_windows_env(name: str) -> str | None:
