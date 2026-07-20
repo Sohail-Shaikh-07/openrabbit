@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `model-health`, `review`, `describe`, `ask`, `improve`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -17,7 +17,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | Quality gates | Optional local Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics and bounded timeouts |
 | PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, sanitized GitHub PR conversation context |
-| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection, optional knowledge connector contracts |
+| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection, optional knowledge connector contracts, disabled-by-default connector health checks |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
 
@@ -230,6 +230,36 @@ quality:
   timeout_seconds: 120
   max_output_chars: 20000
   max_diagnostics: 100
+
+knowledge:
+  connectors:
+    mcp:
+      enabled: false
+      servers: []
+      max_items: 8
+      timeout_seconds: 10
+    web_search:
+      enabled: false
+      # mcp_server: docs
+      allow_private_code_queries: false
+      max_items: 5
+    multi_repo:
+      enabled: false
+      repositories: []
+      max_items: 8
+    jira:
+      enabled: false
+      # base_url: https://example.atlassian.net
+      token_env: JIRA_API_TOKEN
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
+    linear:
+      enabled: false
+      token_env: LINEAR_API_KEY
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
 ```
 
 For the official OpenAI API, use `provider: openai` and put the API model in `model_name`. You do not need `base_model` for API providers:
@@ -262,6 +292,14 @@ openrabbit model-health --workspace .
 ```
 
 The command prints the configured provider and model, then exits non-zero with an actionable message if Ollama is unreachable, an API key is missing, `base_url` is invalid, or the provider returns an empty response.
+
+Check optional connector configuration without contacting external services:
+
+```bash
+openrabbit connector-health --workspace .
+```
+
+The command lists MCP, web search, multi-repo, Jira, and Linear connector state. Disabled connectors report `disabled` and exit successfully. Enabled connectors must have the required local configuration and token environment variables present, otherwise the command exits non-zero without printing secret values.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
 
@@ -302,7 +340,7 @@ Use the user config for repeated local defaults such as model provider, model na
 
 OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. Model-facing commands also fetch current GitHub PR reviews, inline review comments, and issue comments as sanitized conversation context when memory is enabled. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md). Future graph and vector memory plugins are planned as optional local-first adapters, documented in [docs/memory-backends.md](docs/memory-backends.md).
 
-Optional MCP, web search, multi-repo, Jira, and Linear knowledge connector boundaries are documented in [docs/knowledge-connectors.md](docs/knowledge-connectors.md). These connectors are design-time extension points today; no external knowledge service is required for the default review loop.
+Optional MCP, web search, multi-repo, Jira, and Linear knowledge connector boundaries are documented in [docs/knowledge-connectors.md](docs/knowledge-connectors.md). OpenRabbit can now validate their disabled-by-default configuration with `openrabbit connector-health`, but no external connector context is used by the review loop until later v1.6 runtime tasks.
 
 Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 

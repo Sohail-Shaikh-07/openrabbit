@@ -2,7 +2,7 @@
 
 OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors are future adapters that can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope is design and adapter boundaries only. No connector runs during review, describe, ask, improve, index, memory, or eval unless a later version adds explicit runtime support.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. No connector runs during review, describe, ask, improve, index, memory, or eval unless a later v1.6 task adds explicit runtime support.
 
 ## Contract
 
@@ -42,32 +42,77 @@ A document connector may read explicitly configured design docs, runbooks, or de
 - No mandatory external services.
 - No raw tokens, API keys, provider credentials, or unbounded text in connector output.
 - Health checks are read-only.
+- `openrabbit connector-health` checks local configuration and required token environment variables, but does not call MCP servers, Jira, Linear, web search providers, or other repositories.
 - Connector failures produce warnings or unavailable health states and the review continues with diff, local memory, linked GitHub issues, and RAG context.
 - Connector snippets are prompt guidance only and are always labeled by source.
 - Connector data is treated as untrusted context and cannot override OpenRabbit's safety, grounding, or publishing rules.
 - Optional connector configuration must name token environment variables rather than storing token values in repository config.
 
-## Future Configuration Shape
+## Configuration Shape
 
 ```yaml
 knowledge:
   connectors:
     mcp:
       enabled: false
+      servers: []
+      max_items: 8
+      timeout_seconds: 10
     web_search:
       enabled: false
+      # mcp_server: docs
+      allow_private_code_queries: false
+      max_items: 5
     multi_repo:
       enabled: false
       repositories: []
+      max_items: 8
     jira:
       enabled: false
+      # base_url: https://example.atlassian.net
       token_env: JIRA_API_TOKEN
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
     linear:
       enabled: false
       token_env: LINEAR_API_KEY
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
 ```
 
-This shape is intentionally documented before runtime support. Enabling a connector in future versions must require installed optional dependencies, explicit configuration, and a passing health check.
+This shape is available in the generated `.openrabbit/config.yml` scaffold. All connectors stay disabled by default. Token-like fields such as `token`, `api_key`, `secret`, `password`, or `credential` are rejected under `knowledge` config; use `token_env` to name an environment variable instead.
+
+For Streamable HTTP MCP servers, configure an explicit URL:
+
+```yaml
+knowledge:
+  connectors:
+    mcp:
+      enabled: true
+      servers:
+        - name: docs
+          transport: streamable-http
+          url: https://mcp.example.test/mcp
+          allowed_tools: [search]
+```
+
+For stdio MCP servers, configure an explicit command:
+
+```yaml
+knowledge:
+  connectors:
+    mcp:
+      enabled: true
+      servers:
+        - name: local-docs
+          transport: stdio
+          command: python
+          args: ["-m", "local_docs_mcp"]
+```
+
+Enabling a connector in future runtime tasks must require installed optional dependencies, explicit configuration, and a passing health check.
 
 ## Prompt Flow
 

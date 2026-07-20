@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from configs.schema import (
     GithubSettings,
+    KnowledgeSettings,
     ModelSettings,
     PollingSettings,
     RepositorySettings,
@@ -26,6 +27,7 @@ __all__ = [
     "USER_CONFIG_DIR",
     "ConfigNotFoundError",
     "GithubSettings",
+    "KnowledgeSettings",
     "ModelSettings",
     "PollingSettings",
     "RepositorySettings",
