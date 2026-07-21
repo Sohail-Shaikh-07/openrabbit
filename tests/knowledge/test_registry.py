@@ -88,3 +88,51 @@ def test_registry_reports_enabled_mcp_runtime_missing_optional_sdk(
     assert health["mcp"].enabled is True
     assert health["mcp"].available is False
     assert health["mcp"].reason == "optional mcp package is not installed"
+
+
+def test_registry_reports_enabled_web_search_when_mcp_disabled() -> None:
+    settings = Settings(
+        knowledge=KnowledgeSettings.model_validate(
+            {"connectors": {"web_search": {"enabled": True, "mcp_server": "search"}}}
+        )
+    )
+    registry = build_connector_registry(settings)
+
+    health = {item.name: item for item in registry.check_health(env={})}
+
+    assert health["web_search"].enabled is True
+    assert health["web_search"].available is False
+    assert health["web_search"].reason == "MCP connector is disabled"
+
+
+def test_registry_reports_enabled_web_search_missing_optional_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        knowledge=KnowledgeSettings.model_validate(
+            {
+                "connectors": {
+                    "mcp": {
+                        "enabled": True,
+                        "servers": [
+                            {
+                                "name": "search",
+                                "transport": "streamable-http",
+                                "url": "https://mcp.example.test/mcp",
+                                "allowed_tools": ["web_search"],
+                            }
+                        ],
+                    },
+                    "web_search": {"enabled": True, "mcp_server": "search"},
+                }
+            }
+        )
+    )
+    registry = build_connector_registry(settings)
+    monkeypatch.setattr("knowledge.web_search.mcp_sdk_available", lambda: False)
+
+    health = {item.name: item for item in registry.check_health(env={})}
+
+    assert health["web_search"].enabled is True
+    assert health["web_search"].available is False
+    assert health["web_search"].reason == "optional mcp package is not installed"

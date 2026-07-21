@@ -15,6 +15,7 @@ from knowledge.registry import (
     KnowledgeConnectorRegistry,
     build_connector_registry,
 )
+from knowledge.web_search import McpWebSearchConnector
 
 __all__ = [
     "ConnectorHealthResult",
@@ -26,6 +27,7 @@ __all__ = [
     "KnowledgeSourceKind",
     "McpConnectorRuntime",
     "McpServerHealth",
+    "McpWebSearchConnector",
     "build_connector_registry",
     "mcp_sdk_available",
     "normalize_knowledge_items",

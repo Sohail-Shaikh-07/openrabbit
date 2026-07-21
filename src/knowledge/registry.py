@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from configs.settings import Settings
-from knowledge.connectors import KnowledgeSourceKind
+from knowledge.connectors import KnowledgeConnector, KnowledgeSourceKind
 from knowledge.mcp_runtime import McpConnectorRuntime
+from knowledge.web_search import McpWebSearchConnector
 
 
 class ConnectorHealthProvider(Protocol):
@@ -58,6 +59,7 @@ def build_connector_registry(settings: Settings) -> KnowledgeConnectorRegistry:
                 enabled=connectors.web_search.enabled,
                 configured=bool(connectors.web_search.mcp_server),
                 missing_reason="no MCP server selected for web search",
+                runtime=McpWebSearchConnector(connectors.web_search, connectors.mcp),
             ),
             _StaticConnectorHealthProvider(
                 name="multi_repo",
@@ -93,7 +95,7 @@ class _StaticConnectorHealthProvider:
     enabled: bool
     configured: bool
     missing_reason: str
-    runtime: McpConnectorRuntime | None = None
+    runtime: KnowledgeConnector | None = None
 
     def check_health(self, env: dict[str, str] | None = None) -> ConnectorHealthResult:
         del env

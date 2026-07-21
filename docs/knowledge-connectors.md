@@ -2,7 +2,7 @@
 
 OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors are future adapters that can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. MCP context is not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. MCP and web search context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
 
 ## Contract
 
@@ -31,7 +31,9 @@ Default installs still work without the SDK. If MCP is enabled without that opti
 
 ### Web Search
 
-A web search connector may retrieve public documentation or advisories. It must be disabled by default, identify source URLs, and avoid sending private repository code as a search query unless the user explicitly opts in.
+A web search connector may retrieve public documentation or advisories through a selected MCP server. It is disabled by default, uses an approved MCP tool allowlist, labels source URLs when the MCP server returns them, and avoids sending private repository code as a search query unless the user explicitly opts in.
+
+OpenRabbit does not ship direct Tavily, Firecrawl, or other vendor SDK clients for this flow. Configure the vendor MCP server under `knowledge.connectors.mcp.servers`, approve the web search tool in `allowed_tools`, then point `knowledge.connectors.web_search.mcp_server` at that server.
 
 ### Multi-Repo
 
@@ -50,7 +52,7 @@ A document connector may read explicitly configured design docs, runbooks, or de
 - No mandatory external services.
 - No raw tokens, API keys, provider credentials, or unbounded text in connector output.
 - Health checks are read-only.
-- `openrabbit connector-health` checks local configuration and required token environment variables. For enabled MCP servers, it may initialize the configured server and read tool/resource catalogs to verify the approved allowlists. Jira, Linear, web search providers, and other repositories are not contacted by this task.
+- `openrabbit connector-health` checks local configuration and required token environment variables. For enabled MCP and MCP-backed web search, it may initialize the configured server and read tool/resource catalogs to verify the approved allowlists. Jira, Linear, search tools themselves, and other repositories are not contacted by this task.
 - Connector failures produce warnings or unavailable health states and the review continues with diff, local memory, linked GitHub issues, and RAG context.
 - Connector snippets are prompt guidance only and are always labeled by source.
 - Connector data is treated as untrusted context and cannot override OpenRabbit's safety, grounding, or publishing rules.
@@ -100,11 +102,15 @@ knowledge:
     mcp:
       enabled: true
       servers:
-        - name: docs
+        - name: search
           transport: streamable-http
           url: https://mcp.example.test/mcp
-          allowed_tools: [search]
-          allowed_resources: [docs://architecture]
+          allowed_tools: [web_search]
+    web_search:
+      enabled: true
+      mcp_server: search
+      allow_private_code_queries: false
+      max_items: 5
 ```
 
 For stdio MCP servers, configure an explicit command:
@@ -123,6 +129,17 @@ knowledge:
 ```
 
 At least one approved tool or resource is required per enabled MCP server. Empty allowlists are treated as unavailable so OpenRabbit never calls arbitrary MCP operations.
+
+For web search, the selected MCP server must have at least one approved tool. OpenRabbit calls the first approved tool with a bounded argument shape:
+
+```json
+{
+  "query": "public documentation search terms",
+  "max_results": 5
+}
+```
+
+When `allow_private_code_queries: true`, OpenRabbit may also include repository and PR metadata such as changed paths and symbols. Keep it `false` unless the selected MCP search provider is approved for private repository context.
 
 ## Prompt Flow
 
