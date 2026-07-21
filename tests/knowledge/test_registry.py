@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from configs import Settings
 from configs.schema import KnowledgeSettings
 from knowledge.registry import build_connector_registry
@@ -54,3 +56,35 @@ def test_registry_reports_enabled_linear_as_configured_when_token_env_exists() -
     assert health["linear"].enabled is True
     assert health["linear"].available is True
     assert health["linear"].reason == "configured"
+
+
+def test_registry_reports_enabled_mcp_runtime_missing_optional_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        knowledge=KnowledgeSettings.model_validate(
+            {
+                "connectors": {
+                    "mcp": {
+                        "enabled": True,
+                        "servers": [
+                            {
+                                "name": "docs",
+                                "transport": "streamable-http",
+                                "url": "https://mcp.example.test/mcp",
+                                "allowed_resources": ["docs://architecture"],
+                            }
+                        ],
+                    }
+                }
+            }
+        )
+    )
+    registry = build_connector_registry(settings)
+    monkeypatch.setattr("knowledge.mcp_runtime.mcp_sdk_available", lambda: False)
+
+    health = {item.name: item for item in registry.check_health(env={})}
+
+    assert health["mcp"].enabled is True
+    assert health["mcp"].available is False
+    assert health["mcp"].reason == "optional mcp package is not installed"

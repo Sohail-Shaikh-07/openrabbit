@@ -2,7 +2,7 @@
 
 OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors are future adapters that can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. No connector runs during review, describe, ask, improve, index, memory, or eval unless a later v1.6 task adds explicit runtime support.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. MCP context is not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
 
 ## Contract
 
@@ -19,7 +19,15 @@ Connectors return untrusted context. They do not change the required model outpu
 
 ### MCP
 
-An MCP connector may query explicitly configured local or remote MCP servers for docs, tickets, architecture notes, or product context. It must use user-approved server configuration and must fail open when a server is unavailable.
+An MCP connector may query explicitly configured local or remote MCP servers for docs, tickets, architecture notes, or product context. It uses only the approved `allowed_tools` and `allowed_resources` configured for each server, bounds each operation with the server timeout, and must fail open when a server is unavailable.
+
+The MCP Python SDK is optional. Install connector extras before enabling MCP runtime checks:
+
+```bash
+poetry install --with connectors
+```
+
+Default installs still work without the SDK. If MCP is enabled without that optional dependency, `openrabbit connector-health` reports the connector as unavailable and exits non-zero without running a review.
 
 ### Web Search
 
@@ -42,7 +50,7 @@ A document connector may read explicitly configured design docs, runbooks, or de
 - No mandatory external services.
 - No raw tokens, API keys, provider credentials, or unbounded text in connector output.
 - Health checks are read-only.
-- `openrabbit connector-health` checks local configuration and required token environment variables, but does not call MCP servers, Jira, Linear, web search providers, or other repositories.
+- `openrabbit connector-health` checks local configuration and required token environment variables. For enabled MCP servers, it may initialize the configured server and read tool/resource catalogs to verify the approved allowlists. Jira, Linear, web search providers, and other repositories are not contacted by this task.
 - Connector failures produce warnings or unavailable health states and the review continues with diff, local memory, linked GitHub issues, and RAG context.
 - Connector snippets are prompt guidance only and are always labeled by source.
 - Connector data is treated as untrusted context and cannot override OpenRabbit's safety, grounding, or publishing rules.
@@ -96,6 +104,7 @@ knowledge:
           transport: streamable-http
           url: https://mcp.example.test/mcp
           allowed_tools: [search]
+          allowed_resources: [docs://architecture]
 ```
 
 For stdio MCP servers, configure an explicit command:
@@ -110,9 +119,10 @@ knowledge:
           transport: stdio
           command: python
           args: ["-m", "local_docs_mcp"]
+          allowed_resources: [docs://architecture]
 ```
 
-Enabling a connector in future runtime tasks must require installed optional dependencies, explicit configuration, and a passing health check.
+At least one approved tool or resource is required per enabled MCP server. Empty allowlists are treated as unavailable so OpenRabbit never calls arbitrary MCP operations.
 
 ## Prompt Flow
 

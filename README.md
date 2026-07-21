@@ -293,13 +293,19 @@ openrabbit model-health --workspace .
 
 The command prints the configured provider and model, then exits non-zero with an actionable message if Ollama is unreachable, an API key is missing, `base_url` is invalid, or the provider returns an empty response.
 
-Check optional connector configuration without contacting external services:
+Check optional connector configuration:
 
 ```bash
 openrabbit connector-health --workspace .
 ```
 
-The command lists MCP, web search, multi-repo, Jira, and Linear connector state. Disabled connectors report `disabled` and exit successfully. Enabled connectors must have the required local configuration and token environment variables present, otherwise the command exits non-zero without printing secret values.
+The command lists MCP, web search, multi-repo, Jira, and Linear connector state. Disabled connectors report `disabled` and exit successfully. Enabled connectors must have the required local configuration and token environment variables present, otherwise the command exits non-zero without printing secret values. Enabled MCP servers also require the optional MCP SDK and at least one approved tool or resource allowlist:
+
+```bash
+poetry install --with connectors
+```
+
+When MCP is enabled, connector health may initialize the configured MCP server and read its tool/resource catalog. It does not run unapproved MCP operations, and later v1.6 tasks will decide where retrieved MCP snippets enter review prompts.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
 
