@@ -67,6 +67,12 @@ respx = "^0.23.1"
 sacrebleu = ">=2.3"
 rouge-score = ">=0.1"
 
+[tool.poetry.group.connectors]
+optional = true
+
+[tool.poetry.group.connectors.dependencies]
+mcp = ">=1,<2"
+
 # Heavy ML stack for QLoRA fine-tuning (Phase 5). Optional and NOT installed in
 # CI: bitsandbytes needs CUDA and torch is multi-GB. Install on the GPU machine
 # with `poetry install --with finetuning` before running scripts/train.py.

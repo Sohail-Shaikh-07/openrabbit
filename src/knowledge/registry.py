@@ -8,6 +8,7 @@ from typing import Protocol
 
 from configs.settings import Settings
 from knowledge.connectors import KnowledgeSourceKind
+from knowledge.mcp_runtime import McpConnectorRuntime
 
 
 class ConnectorHealthProvider(Protocol):
@@ -49,6 +50,7 @@ def build_connector_registry(settings: Settings) -> KnowledgeConnectorRegistry:
                 enabled=connectors.mcp.enabled,
                 configured=bool(connectors.mcp.servers),
                 missing_reason="no MCP servers configured",
+                runtime=McpConnectorRuntime(connectors.mcp),
             ),
             _StaticConnectorHealthProvider(
                 name="web_search",
@@ -91,6 +93,7 @@ class _StaticConnectorHealthProvider:
     enabled: bool
     configured: bool
     missing_reason: str
+    runtime: McpConnectorRuntime | None = None
 
     def check_health(self, env: dict[str, str] | None = None) -> ConnectorHealthResult:
         del env
@@ -109,6 +112,15 @@ class _StaticConnectorHealthProvider:
                 available=False,
                 source_kind=self.source_kind,
                 reason=self.missing_reason,
+            )
+        if self.runtime is not None:
+            health = self.runtime.is_available()
+            return ConnectorHealthResult(
+                name=self.name,
+                enabled=True,
+                available=health.available,
+                source_kind=self.source_kind,
+                reason=health.reason,
             )
         return ConnectorHealthResult(
             name=self.name,

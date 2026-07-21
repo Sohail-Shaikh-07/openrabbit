@@ -9,6 +9,7 @@ from knowledge.connectors import (
     normalize_knowledge_items,
     sanitize_knowledge_text,
 )
+from knowledge.mcp_runtime import McpConnectorRuntime, McpServerHealth, mcp_sdk_available
 from knowledge.registry import (
     ConnectorHealthResult,
     KnowledgeConnectorRegistry,
@@ -23,7 +24,10 @@ __all__ = [
     "KnowledgeConnectorRequest",
     "KnowledgeItem",
     "KnowledgeSourceKind",
+    "McpConnectorRuntime",
+    "McpServerHealth",
     "build_connector_registry",
+    "mcp_sdk_available",
     "normalize_knowledge_items",
     "sanitize_knowledge_text",
 ]
