@@ -305,7 +305,7 @@ The command lists MCP, web search, multi-repo, Jira, and Linear connector state.
 poetry install --with connectors
 ```
 
-When MCP is enabled, connector health may initialize the configured MCP server and read its tool/resource catalog. It does not run unapproved MCP operations, and later v1.6 tasks will decide where retrieved MCP snippets enter review prompts.
+When MCP or MCP-backed web search is enabled, connector health may initialize the configured MCP server and read its tool/resource catalog. It does not run unapproved MCP operations or execute a live web search. Web search uses a selected MCP server and an approved tool allowlist instead of direct Tavily, Firecrawl, or other vendor SDK clients. Later v1.6 tasks will decide where retrieved connector snippets enter review prompts.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
 
