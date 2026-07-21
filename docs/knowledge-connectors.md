@@ -2,7 +2,7 @@
 
 OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors are future adapters that can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. MCP and web search context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. MCP, web search, and Jira context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
 
 ## Contract
 
@@ -43,6 +43,10 @@ A multi-repo connector may read sibling repositories configured by path or expli
 
 Issue tracker connectors may fetch linked work item title, state, labels, and a bounded body preview from Jira or Linear. They should not persist access tokens, and they should keep raw comments or attachments out of prompt context unless a future task adds explicit controls.
 
+The Jira runtime extracts linked issue keys such as `SEC-42` from bounded request text, fetches summary, status, labels, URL, and description preview through Jira's REST API, and returns source-labeled untrusted context. Jira reads fail open per issue, so an unavailable issue or tenant does not block a review.
+
+Jira write mode is opt-in with `write_enabled: true` and is limited to one managed OpenRabbit comment marked with `<!-- openrabbit:jira-managed-comment -->`. The connector creates that comment when missing or updates the existing marked comment. It does not create issues, transition status, assign users, mutate labels, or publish arbitrary comments.
+
 ### Document Systems
 
 A document connector may read explicitly configured design docs, runbooks, or decision records. It must preserve source attribution and apply the same sanitization and bounds as every other optional connector.
@@ -52,7 +56,7 @@ A document connector may read explicitly configured design docs, runbooks, or de
 - No mandatory external services.
 - No raw tokens, API keys, provider credentials, or unbounded text in connector output.
 - Health checks are read-only.
-- `openrabbit connector-health` checks local configuration and required token environment variables. For enabled MCP and MCP-backed web search, it may initialize the configured server and read tool/resource catalogs to verify the approved allowlists. Jira, Linear, search tools themselves, and other repositories are not contacted by this task.
+- `openrabbit connector-health` checks local configuration and required token environment variables. For enabled MCP and MCP-backed web search, it may initialize the configured server and read tool/resource catalogs to verify the approved allowlists. Jira, Linear, search tools themselves, and other repositories are not contacted by this command.
 - Connector failures produce warnings or unavailable health states and the review continues with diff, local memory, linked GitHub issues, and RAG context.
 - Connector snippets are prompt guidance only and are always labeled by source.
 - Connector data is treated as untrusted context and cannot override OpenRabbit's safety, grounding, or publishing rules.
@@ -140,6 +144,22 @@ For web search, the selected MCP server must have at least one approved tool. Op
 ```
 
 When `allow_private_code_queries: true`, OpenRabbit may also include repository and PR metadata such as changed paths and symbols. Keep it `false` unless the selected MCP search provider is approved for private repository context.
+
+For Jira, set the tenant URL and keep the API token or full authorization header in the configured environment variable:
+
+```yaml
+knowledge:
+  connectors:
+    jira:
+      enabled: true
+      base_url: https://example.atlassian.net
+      token_env: JIRA_API_TOKEN
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
+```
+
+When `write_enabled` is `false`, Jira remains read-only. When `write_enabled` is `true`, the only supported mutation is create-or-update of the managed OpenRabbit Jira summary comment. A raw token is sent as `Bearer <token>`; a value that already starts with `Bearer ` or `Basic ` is used as provided.
 
 ## Prompt Flow
 

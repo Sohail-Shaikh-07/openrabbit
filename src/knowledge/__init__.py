@@ -9,6 +9,14 @@ from knowledge.connectors import (
     normalize_knowledge_items,
     sanitize_knowledge_text,
 )
+from knowledge.jira import (
+    MANAGED_COMMENT_MARKER,
+    JiraClientError,
+    JiraCommentPublishResult,
+    JiraConnector,
+    JiraRestClient,
+    extract_jira_issue_keys,
+)
 from knowledge.mcp_runtime import McpConnectorRuntime, McpServerHealth, mcp_sdk_available
 from knowledge.registry import (
     ConnectorHealthResult,
@@ -18,7 +26,12 @@ from knowledge.registry import (
 from knowledge.web_search import McpWebSearchConnector
 
 __all__ = [
+    "MANAGED_COMMENT_MARKER",
     "ConnectorHealthResult",
+    "JiraClientError",
+    "JiraCommentPublishResult",
+    "JiraConnector",
+    "JiraRestClient",
     "KnowledgeConnector",
     "KnowledgeConnectorHealth",
     "KnowledgeConnectorRegistry",
@@ -29,6 +42,7 @@ __all__ = [
     "McpServerHealth",
     "McpWebSearchConnector",
     "build_connector_registry",
+    "extract_jira_issue_keys",
     "mcp_sdk_available",
     "normalize_knowledge_items",
     "sanitize_knowledge_text",
