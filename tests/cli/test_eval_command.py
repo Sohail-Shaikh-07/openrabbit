@@ -76,6 +76,9 @@ async def test_run_eval_writes_json_and_markdown_reports(
             "learning_count": 2 if number == 1 else 0,
             "guideline_sources": ["AGENTS.md"] if number == 1 else [],
             "linked_issue_count": 1 if number == 1 else 0,
+            "connector_context": (
+                {"items": 2, "sources": {"jira": 1, "multi_repo": 1}} if number == 1 else {}
+            ),
             "quality_gates": (
                 [
                     {
@@ -118,6 +121,8 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["totals"]["findings"] == 2
     assert data["totals"]["learnings"] == 2
     assert data["totals"]["linked_issues"] == 1
+    assert data["totals"]["connector_context_items"] == 2
+    assert data["totals"]["connector_context_sources"] == {"jira": 1, "multi_repo": 1}
     assert data["totals"]["guideline_sources"] == ["AGENTS.md"]
     assert data["runs"][0]["command"] == "openrabbit review --pr 1 --repo o/r --dry-run"
     assert data["runs"][0]["scenario_group"] == "default"
@@ -126,6 +131,8 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["runs"][0]["learning_count"] == 2
     assert data["runs"][0]["guideline_sources"] == ["AGENTS.md"]
     assert data["runs"][0]["linked_issue_count"] == 1
+    assert data["runs"][0]["connector_context_items"] == 2
+    assert data["runs"][0]["connector_context_sources"] == {"jira": 1, "multi_repo": 1}
     assert data["runs"][0]["categories"] == {"security": 1, "tests": 1}
     assert data["runs"][0]["quality_gates"][0]["tool"] == "ruff"
     assert data["runs"][0]["quality_status_counts"] == {"failed": 1}
@@ -134,6 +141,8 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["runs"][1]["skipped_paths_count"] == 2
     assert data["runs"][1]["scenario_group"] == "default"
     assert data["dashboard"]["cards"]["prs"] == 2
+    assert data["dashboard"]["cards"]["connector_context_items"] == 2
+    assert data["dashboard"]["charts"]["connector_sources"] == {"jira": 1, "multi_repo": 1}
     assert data["dashboard"]["charts"]["findings_by_pr"] == [
         {"pr": 1, "findings": 2, "scenario_group": "default"},
         {"pr": 2, "findings": 0, "scenario_group": "default"},
@@ -142,6 +151,8 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["command_outcomes"]["failures"] == 0
     assert data["context_sources"]["context_modes"] == {"loaded": 1, "diff only": 1}
     assert data["context_sources"]["memory_contexts"] == {"loaded": 1, "disabled": 1}
+    assert data["context_sources"]["connector_context_items"] == 2
+    assert data["context_sources"]["connector_sources"] == {"jira": 1, "multi_repo": 1}
     assert data["tool_findings"]["tools"]["ruff"]["diagnostics"] == 2
     assert report["output_path"] == str(output)
     markdown_text = markdown.read_text(encoding="utf-8")

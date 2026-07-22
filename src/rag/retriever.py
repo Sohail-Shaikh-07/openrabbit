@@ -100,7 +100,17 @@ class RetrievalResult:
                     "kind": str(payload.get("kind", "")),
                     "score": hit.get("score"),
                 }
-                for key in ("rule_source", "scope_path", "guideline_path"):
+                for key in (
+                    "rule_source",
+                    "scope_path",
+                    "guideline_path",
+                    "connector",
+                    "connector_source_kind",
+                    "source_id",
+                    "url",
+                    "repo",
+                    "path",
+                ):
                     if key in payload:
                         row[key] = str(payload.get(key, ""))
                 if "retrieval_reason" in payload:

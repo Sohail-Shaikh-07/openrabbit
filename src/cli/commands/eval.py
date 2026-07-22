@@ -125,6 +125,9 @@ async def run_eval(
                     "learning_count": 0,
                     "guideline_sources": [],
                     "linked_issue_count": 0,
+                    "connector_context": {},
+                    "connector_context_items": 0,
+                    "connector_context_sources": {},
                     "quality_gates": [],
                     "quality_status_counts": {},
                     "quality_diagnostics_count": 0,
@@ -240,6 +243,7 @@ def _run_record_from_summary(
 ) -> dict[str, object]:
     findings = summary.get("findings")
     finding_items = findings if isinstance(findings, list) else []
+    connector_context = _object_dict(summary.get("connector_context"))
     return {
         "command": command,
         "repo": repo,
@@ -258,6 +262,9 @@ def _run_record_from_summary(
         "learning_count": _int_summary(summary, "learning_count"),
         "guideline_sources": _string_list(summary.get("guideline_sources")),
         "linked_issue_count": _int_summary(summary, "linked_issue_count"),
+        "connector_context": connector_context,
+        "connector_context_items": _coerce_int(connector_context.get("items")),
+        "connector_context_sources": _object_dict(connector_context.get("sources")),
         "quality_gates": _dict_list(summary.get("quality_gates")),
         "quality_status_counts": _object_dict(summary.get("quality_status_counts")),
         "quality_diagnostics_count": _int_summary(summary, "quality_diagnostics_count"),
@@ -288,6 +295,7 @@ def _categories(findings: list[object]) -> dict[str, int]:
 def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
     categories: dict[str, int] = {}
     quality_statuses: dict[str, int] = {}
+    connector_sources: dict[str, int] = {}
     for run in runs:
         raw_categories = run.get("categories")
         if isinstance(raw_categories, dict):
@@ -299,6 +307,12 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
                 quality_statuses[str(status)] = quality_statuses.get(str(status), 0) + _coerce_int(
                     count
                 )
+        raw_connector_sources = run.get("connector_context_sources")
+        if isinstance(raw_connector_sources, dict):
+            for source, count in raw_connector_sources.items():
+                connector_sources[str(source)] = connector_sources.get(
+                    str(source), 0
+                ) + _coerce_int(count)
     return {
         "prs": len(runs),
         "findings": sum(_int_run(run, "findings_count") for run in runs),
@@ -306,6 +320,8 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
         "skipped_paths": sum(_int_run(run, "skipped_paths_count") for run in runs),
         "learnings": sum(_int_run(run, "learning_count") for run in runs),
         "linked_issues": sum(_int_run(run, "linked_issue_count") for run in runs),
+        "connector_context_items": sum(_int_run(run, "connector_context_items") for run in runs),
+        "connector_context_sources": connector_sources,
         "guideline_sources": sorted(
             {source for run in runs for source in _string_list(run.get("guideline_sources"))}
         ),
@@ -343,11 +359,22 @@ def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
     guideline_sources = sorted(
         {source for run in runs for source in _string_list(run.get("guideline_sources"))}
     )
+    connector_sources: dict[str, int] = {}
+    for run in runs:
+        raw_sources = run.get("connector_context_sources")
+        if not isinstance(raw_sources, dict):
+            continue
+        for source, count in raw_sources.items():
+            connector_sources[str(source)] = connector_sources.get(str(source), 0) + _coerce_int(
+                count
+            )
     return {
         "context_modes": context_modes,
         "memory_contexts": memory_modes,
         "guideline_sources": guideline_sources,
         "guideline_source_count": len(guideline_sources),
+        "connector_sources": connector_sources,
+        "connector_context_items": sum(_int_run(run, "connector_context_items") for run in runs),
         "linked_issue_count": sum(_int_run(run, "linked_issue_count") for run in runs),
         "learning_count": sum(_int_run(run, "learning_count") for run in runs),
     }
@@ -384,6 +411,7 @@ def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
             "findings": _coerce_int(totals.get("findings")),
             "failures": _coerce_int(totals.get("failures")),
             "dropped_findings": _coerce_int(totals.get("dropped_findings")),
+            "connector_context_items": _coerce_int(totals.get("connector_context_items")),
             "quality_diagnostics": _coerce_int(totals.get("quality_diagnostics")),
             "runtime_ms": _coerce_float(totals.get("runtime_ms")),
         },
@@ -405,6 +433,7 @@ def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
                 for run in runs
             ],
             "context_modes": context_sources.get("context_modes", {}),
+            "connector_sources": context_sources.get("connector_sources", {}),
             "quality_statuses": totals.get("quality_status_counts", {}),
             "categories": totals.get("categories", {}),
         },
@@ -439,11 +468,12 @@ def _markdown_report(report: dict[str, object]) -> str:
         f"- PRs: {totals.get('prs', 0)}",
         f"- Findings: {totals.get('findings', 0)}",
         f"- Failures: {totals.get('failures', 0)}",
+        f"- Connector context items: {totals.get('connector_context_items', 0)}",
         f"- Quality diagnostics: {totals.get('quality_diagnostics', 0)}",
         "",
         *_markdown_dashboard_sections(report),
-        "| PR | Context | Memory | Quality | Diagnostics | Learnings | Guidelines | Linked Issues | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |",
+        "| PR | Context | Memory | Connectors | Quality | Diagnostics | Learnings | Guidelines | Linked Issues | Findings | Categories | Dropped | Skipped | Runtime ms | Failure |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |",
     ]
     runs = report.get("runs")
     if isinstance(runs, list):
@@ -451,12 +481,13 @@ def _markdown_report(report: dict[str, object]) -> str:
             if not isinstance(run, dict):
                 continue
             lines.append(
-                "| {pr} | {context} | {memory} | {quality} | {quality_diagnostics} | {learnings} | {guidelines} | "
+                "| {pr} | {context} | {memory} | {connector_items} | {quality} | {quality_diagnostics} | {learnings} | {guidelines} | "
                 "{linked_issues} | {findings} | {categories} | {dropped} | "
                 "{skipped} | {runtime} | {failure} |".format(
                     pr=run.get("pr", ""),
                     context=run.get("context_mode", ""),
                     memory=run.get("memory_context", ""),
+                    connector_items=run.get("connector_context_items", 0),
                     quality=_category_text(run.get("quality_status_counts")),
                     quality_diagnostics=run.get("quality_diagnostics_count", 0),
                     learnings=run.get("learning_count", 0),
@@ -510,6 +541,8 @@ def _markdown_dashboard_sections(report: dict[str, object]) -> list[str]:
             "",
             f"- Context modes: {_category_text(context_sources.get('context_modes'))}",
             f"- Memory contexts: {_category_text(context_sources.get('memory_contexts'))}",
+            f"- Connector context items: {context_sources.get('connector_context_items', 0)}",
+            f"- Connector sources: {_category_text(context_sources.get('connector_sources'))}",
             f"- Guideline sources: {context_sources.get('guideline_source_count', 0)}",
             f"- Linked issues: {context_sources.get('linked_issue_count', 0)}",
             "",

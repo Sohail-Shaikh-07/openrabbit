@@ -26,6 +26,7 @@ from configs.schema import QualitySettings
 from configs.settings import Settings
 from github_ import GitHubAuthError, GitHubClient, PullRequestParser, RepositoryHandle
 from github_.publisher import GitHubPublisher
+from knowledge.context import load_connector_context
 from memory.backends import (
     PullRequestMemoryBackend,
     compare_with_history_compat,
@@ -126,6 +127,7 @@ async def run_review(
     quality_results: list[ToolRunResult] = []
     quality_error: str | None = None
     skipped_paths = [item.as_dict() for item in controls_result.skipped_paths]
+    connector_context_summary: dict[str, object] = {}
 
     if run_agents and settings.quality.enabled:
         quality_runner = quality_gate_runner or run_local_quality_gates
@@ -158,6 +160,15 @@ async def run_review(
             workspace=settings.resolved_workspace_root(),
             pr_payload=payload,
         )
+        connector_context = load_connector_context(
+            settings,
+            payload,
+            repo=handle.full_name,
+            env=env,
+            retrieval_result=retrieval_result,
+        )
+        retrieval_result = connector_context.retrieval_result
+        connector_context_summary = connector_context.summary
         model_context = filter_model_review_context(
             controls_result,
             retrieval_result=retrieval_result,
@@ -286,6 +297,7 @@ async def run_review(
         "ast_unsupported_path_count": len(controls_result.unsupported_paths),
         "context_loaded": context_loaded,
         "context_provenance": context_provenance,
+        "connector_context": connector_context_summary,
         "findings": _serialize_ranked_findings(ranked, memory_comparison),
         "comments_posted": comments_posted,
         "publish_status": publish_status,
