@@ -1,8 +1,8 @@
 # OpenRabbit vs PR-Agent Gap Analysis
 
-Date: 2026-07-17
+Date: 2026-07-22
 
-This document compares the current OpenRabbit `v1.5.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
+This document compares the current OpenRabbit `v1.6.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
 
 Sources reviewed:
 
@@ -33,7 +33,7 @@ PR-Agent is a mature automation-first reviewer. It supports many hosting modes, 
 | Agents | Security, performance, architecture, bug, and test coverage agents |
 | Review quality controls | Changed-line evidence, JSON-only prompt contract, grounding to changed files/lines, duplicate removal, path filters, path-specific instructions, profiles, generated-file defaults, and AST-scoped review instructions |
 | RAG | Scanner, chunker, embeddings, Qdrant vector store, indexing command, automatic review context loading, repository guideline detection, and context provenance |
-| Knowledge sources | Local repository learnings, repository guideline files, linked GitHub issue context, sanitized PR conversation history, and optional connector contracts for future MCP, web search, multi-repo, Jira, and Linear sources |
+| Knowledge sources | Local repository learnings, repository guideline files, linked GitHub issue context, sanitized PR conversation history, and optional runtime connectors for MCP, MCP-backed web search, multi-repo context, Jira, and Linear sources |
 | Local quality gates | Optional Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics |
 | Fine-tuning | QLoRA training/evaluation/packaging pipeline for a Qwen2.5-Coder adapter |
 | Benchmarks | Runner, scorer, profiler, packaged v1.1 regression corpus, and PR-based `openrabbit eval` reports with dashboard-ready JSON, Markdown dashboards, scenario groups, quality gates, and context fields |
@@ -107,7 +107,17 @@ Recommended tasks:
 - Summarize low-risk or oversized files before agent execution.
 - Expand controls into organization-level defaults once multi-repo config is available.
 
-### 6. RAG needs deeper and more selective context packing
+### 6. Connector context now has a first runtime pass
+
+OpenRabbit v1.6 adds disabled-by-default MCP, MCP-backed web search, Jira, Linear, and multi-repo connectors. Enabled connectors provide bounded, redacted, source-labeled, untrusted context to `review`, `describe`, `ask`, `improve`, and `eval` without becoming mandatory services.
+
+Recommended tasks:
+
+- Measure connector context quality across real repositories and issue trackers.
+- Add more precise connector retrieval controls once usage patterns are clearer.
+- Keep write-back behavior limited to explicitly managed comments unless a stronger workflow is designed.
+
+### 7. RAG needs deeper and more selective context packing
 
 The review command now loads repository context automatically when Qdrant has an index available. The next gap is making context selection more precise for large repositories and large pull requests.
 
@@ -117,7 +127,7 @@ Recommended tasks:
 - Coordinate context packing with the token-aware compression task.
 - Surface which context sources were used in verbose mode.
 
-### 7. Provider breadth still needs local-runtime cleanup
+### 8. Provider breadth still needs local-runtime cleanup
 
 The review-agent pipeline now uses a shared provider contract. Ollama, the official OpenAI API, and custom OpenAI-compatible base URLs are wired through the provider factory. The public schema still lists `vllm` and `transformers` as placeholders.
 
@@ -126,7 +136,7 @@ Recommended tasks:
 - Decide whether `vllm` and `transformers` should be implemented soon or removed from the public schema until they are ready.
 - Add provider-specific health checks and error messages.
 
-### 8. Config layering now has a first pass
+### 9. Config layering now has a first pass
 
 OpenRabbit now supports built-in defaults, optional user-level config at `~/.openrabbit/config.yml`, repository config, and environment overrides with clear precedence. PR-Agent still has broader organization/global config patterns.
 
@@ -135,17 +145,16 @@ Recommended tasks:
 - Add organization or repository-default config support.
 - Consider an external config URL only with strict size, timeout, and scheme restrictions.
 
-### 9. No GitHub Action or webhook entrypoint
+### 10. GitHub Action recipe exists, webhook entrypoint remains open
 
-OpenRabbit is local-first, but users still need an easy automation path. PR-Agent's GitHub Action flow is a major adoption advantage.
+OpenRabbit is local-first, and it now includes a self-hosted GitHub Actions recipe. PR-Agent still has a more mature hosted app and webhook/server story.
 
 Recommended tasks:
 
-- Add a GitHub Action recipe for self-hosted runners.
 - Add webhook server mode for users who want push-based review.
 - Keep local Ollama/Qdrant dependencies explicit.
 
-### 10. Missing repo-maintenance tools
+### 11. Missing repo-maintenance tools
 
 OpenRabbit does not yet provide equivalents for labels, changelogs, docs generation, similar issue search, or help docs.
 
@@ -156,7 +165,7 @@ Recommended tasks:
 - Add docs generation for changed public functions/classes.
 - Add similar issue lookup after GitHub issue search is available.
 
-### 11. Quality evidence now has a local PR test log
+### 12. Quality evidence now has a local PR test log
 
 OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, findings, categories, dropped findings, skipped paths, runtime, and failures. v1.4 adds historical report comparison through `--compare` and expected finding assertions through `--expectations`.
 
@@ -169,13 +178,13 @@ Recommended tasks:
 
 | Priority | Task | Why |
 | --- | --- | --- |
-| P0 | Improve RAG context selection and packing | Keeps repository-aware reviews precise as PRs and repos grow |
+| P0 | Improve RAG and connector context selection and packing | Keeps repository-aware reviews precise as PRs and repos grow |
 | Done | Harden review automation controls | Prevents noisy daemon behavior on large or busy repositories |
 | Done | Add PR description command | Fast, visible value for every PR |
 | Done | Add token-aware PR compression | Keeps large real-world PRs inside deterministic prompt budgets |
 | Done | Add improve/fix suggestions | Moves from finding problems to helping resolve them |
 | Done | Add local quality test log command | Creates repeatable evidence for review quality gaps |
-| P1 | Add GitHub Action recipe | Removes local manual friction for teams |
+| Done | Add GitHub Action recipe | Removes local manual friction for teams |
 | P2 | Add ask command | Useful for interactive PR exploration |
 | P2 | Expand provider support | Helps teams use their preferred local or hosted runtime |
 | P2 | Add layered config | Important for teams and repeated use |
