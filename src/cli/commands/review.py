@@ -129,6 +129,8 @@ async def run_review(
     quality_error: str | None = None
     skipped_paths = [item.as_dict() for item in controls_result.skipped_paths]
     connector_context_summary: dict[str, object] = {}
+    model_pr_history = pr_history
+    model_quality_results = quality_results
 
     if run_agents and settings.quality.enabled:
         quality_runner = quality_gate_runner or run_local_quality_gates
@@ -177,13 +179,15 @@ async def run_review(
             quality_results=quality_results,
         )
         retrieval_result = model_context.retrieval_result
+        model_pr_history = model_context.pr_history
+        model_quality_results = model_context.quality_results
         if agent_runner is None:
             pipeline_result = await run_agent_review(
                 payload,
                 settings=settings,
                 retrieval_result=retrieval_result,
-                pr_history=model_context.pr_history,
-                quality_results=model_context.quality_results,
+                pr_history=model_pr_history,
+                quality_results=model_quality_results,
                 controls_result=controls_result,
                 env=env,
             )
@@ -192,8 +196,8 @@ async def run_review(
                 payload,
                 settings=settings,
                 retrieval_result=retrieval_result,
-                pr_history=model_context.pr_history,
-                quality_results=model_context.quality_results,
+                pr_history=model_pr_history,
+                quality_results=model_quality_results,
                 env=env,
             )
         ranked = pipeline_result.ranked_findings
@@ -278,6 +282,9 @@ async def run_review(
     context_diagnostics = build_context_precision_diagnostics(
         retrieval_result,
         connector_context=connector_context_summary,
+        pr_payload=payload,
+        pr_history=model_pr_history,
+        quality_results=model_quality_results,
         command="review",
     )
     return {

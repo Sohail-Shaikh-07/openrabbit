@@ -462,3 +462,76 @@ def test_format_prompt_diff_keeps_path_controls_when_no_diff_exists() -> None:
     assert "- Path instructions:" in prompt
     assert "src/api/**: Require authorization checks." in prompt
     assert "(No diff available.)" in prompt
+
+
+def test_format_context_packs_rag_and_connector_under_separate_budgets() -> None:
+    context = format_context(
+        [
+            {
+                "payload": {
+                    "source_path": "src/auth.py",
+                    "text": "Repository authorization rule.",
+                }
+            },
+            {
+                "payload": {
+                    "source_path": "https://jira.example/browse/SEC-1",
+                    "kind": "connector_context",
+                    "connector": "jira",
+                    "text": "Connector context. " + ("external ticket details " * 80),
+                }
+            },
+        ],
+        max_rag_tokens=20,
+        max_connector_tokens=40,
+    )
+
+    assert "[src/auth.py] Repository authorization rule." in context
+    assert "[https://jira.example/browse/SEC-1]" in context
+    assert "connector context omitted" in context
+    assert estimate_prompt_tokens(context) <= 60
+
+
+def test_collect_history_context_keeps_linked_issues_separate_from_quality_budget() -> None:
+    quality = [
+        ToolRunResult(
+            tool="ruff",
+            status=ToolStatus.failed,
+            command=("ruff", "check"),
+            exit_code=1,
+            duration_ms=1,
+            summary="many diagnostics",
+            diagnostics=tuple(
+                ToolDiagnostic(
+                    severity="error",
+                    message="QUALITY_DIAGNOSTIC " + ("detail " * 40),
+                    file=f"src/file_{index}.py",
+                    line=index + 1,
+                )
+                for index in range(10)
+            ),
+        )
+    ]
+    payload = SimpleNamespace(
+        linked_issues=[
+            SimpleNamespace(
+                full_name="owner/repo#9",
+                title="Require admin export authorization",
+                state="open",
+                labels=["security"],
+                body_preview="Exports must stay admin-only.",
+                source="pull_request.body",
+            )
+        ]
+    )
+
+    text = collect_history_context(
+        {"pr_payload": payload, "quality_results": quality},
+        max_memory_tokens=20,
+        max_linked_issue_tokens=80,
+        max_quality_tokens=32,
+    )
+
+    assert "Require admin export authorization" in text
+    assert "Local quality gate results:" in text
+    assert "local quality context omitted" in text

@@ -13,7 +13,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
 | Agents | Security, performance, architecture, bug, and test coverage agents |
-| Prompting | Changed-line evidence first, token-aware PR diff compression, strict JSON contract, no speculative findings |
+| Prompting | Changed-line evidence first, token-aware PR diff compression, shared source budgets for RAG, connectors, memory, linked issues, and quality gates, strict JSON contract, no speculative findings |
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | Quality gates | Optional local Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics and bounded timeouts |
 | PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, sanitized GitHub PR conversation context |
@@ -322,7 +322,7 @@ The Linear connector can read linked issue identifiers such as `ENG-42` when exp
 
 The multi-repo connector can read small snippets from explicitly configured local repository paths such as `../shared-core`. Repository handles can be listed as allowed identifiers, but OpenRabbit does not auto-clone repositories or scan arbitrary organizations. Returned snippets are bounded and labeled with source repo and path provenance.
 
-When enabled, MCP, web search, multi-repo, Jira, and Linear connectors can add bounded, source-labeled context to `review`, `describe`, `ask`, and `improve`. Connector snippets are treated as untrusted evidence, deduplicated across agent dimensions, and surfaced in command summaries through connector counts, context provenance, and `context_diagnostics`. `openrabbit eval` includes connector item totals, context candidate and selected counts, dropped reasons, prompt-packing estimates, and source counts in JSON, dashboard, and Markdown reports.
+When enabled, MCP, web search, multi-repo, Jira, and Linear connectors can add bounded, source-labeled context to `review`, `describe`, `ask`, and `improve`. Connector snippets are treated as untrusted evidence, deduplicated across agent dimensions, packed under a connector-specific source budget, and surfaced in command summaries through connector counts, context provenance, and `context_diagnostics`. `openrabbit eval` includes connector item totals, context candidate and selected counts, dropped reasons, prompt-packing estimates, and source counts in JSON, dashboard, and Markdown reports.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
 
@@ -403,7 +403,7 @@ During review, OpenRabbit uses the changed file paths and changed symbols from t
 
 Use `openrabbit index --health` to confirm Qdrant is reachable and list the available collections before reviewing. When repository context is loaded, `openrabbit review` prints compact context provenance under `Context sources:` so you can see which indexed files influenced the run and why each source was selected, such as `changed_file`, `changed_symbol`, `related_test`, `nearby_path`, `scoped_guideline`, `architecture_doc`, or `semantic`.
 
-JSON output from model-facing commands includes `context_diagnostics` with local-only candidate counts, selected source counts, dropped reasons, score summaries, connector availability counts, and estimated prompt-packing size. These diagnostics are intended for troubleshooting and eval dashboards; they do not include raw tokens, credentials, or unbounded connector output.
+JSON output from model-facing commands includes `context_diagnostics` with local-only candidate counts, selected source counts, dropped reasons, score summaries, connector availability counts, source budgets, and estimated prompt-packing size. The shared packing defaults keep changed-line evidence and compressed diff evidence first, then bound repository RAG, connector snippets, PR memory, linked GitHub issues, and local quality diagnostics under separate budgets so one noisy source cannot crowd out the others. These diagnostics are intended for troubleshooting and eval dashboards; they do not include raw tokens, credentials, or unbounded connector output.
 
 The embedding model is downloaded once by FastEmbed when indexing or real RAG retrieval first needs it. OpenRabbit checks Qdrant for an existing RAG index before loading embeddings during review, so a machine without Qdrant or without an index should not trigger an embedding download just to fall back to diff-only mode.
 

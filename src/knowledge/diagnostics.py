@@ -6,6 +6,9 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
+from knowledge.context_packing import DEFAULT_SOURCE_TOKEN_BUDGETS
+from memory.history import PullRequestHistory, format_history_context
+from quality.models import ToolRunResult
 from rag.retriever import AgentDimension
 
 _APPROX_CHARS_PER_TOKEN = 4
@@ -15,6 +18,9 @@ def build_context_precision_diagnostics(
     retrieval_result: Any | None,
     *,
     connector_context: Mapping[str, object] | None = None,
+    pr_payload: Any | None = None,
+    pr_history: Any | None = None,
+    quality_results: list[Any] | None = None,
     command: str = "",
 ) -> dict[str, object]:
     """Return compact telemetry for context selected for a model-facing command."""
@@ -34,6 +40,11 @@ def build_context_precision_diagnostics(
     selected_items = len(selected_hits)
     dropped_items = _coerce_int(retriever_stats.get("dropped_items")) + _coerce_int(
         connector_summary.get("dropped_items")
+    )
+    auxiliary_sources = _auxiliary_source_summaries(
+        pr_payload=pr_payload,
+        pr_history=pr_history,
+        quality_results=quality_results,
     )
 
     return {
@@ -67,6 +78,8 @@ def build_context_precision_diagnostics(
             "unavailable": len(_dict_list(connector_summary.get("unavailable"))),
             "failures": len(_dict_list(connector_summary.get("failures"))),
         },
+        "source_budgets": dict(DEFAULT_SOURCE_TOKEN_BUDGETS),
+        "source_packing": auxiliary_sources,
         "prompt_packing": prompt_packing,
     }
 
@@ -125,6 +138,21 @@ def _prompt_packing_summary(
         "estimated_tokens": _estimate_tokens(total_chars),
         "dimensions": dimensions,
         "sources": _source_counts(unique),
+    }
+
+
+def _auxiliary_source_summaries(
+    *,
+    pr_payload: Any | None,
+    pr_history: Any | None,
+    quality_results: list[Any] | None,
+) -> dict[str, dict[str, object]]:
+    return {
+        "changed_line_evidence": _changed_line_summary(pr_payload),
+        "diff": _diff_summary(pr_payload),
+        "memory": _memory_summary(pr_history),
+        "linked_issue": _linked_issue_summary(pr_payload),
+        "quality": _quality_summary(quality_results),
     }
 
 
@@ -208,6 +236,104 @@ def _estimate_tokens(chars: int) -> int:
     if chars <= 0:
         return 0
     return max(1, math.ceil(chars / _APPROX_CHARS_PER_TOKEN))
+
+
+def _budget_summary(source: str, *, candidate_items: int, chars: int) -> dict[str, object]:
+    budget = int(DEFAULT_SOURCE_TOKEN_BUDGETS[source])
+    tokens = _estimate_tokens(chars)
+    return {
+        "max_tokens": budget,
+        "candidate_items": candidate_items,
+        "estimated_tokens": tokens,
+        "over_budget": tokens > budget,
+    }
+
+
+def _changed_line_summary(pr_payload: Any | None) -> dict[str, object]:
+    files = getattr(pr_payload, "files", None)
+    if not isinstance(files, list):
+        return _budget_summary("changed_line_evidence", candidate_items=0, chars=0)
+    lines = 0
+    chars = 0
+    for file_ in files:
+        hunks = getattr(file_, "hunks", None)
+        if not isinstance(hunks, list):
+            continue
+        for hunk in hunks:
+            hunk_lines = getattr(hunk, "lines", None)
+            if not isinstance(hunk_lines, list):
+                continue
+            for line in hunk_lines:
+                if getattr(line, "kind", "") == "addition":
+                    text = str(getattr(line, "text", "") or "")
+                    lines += 1
+                    chars += len(text)
+    return _budget_summary("changed_line_evidence", candidate_items=lines, chars=chars)
+
+
+def _diff_summary(pr_payload: Any | None) -> dict[str, object]:
+    raw_diff = str(getattr(pr_payload, "diff", "") or "")
+    files = getattr(pr_payload, "files", None)
+    file_count = len(files) if isinstance(files, list) else 0
+    hunk_count = 0
+    chars = len(raw_diff)
+    if isinstance(files, list):
+        for file_ in files:
+            hunks = getattr(file_, "hunks", None)
+            if not isinstance(hunks, list):
+                continue
+            hunk_count += len(hunks)
+            for hunk in hunks:
+                for line in getattr(hunk, "lines", []) or []:
+                    chars += len(str(getattr(line, "text", "") or ""))
+    summary = _budget_summary("diff", candidate_items=max(file_count, hunk_count), chars=chars)
+    summary["files"] = file_count
+    summary["hunks"] = hunk_count
+    return summary
+
+
+def _memory_summary(pr_history: Any | None) -> dict[str, object]:
+    if pr_history is None:
+        return _budget_summary("memory", candidate_items=0, chars=0)
+    try:
+        text = format_history_context(pr_history)
+    except Exception:
+        text = ""
+    previous = 0
+    if isinstance(pr_history, PullRequestHistory) and pr_history.local is not None:
+        previous = len(pr_history.local.previous_findings)
+    events = getattr(pr_history, "conversation", [])
+    learnings = getattr(pr_history, "learnings", [])
+    candidate_items = previous
+    candidate_items += len(events) if isinstance(events, list) else 0
+    candidate_items += len(learnings) if isinstance(learnings, list) else 0
+    return _budget_summary("memory", candidate_items=candidate_items, chars=len(text))
+
+
+def _linked_issue_summary(pr_payload: Any | None) -> dict[str, object]:
+    linked_issues = getattr(pr_payload, "linked_issues", None)
+    if not isinstance(linked_issues, list):
+        return _budget_summary("linked_issue", candidate_items=0, chars=0)
+    chars = 0
+    for issue in linked_issues:
+        for attr in ("full_name", "title", "state", "body_preview", "url", "source"):
+            chars += len(str(getattr(issue, attr, "") or ""))
+    return _budget_summary("linked_issue", candidate_items=len(linked_issues), chars=chars)
+
+
+def _quality_summary(quality_results: list[Any] | None) -> dict[str, object]:
+    if not isinstance(quality_results, list):
+        return _budget_summary("quality", candidate_items=0, chars=0)
+    diagnostics = 0
+    chars = 0
+    for result in quality_results:
+        if not isinstance(result, ToolRunResult):
+            continue
+        chars += len(result.summary)
+        for diagnostic in result.diagnostics:
+            diagnostics += 1
+            chars += len(diagnostic.message) + len(diagnostic.file) + len(diagnostic.code)
+    return _budget_summary("quality", candidate_items=diagnostics, chars=chars)
 
 
 def _object_dict(value: object) -> dict[str, object]:
