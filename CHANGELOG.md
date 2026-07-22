@@ -4,17 +4,40 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
-- Stabilized real-world review memory and ranking by ignoring agent category drift in finding fingerprints, merging repeated audit-trail and pagination findings, and loading repository guideline files directly when Qdrant/RAG context is unavailable.
-- Hardened `openrabbit improve --publish` so placeholder fixes and snippets that introduce unavailable `require_*` security dependencies are dropped instead of being posted to GitHub.
-- Added daemon lifecycle support with `openrabbit start --once`, local daemon PID metadata, stale-state cleanup, and a working `openrabbit stop --workspace ...` command.
-- Switched user-facing PR comment command examples and managed summary follow-ups to `/openrabbit ...`, while retaining legacy mention-trigger compatibility.
+No changes yet.
+
+## v1.6.0 - 2026-07-22
+
+OpenRabbit v1.6.0 ships Connector Intelligence: disabled-by-default MCP, MCP-backed web search, Jira, Linear, and multi-repo context that can enrich review, describe, ask, improve, and eval workflows while preserving local-first defaults.
+
+### Connector Intelligence
+
 - Added disabled-by-default connector configuration, a connector registry, and `openrabbit connector-health` for read-only MCP, web search, multi-repo, Jira, and Linear readiness checks.
 - Added an optional MCP client runtime for configured stdio and Streamable HTTP servers, with approved tool/resource allowlists, bounded timeouts, fail-open behavior, sanitized MCP snippets, and optional `poetry install --with connectors` SDK installation.
 - Added an MCP-backed web search connector flow that routes through configured MCP servers, blocks code-like private queries by default, normalizes source-labeled results, and keeps direct vendor SDK clients out of the core package.
 - Added Jira and Linear connector runtimes for linked issue reads plus opt-in managed issue-tracker summary comments.
 - Added explicit multi-repo local context loading for configured sibling repositories without auto-cloning or arbitrary organization scans.
 - Wired enabled connector snippets into `review`, `describe`, `ask`, and `improve` prompt context, with untrusted-source labeling, deduplication, provenance, and eval connector totals.
+- Added connector security, privacy, and regression tests for redaction, fail-open reads, auth/rate-limit failures, malformed responses, sanitized write failures, and duplicate managed-comment prevention.
 - Expanded connector setup documentation, generated config comments, permission boundaries, and `connector-health` troubleshooting for MCP, web search, multi-repo, Jira, and Linear.
+
+### Review Stability And Automation
+
+- Stabilized real-world review memory and ranking by ignoring agent category drift in finding fingerprints, merging repeated audit-trail and pagination findings, and loading repository guideline files directly when Qdrant/RAG context is unavailable.
+- Hardened `openrabbit improve --publish` so placeholder fixes and snippets that introduce unavailable `require_*` security dependencies are dropped instead of being posted to GitHub.
+- Added daemon lifecycle support with `openrabbit start --once`, local daemon PID metadata, stale-state cleanup, and a working `openrabbit stop --workspace ...` command.
+- Switched user-facing PR comment command examples and managed summary follow-ups to `/openrabbit ...`, while retaining legacy mention-trigger compatibility.
+
+### Release Notes
+
+- Package version is `1.6.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- Existing `.openrabbit/config.yml` files continue to work.
+- Optional connectors remain disabled by default and must be enabled explicitly.
+- Connector secrets must live in environment variables named by config, not inline YAML values.
+- Qdrant remains optional for RAG context and reviews still fall back to diff-only mode when unavailable.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.
 
 ## v1.5.0 - 2026-07-17
 
