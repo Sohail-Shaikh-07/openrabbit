@@ -192,6 +192,9 @@ async def run_describe(
             "context_diagnostics": build_context_precision_diagnostics(
                 retrieval_result,
                 connector_context=connector_context.summary,
+                pr_payload=payload,
+                pr_history=model_context.pr_history,
+                quality_results=[],
                 command="describe",
             ),
             "connector_context": connector_context.summary,

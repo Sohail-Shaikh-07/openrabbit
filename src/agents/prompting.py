@@ -7,6 +7,12 @@ from collections.abc import Iterable
 from typing import Any
 
 from agents.models import ReviewState
+from knowledge.context_packing import (
+    DEFAULT_SOURCE_TOKEN_BUDGETS,
+    ContextSection,
+    pack_context_sections,
+    token_budget_to_chars,
+)
 from memory.history import PullRequestHistory, format_history_context
 from quality.models import ToolRunResult
 from review_controls import format_review_control_context
@@ -44,8 +50,8 @@ NO_CHANGED_LINE_EVIDENCE = "(No changed-line evidence available.)"
 NO_DIFF = "(No diff available.)"
 
 APPROX_CHARS_PER_TOKEN = 4
-DEFAULT_DIFF_TOKEN_BUDGET = 6000
-DEFAULT_CHANGED_LINE_EVIDENCE_TOKEN_BUDGET = 3000
+DEFAULT_DIFF_TOKEN_BUDGET = DEFAULT_SOURCE_TOKEN_BUDGETS["diff"]
+DEFAULT_CHANGED_LINE_EVIDENCE_TOKEN_BUDGET = DEFAULT_SOURCE_TOKEN_BUDGETS["changed_line_evidence"]
 _MIN_DIFF_RESERVATION_CHARS = 128
 _MAX_DIFF_RESERVATION_CHARS = 2048
 
@@ -112,7 +118,12 @@ def estimate_prompt_tokens(text: str) -> int:
     return max(1, math.ceil(len(text) / APPROX_CHARS_PER_TOKEN))
 
 
-def collect_context(state: ReviewState, *dimensions: str) -> str:
+def collect_context(
+    state: ReviewState,
+    *dimensions: str,
+    max_rag_tokens: int = DEFAULT_SOURCE_TOKEN_BUDGETS["rag"],
+    max_connector_tokens: int = DEFAULT_SOURCE_TOKEN_BUDGETS["connector"],
+) -> str:
     """Return formatted retrieved context for the requested dimensions."""
     retrieval = state.get("retrieval_result")
     if retrieval is None:
@@ -124,10 +135,20 @@ def collect_context(state: ReviewState, *dimensions: str) -> str:
         if isinstance(value, list):
             items.extend(value)
 
-    return format_context(items)
+    return format_context(
+        items,
+        max_rag_tokens=max_rag_tokens,
+        max_connector_tokens=max_connector_tokens,
+    )
 
 
-def collect_history_context(state: ReviewState) -> str:
+def collect_history_context(
+    state: ReviewState,
+    *,
+    max_memory_tokens: int = DEFAULT_SOURCE_TOKEN_BUDGETS["memory"],
+    max_linked_issue_tokens: int = DEFAULT_SOURCE_TOKEN_BUDGETS["linked_issue"],
+    max_quality_tokens: int = DEFAULT_SOURCE_TOKEN_BUDGETS["quality"],
+) -> str:
     """Return formatted PR memory and conversation context."""
     history = state.get("pr_history")
     linked_issue_context = format_linked_issue_context(state.get("pr_payload"))
@@ -135,20 +156,51 @@ def collect_history_context(state: ReviewState) -> str:
         history_context = format_history_context(history)
     else:
         history_context = format_history_context(history)
-    sections = [history_context]
+    sections = [
+        ContextSection(
+            source="memory",
+            text=history_context,
+            omission_note="... PR memory context omitted to keep the prompt within budget.",
+        )
+    ]
     if linked_issue_context:
-        sections.append(linked_issue_context)
-    quality_context = collect_quality_context(state)
+        sections.append(
+            ContextSection(
+                source="linked_issue",
+                text=linked_issue_context,
+                candidate_items=_linked_issue_count(state.get("pr_payload")),
+                omission_note="... linked issue context omitted to keep the prompt within budget.",
+            )
+        )
+    quality_context = collect_quality_context(
+        state,
+        max_chars=token_budget_to_chars(max_quality_tokens),
+    )
     if quality_context:
-        sections.append(quality_context)
-    return "\n\n".join(sections)
+        sections.append(
+            ContextSection(
+                source="quality",
+                text=quality_context,
+                candidate_items=_quality_diagnostic_count(state),
+                omission_note="... local quality context omitted to keep the prompt within budget.",
+            )
+        )
+    packed = pack_context_sections(
+        sections,
+        budgets={
+            "memory": max_memory_tokens,
+            "linked_issue": max_linked_issue_tokens,
+            "quality": max_quality_tokens,
+        },
+    )
+    return packed.text
 
 
 def collect_quality_context(
     state: ReviewState,
     *,
     max_diagnostics: int = 30,
-    max_chars: int = 8000,
+    max_chars: int = token_budget_to_chars(DEFAULT_SOURCE_TOKEN_BUDGETS["quality"]),
 ) -> str:
     """Return bounded, normalized local tool evidence for agent prompts."""
     raw = state.get("quality_results")
@@ -321,9 +373,14 @@ def format_prompt_diff(
     return f"{bounded_controls}\n\n{body}"
 
 
-def format_context(items: Iterable[Any]) -> str:
+def format_context(
+    items: Iterable[Any],
+    *,
+    max_rag_tokens: int = DEFAULT_SOURCE_TOKEN_BUDGETS["rag"],
+    max_connector_tokens: int = DEFAULT_SOURCE_TOKEN_BUDGETS["connector"],
+) -> str:
     """Format RAG hits or test-provided strings into prompt-ready context."""
-    lines: list[str] = []
+    lines_by_source: dict[str, list[str]] = {"rag": [], "connector": []}
     seen: set[tuple[str, str]] = set()
     for item in items:
         source, text = _context_item_parts(item)
@@ -334,14 +391,33 @@ def format_context(items: Iterable[Any]) -> str:
         if key in seen:
             continue
         seen.add(key)
+        source_kind = "connector" if _is_connector_context_item(item) else "rag"
         if source:
-            lines.append(f"- [{source}] {clean}")
+            lines_by_source[source_kind].append(f"- [{source}] {clean}")
         else:
-            lines.append(f"- {clean}")
+            lines_by_source[source_kind].append(f"- {clean}")
 
-    if not lines:
+    if not lines_by_source["rag"] and not lines_by_source["connector"]:
         return NO_PROJECT_CONTEXT
-    return "\n".join(lines)
+    packed = pack_context_sections(
+        [
+            ContextSection(
+                source="rag",
+                text="\n".join(lines_by_source["rag"]),
+                candidate_items=len(lines_by_source["rag"]),
+                omission_note="... repository RAG context omitted to keep the prompt within budget.",
+            ),
+            ContextSection(
+                source="connector",
+                text="\n".join(lines_by_source["connector"]),
+                candidate_items=len(lines_by_source["connector"]),
+                omission_note="... connector context omitted to keep the prompt within budget.",
+            ),
+        ],
+        budgets={"rag": max_rag_tokens, "connector": max_connector_tokens},
+        separator="\n",
+    )
+    return packed.text or NO_PROJECT_CONTEXT
 
 
 def _changed_lines_for_file(file_: Any) -> list[tuple[int, str]]:
@@ -683,3 +759,28 @@ def _context_source_label(payload: dict[str, Any]) -> str:
     scope = str(payload.get("scope_path") or ".")
     guideline = str(payload.get("guideline_path") or source)
     return f"repository guideline {guideline} (scope: {scope})"
+
+
+def _is_connector_context_item(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    payload = item.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("kind") == "connector_context" or "connector" in payload
+
+
+def _linked_issue_count(pr_payload: Any) -> int:
+    linked_issues = getattr(pr_payload, "linked_issues", None)
+    return len(linked_issues) if isinstance(linked_issues, list) else 0
+
+
+def _quality_diagnostic_count(state: ReviewState) -> int:
+    raw = state.get("quality_results")
+    if not isinstance(raw, list):
+        return 0
+    count = 0
+    for result in raw:
+        if isinstance(result, ToolRunResult):
+            count += len(result.diagnostics)
+    return count

@@ -66,5 +66,8 @@ def test_build_context_precision_diagnostics_summarizes_rag_and_connector_contex
     assert diagnostics["scores"] == {"count": 2, "min": 0.8, "max": 0.9, "avg": 0.85}
     assert diagnostics["rag"]["dropped_reasons"] == {"top_k_limit": 3}
     assert diagnostics["connectors"]["dropped_reasons"] == {"connector_item_limit": 2}
+    assert diagnostics["source_budgets"]["rag"] == 4500
+    assert diagnostics["source_budgets"]["connector"] == 1200
+    assert diagnostics["source_packing"]["quality"]["candidate_items"] == 0
     assert diagnostics["prompt_packing"]["context_items"] == 2
     assert diagnostics["prompt_packing"]["estimated_tokens"] > 0

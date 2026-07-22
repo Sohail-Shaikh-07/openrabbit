@@ -28,6 +28,7 @@ OpenRabbit v1.7 focuses on making review context more precise before it reaches 
 
 - OP-113 adds the first context precision telemetry surface. Model-facing command JSON now includes `context_diagnostics` with candidate counts, selected sources, dropped reasons, score summaries, connector availability counts, and estimated prompt-packing size. Eval reports aggregate those fields into totals, dashboard cards, context-source summaries, and Markdown output.
 - OP-114 improves deterministic RAG planning for changed symbols, related tests, scoped guidelines, nearby code, and architecture docs so direct repository evidence is selected before broad semantic context.
+- OP-115 adds shared source budgets for changed-line evidence, compressed diff evidence, repository RAG, connector snippets, PR memory, linked GitHub issues, and local quality diagnostics so noisy auxiliary sources cannot crowd out higher-priority review evidence.
 
 ## Non Goals
 

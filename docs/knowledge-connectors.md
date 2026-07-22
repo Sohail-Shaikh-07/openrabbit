@@ -2,7 +2,7 @@
 
 OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. OP-103 adds a Linear connector runtime for linked issue reads and opt-in managed Linear comments. OP-104 adds explicit multi-repo local context loading. OP-105 wires enabled connector snippets into `review`, `describe`, `ask`, `improve`, and `eval` reporting. OP-113 adds context precision diagnostics for connector candidates, selected snippets, dropped items, sources, and prompt-packing estimates. Connector snippets are not used by `index` or local memory storage.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. OP-103 adds a Linear connector runtime for linked issue reads and opt-in managed Linear comments. OP-104 adds explicit multi-repo local context loading. OP-105 wires enabled connector snippets into `review`, `describe`, `ask`, `improve`, and `eval` reporting. OP-113 adds context precision diagnostics for connector candidates, selected snippets, dropped items, sources, and prompt-packing estimates. OP-115 packs connector snippets under an explicit source budget separate from repository RAG, PR memory, linked issues, local quality gates, changed-line evidence, and compressed diff evidence. Connector snippets are not used by `index` or local memory storage.
 
 ## Contract
 
@@ -16,6 +16,8 @@ Connector implementations conform to `KnowledgeConnector` from `knowledge.connec
 Connectors return untrusted context. They do not change the required model output schema, bypass changed-line grounding, or publish GitHub comments directly. A connector can only provide source-labeled prompt guidance for the review pipeline to consider.
 
 When connectors are enabled and available, OpenRabbit builds one bounded request from the PR title, body, linked GitHub issue summaries, commit messages, changed paths, and the ask question when present. Returned snippets are normalized, redacted, capped, attached to every review-agent context dimension, and deduplicated before prompts are rendered.
+
+Prompt packing keeps changed-line and compressed diff evidence ahead of auxiliary sources. Repository RAG and connector snippets have separate budgets, so noisy external context cannot crowd out local code, rules, architecture docs, memory, linked issues, or quality diagnostics.
 
 ## Setup Checklist
 
@@ -81,7 +83,7 @@ A document connector may read explicitly configured design docs, runbooks, or de
 - Connector data is treated as untrusted context and cannot override OpenRabbit's safety, grounding, or publishing rules.
 - Optional connector configuration must name token environment variables rather than storing token values in repository config.
 - `review`, `describe`, `ask`, and `improve` continue when a connector is disabled, unavailable, or fails during retrieval.
-- Command summaries include connector counts, provenance, and `context_diagnostics` for loaded connector snippets. `openrabbit eval` aggregates connector item totals, source counts, context candidate and selected counts, dropped reasons, and prompt-packing estimates in JSON, dashboard, and Markdown reports.
+- Command summaries include connector counts, provenance, source budgets, and `context_diagnostics` for loaded connector snippets. `openrabbit eval` aggregates connector item totals, source counts, context candidate and selected counts, dropped reasons, and prompt-packing estimates in JSON, dashboard, and Markdown reports.
 
 ## Configuration Shape
 
@@ -270,11 +272,13 @@ For MCP and MCP-backed web search, health may initialize the configured server a
 
 ```text
 PR diff
+  -> changed-line evidence
+  -> compressed diff evidence
   -> local memory
   -> linked GitHub issues
   -> repository RAG
   -> optional knowledge connectors
-  -> prompt context with labeled, bounded, untrusted snippets
+  -> prompt context with labeled, bounded, untrusted snippets and per-source budgets
 ```
 
 Connector context is merged before review controls filter model context, so skipped-path rules still apply to path-labeled connector snippets. Source-only snippets that are not tied to skipped files remain available as general evidence.
