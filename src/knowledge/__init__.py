@@ -17,6 +17,15 @@ from knowledge.jira import (
     JiraRestClient,
     extract_jira_issue_keys,
 )
+from knowledge.linear import (
+    LINEAR_GRAPHQL_ENDPOINT,
+    MANAGED_LINEAR_COMMENT_MARKER,
+    LinearClientError,
+    LinearCommentPublishResult,
+    LinearConnector,
+    LinearGraphqlClient,
+    extract_linear_issue_ids,
+)
 from knowledge.mcp_runtime import McpConnectorRuntime, McpServerHealth, mcp_sdk_available
 from knowledge.registry import (
     ConnectorHealthResult,
@@ -26,7 +35,9 @@ from knowledge.registry import (
 from knowledge.web_search import McpWebSearchConnector
 
 __all__ = [
+    "LINEAR_GRAPHQL_ENDPOINT",
     "MANAGED_COMMENT_MARKER",
+    "MANAGED_LINEAR_COMMENT_MARKER",
     "ConnectorHealthResult",
     "JiraClientError",
     "JiraCommentPublishResult",
@@ -38,11 +49,16 @@ __all__ = [
     "KnowledgeConnectorRequest",
     "KnowledgeItem",
     "KnowledgeSourceKind",
+    "LinearClientError",
+    "LinearCommentPublishResult",
+    "LinearConnector",
+    "LinearGraphqlClient",
     "McpConnectorRuntime",
     "McpServerHealth",
     "McpWebSearchConnector",
     "build_connector_registry",
     "extract_jira_issue_keys",
+    "extract_linear_issue_ids",
     "mcp_sdk_available",
     "normalize_knowledge_items",
     "sanitize_knowledge_text",
