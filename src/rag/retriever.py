@@ -128,6 +128,9 @@ class RetrievalPlan:
     changed_paths: tuple[str, ...]
     changed_symbols: tuple[str, ...]
     changed_dirs: tuple[str, ...]
+    related_test_paths: tuple[str, ...]
+    guideline_scopes: tuple[str, ...]
+    architecture_paths: tuple[str, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -193,8 +196,8 @@ class ContextRetriever:
             plan = _retrieval_plan_from_pr(pr)
             query_vec = await self._build_query_vector(plan.query_text)
             results = await asyncio.gather(
-                self._store.search(COLLECTION_RULES, query_vec, top_k=self._top_k),
-                self._store.search(COLLECTION_DOCS, query_vec, top_k=self._top_k),
+                self._fetch_rule_context(query_vec, plan),
+                self._fetch_doc_context(query_vec, plan),
                 self._store.search(COLLECTION_REVIEWS, query_vec, top_k=self._top_k),
                 self._fetch_function_context(query_vec, plan),
             )
@@ -290,6 +293,44 @@ class ContextRetriever:
                 )
             )
 
+        results = await asyncio.gather(*searches)
+        return [hit for result in results for hit in result]
+
+    async def _fetch_rule_context(
+        self, query_vec: Any, plan: RetrievalPlan
+    ) -> list[dict[str, Any]]:
+        """Fetch repository rules, preferring scopes touched by the PR."""
+        searches = [
+            self._store.search(COLLECTION_RULES, query_vec, top_k=self._top_k),
+        ]
+        scope_filter = _scope_filter(plan.guideline_scopes)
+        if scope_filter:
+            searches.append(
+                self._store.search(
+                    COLLECTION_RULES,
+                    query_vec,
+                    top_k=self._top_k,
+                    filter=scope_filter,
+                )
+            )
+        results = await asyncio.gather(*searches)
+        return [hit for result in results for hit in result]
+
+    async def _fetch_doc_context(self, query_vec: Any, plan: RetrievalPlan) -> list[dict[str, Any]]:
+        """Fetch documentation, preferring known architecture document paths."""
+        searches = [
+            self._store.search(COLLECTION_DOCS, query_vec, top_k=self._top_k),
+        ]
+        architecture_filter = _source_path_filter(plan.architecture_paths)
+        if architecture_filter:
+            searches.append(
+                self._store.search(
+                    COLLECTION_DOCS,
+                    query_vec,
+                    top_k=self._top_k,
+                    filter=architecture_filter,
+                )
+            )
         results = await asyncio.gather(*searches)
         return [hit for result in results for hit in result]
 
@@ -425,7 +466,9 @@ def _reason_priority(hit: dict[str, Any]) -> int:
         "changed_file": 100,
         "scoped_guideline": 95,
         "repository_guideline": 90,
+        "architecture_doc": 88,
         "changed_symbol": 85,
+        "related_test": 82,
         "nearby_path": 75,
         "semantic": 50,
     }.get(reason, 0)
@@ -444,8 +487,12 @@ def _retrieval_reason(payload: Any, plan: RetrievalPlan) -> str:
         if scope_path and _scope_applies(scope_path, plan.changed_paths):
             return "scoped_guideline"
         return "repository_guideline"
+    if source_path and source_path in plan.architecture_paths:
+        return "architecture_doc"
     if name and name in plan.changed_symbols:
         return "changed_symbol"
+    if source_path and source_path in plan.related_test_paths:
+        return "related_test"
     if _is_near_changed_path(source_path, plan.changed_dirs):
         return "nearby_path"
     return "semantic"
@@ -481,6 +528,15 @@ def _query_text_from_pr(pr: Any) -> str:
 
     if symbols:
         parts.append("changed symbols: " + " ".join(sorted(symbols)))
+    paths = tuple(dict.fromkeys(_changed_paths_from_pr(pr)))
+    dirs = tuple(dict.fromkeys(_directory_hints(paths)))
+    related_tests = _related_test_paths(paths)
+    if dirs:
+        parts.append("nearby directories: " + " ".join(dirs))
+    if related_tests:
+        parts.append("related tests: " + " ".join(related_tests))
+    if paths:
+        parts.append("architecture context: architecture docs adr design decisions")
 
     return " ".join(parts)
 
@@ -489,11 +545,17 @@ def _retrieval_plan_from_pr(pr: Any) -> RetrievalPlan:
     changed_paths = tuple(dict.fromkeys(_changed_paths_from_pr(pr)))
     changed_symbols = tuple(sorted(_changed_symbols_from_pr(pr)))
     changed_dirs = tuple(dict.fromkeys(_directory_hints(changed_paths)))
+    related_test_paths = _related_test_paths(changed_paths)
+    guideline_scopes = _guideline_scope_hints(changed_paths)
+    architecture_paths = _architecture_doc_paths(changed_paths)
     return RetrievalPlan(
         query_text=_query_text_from_pr(pr),
         changed_paths=changed_paths,
         changed_symbols=changed_symbols,
         changed_dirs=changed_dirs,
+        related_test_paths=related_test_paths,
+        guideline_scopes=guideline_scopes,
+        architecture_paths=architecture_paths,
     )
 
 
@@ -535,12 +597,16 @@ def _directory_hints(changed_paths: tuple[str, ...]) -> list[str]:
 
 
 def _path_filter(changed_paths: tuple[str, ...]) -> dict[str, Any] | None:
-    if not changed_paths:
+    paths = tuple(dict.fromkeys((*changed_paths, *_related_test_paths(changed_paths))))
+    return _source_path_filter(paths)
+
+
+def _source_path_filter(paths: tuple[str, ...]) -> dict[str, Any] | None:
+    if not paths:
         return None
     return {
         "should": [
-            {"key": "source_path", "match": {"value": path}}
-            for path in dict.fromkeys(changed_paths)
+            {"key": "source_path", "match": {"value": path}} for path in dict.fromkeys(paths)
         ]
     }
 
@@ -551,6 +617,16 @@ def _symbol_filter(changed_symbols: tuple[str, ...]) -> dict[str, Any] | None:
     return {
         "should": [
             {"key": "name", "match": {"value": symbol}} for symbol in dict.fromkeys(changed_symbols)
+        ]
+    }
+
+
+def _scope_filter(scopes: tuple[str, ...]) -> dict[str, Any] | None:
+    if not scopes:
+        return None
+    return {
+        "should": [
+            {"key": "scope_path", "match": {"value": scope}} for scope in dict.fromkeys(scopes)
         ]
     }
 
@@ -566,6 +642,89 @@ def _is_near_changed_path(source_path: str, changed_dirs: tuple[str, ...]) -> bo
     if not source_path or not changed_dirs:
         return False
     return any(source_path.startswith(f"{path.rstrip('/')}/") for path in changed_dirs)
+
+
+def _related_test_paths(changed_paths: tuple[str, ...]) -> tuple[str, ...]:
+    paths: list[str] = []
+    for path in changed_paths:
+        if _is_test_source_path(path):
+            paths.append(path)
+            continue
+        pure = PurePosixPath(path)
+        suffix = pure.suffix
+        stem = pure.stem
+        if not suffix:
+            continue
+        parts = pure.parts
+        without_src = PurePosixPath(*parts[1:]) if parts and parts[0] in {"src", "app"} else pure
+        paths.extend(
+            (
+                _join_posix("tests", without_src.parent.as_posix(), f"test_{stem}{suffix}"),
+                f"tests/test_{stem}{suffix}",
+                _join_posix("test", without_src.parent.as_posix(), f"test_{stem}{suffix}"),
+            )
+        )
+        if suffix in {".ts", ".tsx", ".js", ".jsx"}:
+            base = pure.with_suffix("").as_posix()
+            paths.extend((f"{base}.test{suffix}", f"{base}.spec{suffix}"))
+    return tuple(dict.fromkeys(_clean_posix_path(path) for path in paths if path))
+
+
+def _guideline_scope_hints(changed_paths: tuple[str, ...]) -> tuple[str, ...]:
+    scopes = ["."]
+    for path in changed_paths:
+        parent = PurePosixPath(path).parent
+        if str(parent) == ".":
+            continue
+        parts = parent.parts
+        for index in range(1, len(parts) + 1):
+            scopes.append(PurePosixPath(*parts[:index]).as_posix())
+    return tuple(dict.fromkeys(scopes))
+
+
+def _architecture_doc_paths(changed_paths: tuple[str, ...]) -> tuple[str, ...]:
+    paths = [
+        "architecture.md",
+        "ARCHITECTURE.md",
+        "docs/architecture.md",
+        "docs/ARCHITECTURE.md",
+        "docs/adr.md",
+        "docs/ADR.md",
+        ".openrabbit/architecture.md",
+    ]
+    for path in changed_paths:
+        parent = PurePosixPath(path).parent
+        if str(parent) == ".":
+            continue
+        paths.extend(
+            (
+                f"docs/{parent.as_posix()}/architecture.md",
+                f"docs/{parent.as_posix()}/adr.md",
+            )
+        )
+    return tuple(dict.fromkeys(paths))
+
+
+def _is_test_source_path(path: str) -> bool:
+    pure = PurePosixPath(path)
+    parts = pure.parts
+    name = pure.name
+    return (
+        any(part in {"test", "tests"} for part in parts)
+        or name.startswith("test_")
+        or name.endswith(("_test.py", ".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"))
+        or name.endswith((".test.js", ".spec.js"))
+    )
+
+
+def _join_posix(*parts: str) -> str:
+    return _clean_posix_path("/".join(part for part in parts if part and part != "."))
+
+
+def _clean_posix_path(path: str) -> str:
+    while "/./" in path:
+        path = path.replace("/./", "/")
+    return path.replace("//", "/").strip("/")
 
 
 _PY_SYMBOL_RE = re.compile(r"^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
