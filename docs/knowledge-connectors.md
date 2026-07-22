@@ -17,6 +17,17 @@ Connectors return untrusted context. They do not change the required model outpu
 
 When connectors are enabled and available, OpenRabbit builds one bounded request from the PR title, body, linked GitHub issue summaries, commit messages, changed paths, and the ask question when present. Returned snippets are normalized, redacted, capped, attached to every review-agent context dimension, and deduplicated before prompts are rendered.
 
+## Setup Checklist
+
+1. Run `openrabbit init` in the repository if `.openrabbit/config.yml` does not exist yet.
+2. Keep every connector disabled until the source owner approves it for review context.
+3. Store secrets in environment variables such as `JIRA_API_TOKEN` or `LINEAR_API_KEY`; never put token values in `.openrabbit/config.yml`.
+4. Enable exactly the connector sources needed for the repository.
+5. Run `openrabbit connector-health --workspace .` before a review.
+6. Start with read-only mode. Enable Jira or Linear write mode only after the managed-comment behavior is acceptable for the team.
+
+`connector-health` treats disabled connectors as healthy defaults and exits successfully. It exits non-zero only when an enabled connector is misconfigured or unavailable. Review commands still fail open when a connector fails during retrieval.
+
 ## Source Boundaries
 
 ### MCP
@@ -107,6 +118,32 @@ knowledge:
 ```
 
 This shape is available in the generated `.openrabbit/config.yml` scaffold. All connectors stay disabled by default. Token-like fields such as `token`, `api_key`, `secret`, `password`, or `credential` are rejected under `knowledge` config; use `token_env` to name an environment variable instead.
+
+## Environment Variables And Permissions
+
+| Connector | Required config | Required environment | Minimum permission boundary |
+| --- | --- | --- | --- |
+| MCP | `mcp.enabled: true`, at least one server, and `allowed_tools` or `allowed_resources` | Whatever the configured MCP server process or URL requires | Only the approved tools/resources are callable by OpenRabbit |
+| Web search | `web_search.enabled: true`, `web_search.mcp_server`, and an MCP server with an approved tool | Whatever the selected MCP server requires | Public search queries by default; private repository metadata only when `allow_private_code_queries: true` |
+| Multi-repo | `multi_repo.enabled: true` and at least one configured repository entry | None | Reads only explicitly configured local paths |
+| Jira | `jira.enabled: true` and `jira.base_url` | The variable named by `jira.token_env`, default `JIRA_API_TOKEN` | Read linked issues; optional write mode only manages one OpenRabbit summary comment |
+| Linear | `linear.enabled: true` | The variable named by `linear.token_env`, default `LINEAR_API_KEY` | Read linked issues; optional write mode only manages one OpenRabbit summary comment |
+
+For PowerShell, set a connector token with `setx` and open a new terminal:
+
+```powershell
+setx JIRA_API_TOKEN "your-token-or-authorization-header"
+setx LINEAR_API_KEY "your-linear-api-key"
+```
+
+For macOS/Linux shells:
+
+```bash
+export JIRA_API_TOKEN="your-token-or-authorization-header"
+export LINEAR_API_KEY="your-linear-api-key"
+```
+
+Do not use `OPENRABBIT_KNOWLEDGE__CONNECTORS__JIRA__TOKEN` or similar inline secret overrides. The settings loader rejects token-like fields under `knowledge` so secret values do not appear in validation output.
 
 For multi-repo context, configure only repositories OpenRabbit is allowed to read:
 
@@ -201,6 +238,33 @@ knowledge:
 ```
 
 When `write_enabled` is `false`, Linear remains read-only. When `write_enabled` is `true`, the only supported mutation is create-or-update of the managed OpenRabbit Linear summary comment.
+
+## Connector-Health Troubleshooting
+
+`openrabbit connector-health --workspace .` validates configuration without printing secret values.
+
+Common results:
+
+| Message | Meaning | Fix |
+| --- | --- | --- |
+| `disabled` | The connector is off. | No action needed unless you intended to enable it. |
+| `no MCP servers configured` | `mcp.enabled` is true but `servers` is empty. | Add a server entry or disable MCP. |
+| `no MCP server selected for web search` | Web search is enabled without `web_search.mcp_server`. | Set it to the name of an enabled MCP server. |
+| `MCP Python SDK is not installed` | MCP runtime is enabled but optional dependencies are missing. | Run `poetry install --with connectors` or install the connector extra in the active environment. |
+| `no repositories configured` | Multi-repo is enabled with an empty repository list. | Add explicit local paths or disable multi-repo. |
+| `no Jira base_url configured` | Jira is enabled without a tenant URL. | Set `knowledge.connectors.jira.base_url`. |
+| `JIRA_API_TOKEN is not set` | Jira is enabled but the configured token env is absent in this shell. | Set the env var named by `jira.token_env` and open a fresh terminal if needed. |
+| `LINEAR_API_KEY is not set` | Linear is enabled but the configured token env is absent in this shell. | Set the env var named by `linear.token_env`. |
+
+For MCP and MCP-backed web search, health may initialize the configured server and inspect tool or resource catalogs. It does not call unapproved tools and does not execute a live web search. Jira and Linear health checks verify local configuration and token environment presence; they do not contact the remote issue tracker.
+
+## Review-Time Troubleshooting
+
+- If a connector is available in health checks but contributes no context, confirm the PR title, body, branch, commits, or linked GitHub issues mention an item the connector can recognize, such as `SEC-42` or `ENG-42`.
+- If web search returns no items, check that the selected MCP tool accepts the bounded `{ "query": "...", "max_results": N }` shape.
+- If multi-repo context is missing, confirm the configured `path` exists from the workspace root passed to `--workspace`.
+- If Jira or Linear write-back does not create a tracker comment, confirm `write_enabled: true`, `managed_comments: true`, and that the token can add comments to the linked issue.
+- If a connector returns sensitive text, treat it as a bug. Connector output is normalized and redacted before prompt use, and failures should be reported without leaking raw values.
 
 ## Prompt Flow
 

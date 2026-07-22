@@ -307,6 +307,15 @@ poetry install --with connectors
 
 When MCP or MCP-backed web search is enabled, connector health may initialize the configured MCP server and read its tool/resource catalog. It does not run unapproved MCP operations or execute a live web search. Web search uses a selected MCP server and an approved tool allowlist instead of direct Tavily, Firecrawl, or other vendor SDK clients.
 
+Connector setup is intentionally explicit:
+
+1. Keep connectors disabled until the source owner approves them for review context.
+2. Put tokens in environment variables such as `JIRA_API_TOKEN` or `LINEAR_API_KEY`.
+3. Enable only the connector block the repository needs.
+4. Run `openrabbit connector-health --workspace .` before using connectors in `review`, `describe`, `ask`, `improve`, or `eval`.
+
+For setup templates, required permissions, write-mode boundaries, and health-check troubleshooting, use [docs/knowledge-connectors.md](docs/knowledge-connectors.md).
+
 The Jira connector can read linked issue keys such as `SEC-42` when explicitly enabled with `base_url` and `token_env`. The token env can hold a raw bearer/PAT token or a full `Bearer ...` or `Basic ...` authorization value. Jira write mode stays off by default; when enabled, it is limited to one managed OpenRabbit summary comment on the linked issue. It does not create issues, transition status, assign users, change labels, or publish arbitrary Jira comments.
 
 The Linear connector can read linked issue identifiers such as `ENG-42` when explicitly enabled with `token_env`. It uses Linear's GraphQL API by default and keeps write mode off unless `write_enabled: true` is set. When enabled, writes are limited to one managed OpenRabbit summary comment on the linked issue. It does not create issues, change status, assign users, change labels, or publish arbitrary Linear comments.

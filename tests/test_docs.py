@@ -124,5 +124,30 @@ def test_knowledge_connectors_guide_documents_contract() -> None:
         "knowledgeconnectorrequest",
         "knowledgeitem",
         "health check",
+        "setup checklist",
+        "environment variables and permissions",
+        "connector-health troubleshooting",
+        "review-time troubleshooting",
+        "jira_api_token",
+        "linear_api_key",
+        "poetry install --with connectors",
+        "allow_private_code_queries",
+        "one openrabbit summary comment",
     ):
         assert claim in guide
+
+
+def test_readme_documents_connector_setup_quickstart() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "connector setup is intentionally explicit",
+        "jira_api_token",
+        "linear_api_key",
+        "openrabbit connector-health --workspace .",
+        "setup templates",
+        "required permissions",
+        "write-mode boundaries",
+        "health-check troubleshooting",
+    ):
+        assert claim in readme
