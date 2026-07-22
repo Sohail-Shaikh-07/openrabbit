@@ -17,7 +17,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | Quality gates | Optional local Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics and bounded timeouts |
 | PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, sanitized GitHub PR conversation context |
-| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection, optional knowledge connector contracts, disabled-by-default connector health checks, connector context for model-facing commands |
+| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection, optional knowledge connector contracts, disabled-by-default connector health checks, connector context for model-facing commands, context precision diagnostics |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
 
@@ -322,7 +322,7 @@ The Linear connector can read linked issue identifiers such as `ENG-42` when exp
 
 The multi-repo connector can read small snippets from explicitly configured local repository paths such as `../shared-core`. Repository handles can be listed as allowed identifiers, but OpenRabbit does not auto-clone repositories or scan arbitrary organizations. Returned snippets are bounded and labeled with source repo and path provenance.
 
-When enabled, MCP, web search, multi-repo, Jira, and Linear connectors can add bounded, source-labeled context to `review`, `describe`, `ask`, and `improve`. Connector snippets are treated as untrusted evidence, deduplicated across agent dimensions, and surfaced in command summaries through connector counts and context provenance. `openrabbit eval` includes connector item totals and source counts in JSON, dashboard, and Markdown reports.
+When enabled, MCP, web search, multi-repo, Jira, and Linear connectors can add bounded, source-labeled context to `review`, `describe`, `ask`, and `improve`. Connector snippets are treated as untrusted evidence, deduplicated across agent dimensions, and surfaced in command summaries through connector counts, context provenance, and `context_diagnostics`. `openrabbit eval` includes connector item totals, context candidate and selected counts, dropped reasons, prompt-packing estimates, and source counts in JSON, dashboard, and Markdown reports.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
 
@@ -402,6 +402,8 @@ The index includes source symbols, tests, documentation, README-style files, pri
 During review, OpenRabbit uses the changed file paths and changed symbols from the PR diff to prefer context from the files being edited, while still allowing related symbols, nearby files, architecture docs, tests, review examples, and review rules to contribute broader guidance. Retrieved context is packed deterministically so changed-file hits and scoped guideline files are preferred before broader semantic matches.
 
 Use `openrabbit index --health` to confirm Qdrant is reachable and list the available collections before reviewing. When repository context is loaded, `openrabbit review` prints compact context provenance under `Context sources:` so you can see which indexed files influenced the run and why each source was selected, such as `changed_file`, `changed_symbol`, `nearby_path`, `scoped_guideline`, or `semantic`.
+
+JSON output from model-facing commands includes `context_diagnostics` with local-only candidate counts, selected source counts, dropped reasons, score summaries, connector availability counts, and estimated prompt-packing size. These diagnostics are intended for troubleshooting and eval dashboards; they do not include raw tokens, credentials, or unbounded connector output.
 
 The embedding model is downloaded once by FastEmbed when indexing or real RAG retrieval first needs it. OpenRabbit checks Qdrant for an existing RAG index before loading embeddings during review, so a machine without Qdrant or without an index should not trigger an embedding download just to fall back to diff-only mode.
 
@@ -504,7 +506,7 @@ openrabbit eval --repo owner/repo --expectations .openrabbit/eval-expectations.j
 openrabbit eval --repo owner/repo --scenario-group security=1,4 --scenario-group quality=2,3
 ```
 
-Each run captures the command, PR number, provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, local quality gate statuses and diagnostics, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails. `--compare` adds trend deltas against a previous JSON report. `--expectations` checks minimum or maximum finding counts and category counts for curated regression PRs.
+Each run captures the command, PR number, provider, model, context mode, context precision diagnostics, memory context, active learning count, guideline sources, linked issue count, local quality gate statuses and diagnostics, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails. `--compare` adds trend deltas against a previous JSON report. `--expectations` checks minimum or maximum finding counts and category counts for curated regression PRs.
 
 The JSON report also includes dashboard-ready `dashboard`, `command_outcomes`, `context_sources`, `tool_findings`, and `scenario_groups` sections. These are derived from the same local run records and can be used to build charts without sending code or results to a hosted service. See [docs/eval-reporting.md](docs/eval-reporting.md).
 

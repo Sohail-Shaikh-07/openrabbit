@@ -205,7 +205,9 @@ async def test_retrieve_skips_embedding_when_rag_collections_are_missing() -> No
     store.has_any_collection.assert_awaited_once()
     engine.aencode.assert_not_awaited()
     store.search.assert_not_awaited()
-    assert result == RetrievalResult()
+    assert result.security == []
+    assert result.diagnostics["retriever"]["available"] is False
+    assert result.diagnostics["retriever"]["dropped_reasons"] == {"rag_index_unavailable": 1}
 
 
 @pytest.mark.asyncio
@@ -450,6 +452,21 @@ def test_retrieval_result_exposes_context_provenance() -> None:
     assert provenance[0]["name"] == "security-rule"
     assert provenance[0]["score"] == 0.91
     assert provenance[0]["retrieval_reason"] == "semantic"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_records_candidate_and_dropped_diagnostics() -> None:
+    hits = [_payload_hit(f"candidate-{index}", f"src/file_{index}.py") for index in range(12)]
+    store = _mock_store(hits=hits)
+    retriever = ContextRetriever(engine=_mock_engine(), store=store, top_k=3)
+
+    result = await retriever.retrieve(_make_pr_payload())
+
+    diagnostics = result.diagnostics["retriever"]
+    assert diagnostics["available"] is True
+    assert diagnostics["candidate_items"] > diagnostics["selected_items"]
+    assert diagnostics["dropped_reasons"]["top_k_limit"] > 0
+    assert diagnostics["dimensions"]["security"]["selected_items"] == 3
 
 
 def test_retrieval_result_provenance_includes_guideline_metadata() -> None:

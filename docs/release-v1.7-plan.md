@@ -24,6 +24,10 @@ OpenRabbit v1.7 focuses on making review context more precise before it reaches 
 | OP-120 | Security and privacy regressions | Redaction, skipped-path, bounds, source trust, and fail-open coverage for RAG and connector context |
 | OP-121 | v1.7.0 release | Version bump, changelog, release notes, CI, tag, and release artifacts |
 
+## Progress Notes
+
+- OP-113 adds the first context precision telemetry surface. Model-facing command JSON now includes `context_diagnostics` with candidate counts, selected sources, dropped reasons, score summaries, connector availability counts, and estimated prompt-packing size. Eval reports aggregate those fields into totals, dashboard cards, context-source summaries, and Markdown output.
+
 ## Non Goals
 
 - No mandatory hosted services.

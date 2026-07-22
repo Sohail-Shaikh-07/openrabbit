@@ -79,6 +79,18 @@ async def test_run_eval_writes_json_and_markdown_reports(
             "connector_context": (
                 {"items": 2, "sources": {"jira": 1, "multi_repo": 1}} if number == 1 else {}
             ),
+            "context_diagnostics": (
+                {
+                    "candidate_items": 7,
+                    "selected_items": 4,
+                    "dropped_items": 3,
+                    "rag": {"dropped_reasons": {"top_k_limit": 2}},
+                    "connectors": {"dropped_reasons": {"connector_item_limit": 1}},
+                    "prompt_packing": {"estimated_tokens": 25},
+                }
+                if number == 1
+                else {}
+            ),
             "quality_gates": (
                 [
                     {
@@ -123,6 +135,14 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["totals"]["linked_issues"] == 1
     assert data["totals"]["connector_context_items"] == 2
     assert data["totals"]["connector_context_sources"] == {"jira": 1, "multi_repo": 1}
+    assert data["totals"]["context_candidate_items"] == 7
+    assert data["totals"]["context_selected_items"] == 4
+    assert data["totals"]["context_dropped_items"] == 3
+    assert data["totals"]["context_prompt_tokens"] == 25
+    assert data["totals"]["context_dropped_reasons"] == {
+        "connector_item_limit": 1,
+        "top_k_limit": 2,
+    }
     assert data["totals"]["guideline_sources"] == ["AGENTS.md"]
     assert data["runs"][0]["command"] == "openrabbit review --pr 1 --repo o/r --dry-run"
     assert data["runs"][0]["scenario_group"] == "default"
@@ -133,6 +153,10 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["runs"][0]["linked_issue_count"] == 1
     assert data["runs"][0]["connector_context_items"] == 2
     assert data["runs"][0]["connector_context_sources"] == {"jira": 1, "multi_repo": 1}
+    assert data["runs"][0]["context_candidate_items"] == 7
+    assert data["runs"][0]["context_selected_items"] == 4
+    assert data["runs"][0]["context_dropped_items"] == 3
+    assert data["runs"][0]["context_prompt_tokens"] == 25
     assert data["runs"][0]["categories"] == {"security": 1, "tests": 1}
     assert data["runs"][0]["quality_gates"][0]["tool"] == "ruff"
     assert data["runs"][0]["quality_status_counts"] == {"failed": 1}
@@ -142,6 +166,8 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["runs"][1]["scenario_group"] == "default"
     assert data["dashboard"]["cards"]["prs"] == 2
     assert data["dashboard"]["cards"]["connector_context_items"] == 2
+    assert data["dashboard"]["cards"]["context_selected_items"] == 4
+    assert data["dashboard"]["cards"]["context_dropped_items"] == 3
     assert data["dashboard"]["charts"]["connector_sources"] == {"jira": 1, "multi_repo": 1}
     assert data["dashboard"]["charts"]["findings_by_pr"] == [
         {"pr": 1, "findings": 2, "scenario_group": "default"},
@@ -153,6 +179,13 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["context_sources"]["memory_contexts"] == {"loaded": 1, "disabled": 1}
     assert data["context_sources"]["connector_context_items"] == 2
     assert data["context_sources"]["connector_sources"] == {"jira": 1, "multi_repo": 1}
+    assert data["context_sources"]["context_candidate_items"] == 7
+    assert data["context_sources"]["context_selected_items"] == 4
+    assert data["context_sources"]["context_dropped_items"] == 3
+    assert data["context_sources"]["context_dropped_reasons"] == {
+        "connector_item_limit": 1,
+        "top_k_limit": 2,
+    }
     assert data["tool_findings"]["tools"]["ruff"]["diagnostics"] == 2
     assert report["output_path"] == str(output)
     markdown_text = markdown.read_text(encoding="utf-8")

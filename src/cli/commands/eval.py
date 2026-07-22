@@ -128,6 +128,11 @@ async def run_eval(
                     "connector_context": {},
                     "connector_context_items": 0,
                     "connector_context_sources": {},
+                    "context_diagnostics": {},
+                    "context_candidate_items": 0,
+                    "context_selected_items": 0,
+                    "context_dropped_items": 0,
+                    "context_prompt_tokens": 0,
                     "quality_gates": [],
                     "quality_status_counts": {},
                     "quality_diagnostics_count": 0,
@@ -244,6 +249,7 @@ def _run_record_from_summary(
     findings = summary.get("findings")
     finding_items = findings if isinstance(findings, list) else []
     connector_context = _object_dict(summary.get("connector_context"))
+    context_diagnostics = _object_dict(summary.get("context_diagnostics"))
     return {
         "command": command,
         "repo": repo,
@@ -265,6 +271,15 @@ def _run_record_from_summary(
         "connector_context": connector_context,
         "connector_context_items": _coerce_int(connector_context.get("items")),
         "connector_context_sources": _object_dict(connector_context.get("sources")),
+        "context_diagnostics": context_diagnostics,
+        "context_candidate_items": _coerce_int(context_diagnostics.get("candidate_items")),
+        "context_selected_items": _coerce_int(context_diagnostics.get("selected_items")),
+        "context_dropped_items": _coerce_int(context_diagnostics.get("dropped_items")),
+        "context_prompt_tokens": _nested_int(
+            context_diagnostics,
+            "prompt_packing",
+            "estimated_tokens",
+        ),
         "quality_gates": _dict_list(summary.get("quality_gates")),
         "quality_status_counts": _object_dict(summary.get("quality_status_counts")),
         "quality_diagnostics_count": _int_summary(summary, "quality_diagnostics_count"),
@@ -296,6 +311,7 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
     categories: dict[str, int] = {}
     quality_statuses: dict[str, int] = {}
     connector_sources: dict[str, int] = {}
+    context_dropped_reasons: dict[str, int] = {}
     for run in runs:
         raw_categories = run.get("categories")
         if isinstance(raw_categories, dict):
@@ -313,6 +329,17 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
                 connector_sources[str(source)] = connector_sources.get(
                     str(source), 0
                 ) + _coerce_int(count)
+        raw_context_diagnostics = _object_dict(run.get("context_diagnostics"))
+        raw_rag = _object_dict(raw_context_diagnostics.get("rag"))
+        raw_connector = _object_dict(raw_context_diagnostics.get("connectors"))
+        for reasons in (
+            _object_dict(raw_rag.get("dropped_reasons")),
+            _object_dict(raw_connector.get("dropped_reasons")),
+        ):
+            for reason, count in reasons.items():
+                context_dropped_reasons[str(reason)] = context_dropped_reasons.get(
+                    str(reason), 0
+                ) + _coerce_int(count)
     return {
         "prs": len(runs),
         "findings": sum(_int_run(run, "findings_count") for run in runs),
@@ -322,6 +349,11 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
         "linked_issues": sum(_int_run(run, "linked_issue_count") for run in runs),
         "connector_context_items": sum(_int_run(run, "connector_context_items") for run in runs),
         "connector_context_sources": connector_sources,
+        "context_candidate_items": sum(_int_run(run, "context_candidate_items") for run in runs),
+        "context_selected_items": sum(_int_run(run, "context_selected_items") for run in runs),
+        "context_dropped_items": sum(_int_run(run, "context_dropped_items") for run in runs),
+        "context_prompt_tokens": sum(_int_run(run, "context_prompt_tokens") for run in runs),
+        "context_dropped_reasons": context_dropped_reasons,
         "guideline_sources": sorted(
             {source for run in runs for source in _string_list(run.get("guideline_sources"))}
         ),
@@ -360,14 +392,25 @@ def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
         {source for run in runs for source in _string_list(run.get("guideline_sources"))}
     )
     connector_sources: dict[str, int] = {}
+    context_dropped_reasons: dict[str, int] = {}
     for run in runs:
         raw_sources = run.get("connector_context_sources")
-        if not isinstance(raw_sources, dict):
-            continue
-        for source, count in raw_sources.items():
-            connector_sources[str(source)] = connector_sources.get(str(source), 0) + _coerce_int(
-                count
-            )
+        if isinstance(raw_sources, dict):
+            for source, count in raw_sources.items():
+                connector_sources[str(source)] = connector_sources.get(
+                    str(source), 0
+                ) + _coerce_int(count)
+        raw_context_diagnostics = _object_dict(run.get("context_diagnostics"))
+        raw_rag = _object_dict(raw_context_diagnostics.get("rag"))
+        raw_connector = _object_dict(raw_context_diagnostics.get("connectors"))
+        for reasons in (
+            _object_dict(raw_rag.get("dropped_reasons")),
+            _object_dict(raw_connector.get("dropped_reasons")),
+        ):
+            for reason, count in reasons.items():
+                context_dropped_reasons[str(reason)] = context_dropped_reasons.get(
+                    str(reason), 0
+                ) + _coerce_int(count)
     return {
         "context_modes": context_modes,
         "memory_contexts": memory_modes,
@@ -375,6 +418,11 @@ def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
         "guideline_source_count": len(guideline_sources),
         "connector_sources": connector_sources,
         "connector_context_items": sum(_int_run(run, "connector_context_items") for run in runs),
+        "context_candidate_items": sum(_int_run(run, "context_candidate_items") for run in runs),
+        "context_selected_items": sum(_int_run(run, "context_selected_items") for run in runs),
+        "context_dropped_items": sum(_int_run(run, "context_dropped_items") for run in runs),
+        "context_prompt_tokens": sum(_int_run(run, "context_prompt_tokens") for run in runs),
+        "context_dropped_reasons": context_dropped_reasons,
         "linked_issue_count": sum(_int_run(run, "linked_issue_count") for run in runs),
         "learning_count": sum(_int_run(run, "learning_count") for run in runs),
     }
@@ -412,6 +460,8 @@ def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
             "failures": _coerce_int(totals.get("failures")),
             "dropped_findings": _coerce_int(totals.get("dropped_findings")),
             "connector_context_items": _coerce_int(totals.get("connector_context_items")),
+            "context_selected_items": _coerce_int(totals.get("context_selected_items")),
+            "context_dropped_items": _coerce_int(totals.get("context_dropped_items")),
             "quality_diagnostics": _coerce_int(totals.get("quality_diagnostics")),
             "runtime_ms": _coerce_float(totals.get("runtime_ms")),
         },
@@ -433,6 +483,7 @@ def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
                 for run in runs
             ],
             "context_modes": context_sources.get("context_modes", {}),
+            "context_dropped_reasons": context_sources.get("context_dropped_reasons", {}),
             "connector_sources": context_sources.get("connector_sources", {}),
             "quality_statuses": totals.get("quality_status_counts", {}),
             "categories": totals.get("categories", {}),
@@ -469,6 +520,9 @@ def _markdown_report(report: dict[str, object]) -> str:
         f"- Findings: {totals.get('findings', 0)}",
         f"- Failures: {totals.get('failures', 0)}",
         f"- Connector context items: {totals.get('connector_context_items', 0)}",
+        f"- Context selected items: {totals.get('context_selected_items', 0)}",
+        f"- Context candidate items: {totals.get('context_candidate_items', 0)}",
+        f"- Context dropped items: {totals.get('context_dropped_items', 0)}",
         f"- Quality diagnostics: {totals.get('quality_diagnostics', 0)}",
         "",
         *_markdown_dashboard_sections(report),
@@ -543,6 +597,10 @@ def _markdown_dashboard_sections(report: dict[str, object]) -> list[str]:
             f"- Memory contexts: {_category_text(context_sources.get('memory_contexts'))}",
             f"- Connector context items: {context_sources.get('connector_context_items', 0)}",
             f"- Connector sources: {_category_text(context_sources.get('connector_sources'))}",
+            f"- Context selected items: {context_sources.get('context_selected_items', 0)}",
+            f"- Context candidates: {context_sources.get('context_candidate_items', 0)}",
+            f"- Context dropped: {context_sources.get('context_dropped_items', 0)}",
+            f"- Context dropped reasons: {_category_text(context_sources.get('context_dropped_reasons'))}",
             f"- Guideline sources: {context_sources.get('guideline_source_count', 0)}",
             f"- Linked issues: {context_sources.get('linked_issue_count', 0)}",
             "",
@@ -842,6 +900,13 @@ def _int_run(run: dict[str, object], key: str) -> int:
 def _float_run(run: dict[str, object], key: str) -> float:
     value = run.get(key)
     return _coerce_float(value)
+
+
+def _nested_int(value: dict[str, object], *keys: str) -> int:
+    current: object = value
+    for key in keys:
+        current = _object_dict(current).get(key)
+    return _coerce_int(current)
 
 
 def _coerce_int(value: object) -> int:
