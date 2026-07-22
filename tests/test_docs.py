@@ -151,3 +151,21 @@ def test_readme_documents_connector_setup_quickstart() -> None:
         "health-check troubleshooting",
     ):
         assert claim in readme
+
+
+def test_v1_7_context_precision_plan_documents_release_scope() -> None:
+    plan = (ROOT / "docs" / "release-v1.7-plan.md").read_text(encoding="ascii").lower()
+    gap = (ROOT / "docs" / "pr-agent-gap-analysis.md").read_text(encoding="ascii")
+
+    for claim in (
+        "context precision",
+        "changed-line evidence first",
+        "source budgets",
+        "connector relevance scoring",
+        "context precision eval",
+        "security and privacy regressions",
+        "op-113",
+        "op-121",
+    ):
+        assert claim in plan
+    assert "release-v1.7-plan.md" in gap
