@@ -17,7 +17,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 | Ranking | Severity/confidence scoring, duplicate removal, changed-line grounding |
 | Quality gates | Optional local Ruff, mypy, pytest, Bandit, Semgrep, ESLint, and npm test execution with structured diagnostics and bounded timeouts |
 | PR memory | Local SQLite review memory, finding fingerprints, re-review status labels, sanitized GitHub PR conversation context |
-| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection, optional knowledge connector contracts, disabled-by-default connector health checks |
+| RAG | Repository scanner, chunker, embeddings, Qdrant vector store, indexing CLI, automatic review context loading, repository guideline detection, optional knowledge connector contracts, disabled-by-default connector health checks, connector context for model-facing commands |
 | Fine-tuning | QLoRA training, dataset cleaning/formatting, evaluation, adapter packaging |
 | Benchmarks | Benchmark runner, scorer, profiler, and packaged v1.1 regression corpus |
 
@@ -309,9 +309,11 @@ When MCP or MCP-backed web search is enabled, connector health may initialize th
 
 The Jira connector can read linked issue keys such as `SEC-42` when explicitly enabled with `base_url` and `token_env`. The token env can hold a raw bearer/PAT token or a full `Bearer ...` or `Basic ...` authorization value. Jira write mode stays off by default; when enabled, it is limited to one managed OpenRabbit summary comment on the linked issue. It does not create issues, transition status, assign users, change labels, or publish arbitrary Jira comments.
 
-The Linear connector can read linked issue identifiers such as `ENG-42` when explicitly enabled with `token_env`. It uses Linear's GraphQL API by default and keeps write mode off unless `write_enabled: true` is set. When enabled, writes are limited to one managed OpenRabbit summary comment on the linked issue. It does not create issues, change status, assign users, change labels, or publish arbitrary Linear comments. Later v1.6 tasks will decide where retrieved connector snippets enter review prompts.
+The Linear connector can read linked issue identifiers such as `ENG-42` when explicitly enabled with `token_env`. It uses Linear's GraphQL API by default and keeps write mode off unless `write_enabled: true` is set. When enabled, writes are limited to one managed OpenRabbit summary comment on the linked issue. It does not create issues, change status, assign users, change labels, or publish arbitrary Linear comments.
 
 The multi-repo connector can read small snippets from explicitly configured local repository paths such as `../shared-core`. Repository handles can be listed as allowed identifiers, but OpenRabbit does not auto-clone repositories or scan arbitrary organizations. Returned snippets are bounded and labeled with source repo and path provenance.
+
+When enabled, MCP, web search, multi-repo, Jira, and Linear connectors can add bounded, source-labeled context to `review`, `describe`, `ask`, and `improve`. Connector snippets are treated as untrusted evidence, deduplicated across agent dimensions, and surfaced in command summaries through connector counts and context provenance. `openrabbit eval` includes connector item totals and source counts in JSON, dashboard, and Markdown reports.
 
 Review controls let each repository tune how OpenRabbit behaves. Use `profile: chill` for quieter high-confidence reviews, or `profile: assertive` for broader concrete risk coverage. `path_include` and `path_exclude` accept glob patterns, `path_instructions` adds targeted guidance for matching paths, and the max-file/max-line/generated controls prevent large or generated changes from overwhelming prompts. When paths are skipped, `openrabbit review` reports them in the CLI summary.
 
@@ -352,7 +354,7 @@ Use the user config for repeated local defaults such as model provider, model na
 
 OpenRabbit stores local PR memory in `.openrabbit/state/openrabbit.db` by default. This memory helps identify whether findings are new, still present, or possibly fixed across re-runs. Model-facing commands also fetch current GitHub PR reviews, inline review comments, and issue comments as sanitized conversation context when memory is enabled. `openrabbit init` writes `.openrabbit/.gitignore` so local state, cache, memory folders, and SQLite databases are not committed. See [docs/pr-memory.md](docs/pr-memory.md). Future graph and vector memory plugins are planned as optional local-first adapters, documented in [docs/memory-backends.md](docs/memory-backends.md).
 
-Optional MCP, web search, multi-repo, Jira, and Linear knowledge connector boundaries are documented in [docs/knowledge-connectors.md](docs/knowledge-connectors.md). OpenRabbit can now validate their disabled-by-default configuration with `openrabbit connector-health`, but no external connector context is used by the review loop until later v1.6 runtime tasks.
+Optional MCP, web search, multi-repo, Jira, and Linear knowledge connector boundaries are documented in [docs/knowledge-connectors.md](docs/knowledge-connectors.md). OpenRabbit can validate their disabled-by-default configuration with `openrabbit connector-health`; when explicitly enabled and available, their bounded snippets are included in model-facing review context.
 
 Any config value can be overridden with an `OPENRABBIT_` environment variable using `__` between nested fields:
 

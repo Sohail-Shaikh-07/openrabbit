@@ -9,6 +9,7 @@ from knowledge.connectors import (
     normalize_knowledge_items,
     sanitize_knowledge_text,
 )
+from knowledge.context import ConnectorContextBundle, load_connector_context
 from knowledge.jira import (
     MANAGED_COMMENT_MARKER,
     JiraClientError,
@@ -39,6 +40,7 @@ __all__ = [
     "LINEAR_GRAPHQL_ENDPOINT",
     "MANAGED_COMMENT_MARKER",
     "MANAGED_LINEAR_COMMENT_MARKER",
+    "ConnectorContextBundle",
     "ConnectorHealthResult",
     "JiraClientError",
     "JiraCommentPublishResult",
@@ -61,6 +63,7 @@ __all__ = [
     "build_connector_registry",
     "extract_jira_issue_keys",
     "extract_linear_issue_ids",
+    "load_connector_context",
     "mcp_sdk_available",
     "normalize_knowledge_items",
     "sanitize_knowledge_text",

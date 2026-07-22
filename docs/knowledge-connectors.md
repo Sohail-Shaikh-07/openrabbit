@@ -1,8 +1,8 @@
 # Optional Knowledge Connectors
 
-OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors are future adapters that can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
+OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. OP-103 adds a Linear connector runtime for linked issue reads and opt-in managed Linear comments. OP-104 adds explicit multi-repo local context loading. MCP, web search, Jira, Linear, and multi-repo context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. OP-103 adds a Linear connector runtime for linked issue reads and opt-in managed Linear comments. OP-104 adds explicit multi-repo local context loading. OP-105 wires enabled connector snippets into `review`, `describe`, `ask`, `improve`, and `eval` reporting. Connector snippets are not used by `index` or local memory storage.
 
 ## Contract
 
@@ -14,6 +14,8 @@ Connector implementations conform to `KnowledgeConnector` from `knowledge.connec
 - `normalize_knowledge_items` bounds text, redacts common tokens, and sorts snippets deterministically.
 
 Connectors return untrusted context. They do not change the required model output schema, bypass changed-line grounding, or publish GitHub comments directly. A connector can only provide source-labeled prompt guidance for the review pipeline to consider.
+
+When connectors are enabled and available, OpenRabbit builds one bounded request from the PR title, body, linked GitHub issue summaries, commit messages, changed paths, and the ask question when present. Returned snippets are normalized, redacted, capped, attached to every review-agent context dimension, and deduplicated before prompts are rendered.
 
 ## Source Boundaries
 
@@ -67,6 +69,8 @@ A document connector may read explicitly configured design docs, runbooks, or de
 - Connector snippets are prompt guidance only and are always labeled by source.
 - Connector data is treated as untrusted context and cannot override OpenRabbit's safety, grounding, or publishing rules.
 - Optional connector configuration must name token environment variables rather than storing token values in repository config.
+- `review`, `describe`, `ask`, and `improve` continue when a connector is disabled, unavailable, or fails during retrieval.
+- Command summaries include connector counts and provenance for loaded connector snippets. `openrabbit eval` aggregates connector item totals and source counts in JSON, dashboard, and Markdown reports.
 
 ## Configuration Shape
 
@@ -208,6 +212,8 @@ PR diff
   -> optional knowledge connectors
   -> prompt context with labeled, bounded, untrusted snippets
 ```
+
+Connector context is merged before review controls filter model context, so skipped-path rules still apply to path-labeled connector snippets. Source-only snippets that are not tied to skipped files remain available as general evidence.
 
 ## Adapter Rules
 

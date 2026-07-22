@@ -26,7 +26,12 @@ from agents.prompting import (
     format_prompt_diff,
 )
 from cli.commands.history import load_pr_history
-from cli.commands.review import ContextLoader, _has_retrieval_context, _load_review_context
+from cli.commands.review import (
+    ContextLoader,
+    _context_provenance,
+    _has_retrieval_context,
+    _load_review_context,
+)
 from cli.commands.review_context import filter_model_review_context
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -38,6 +43,7 @@ from github_ import (
     RepositoryHandle,
     ReviewComment,
 )
+from knowledge.context import load_connector_context
 from memory.history import PullRequestHistory
 from ranking.grounding import DiffGroundingIndex, build_diff_grounding_index
 from review_controls import prepare_review_controls
@@ -175,6 +181,14 @@ async def run_improve(
         )
         retrieval_result = None
 
+    connector_context = load_connector_context(
+        settings,
+        payload,
+        repo=handle.full_name,
+        env=env,
+        retrieval_result=retrieval_result,
+    )
+    retrieval_result = connector_context.retrieval_result
     model_context = filter_model_review_context(
         controls_result,
         retrieval_result=retrieval_result,
@@ -230,6 +244,8 @@ async def run_improve(
         "review_control_warnings": [item.as_dict() for item in controls_result.warnings],
         "ast_unsupported_path_count": len(controls_result.unsupported_paths),
         "context_loaded": _has_retrieval_context(retrieval_result),
+        "context_provenance": _context_provenance(retrieval_result),
+        "connector_context": connector_context.summary,
         "conversation_count": pr_history_result.conversation_count,
         "learning_count": pr_history_result.learning_count,
         "suggestions_count": len(publish_plan.inline_suggestions)

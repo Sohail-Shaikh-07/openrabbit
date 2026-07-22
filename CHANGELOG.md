@@ -11,6 +11,9 @@ All notable changes to OpenRabbit are documented in this file.
 - Added disabled-by-default connector configuration, a connector registry, and `openrabbit connector-health` for read-only MCP, web search, multi-repo, Jira, and Linear readiness checks.
 - Added an optional MCP client runtime for configured stdio and Streamable HTTP servers, with approved tool/resource allowlists, bounded timeouts, fail-open behavior, sanitized MCP snippets, and optional `poetry install --with connectors` SDK installation.
 - Added an MCP-backed web search connector flow that routes through configured MCP servers, blocks code-like private queries by default, normalizes source-labeled results, and keeps direct vendor SDK clients out of the core package.
+- Added Jira and Linear connector runtimes for linked issue reads plus opt-in managed issue-tracker summary comments.
+- Added explicit multi-repo local context loading for configured sibling repositories without auto-cloning or arbitrary organization scans.
+- Wired enabled connector snippets into `review`, `describe`, `ask`, and `improve` prompt context, with untrusted-source labeling, deduplication, provenance, and eval connector totals.
 
 ## v1.5.0 - 2026-07-17
 

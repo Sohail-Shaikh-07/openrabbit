@@ -324,11 +324,16 @@ def format_prompt_diff(
 def format_context(items: Iterable[Any]) -> str:
     """Format RAG hits or test-provided strings into prompt-ready context."""
     lines: list[str] = []
+    seen: set[tuple[str, str]] = set()
     for item in items:
         source, text = _context_item_parts(item)
         if not text:
             continue
         clean = " ".join(text.split())
+        key = (source, clean)
+        if key in seen:
+            continue
+        seen.add(key)
         if source:
             lines.append(f"- [{source}] {clean}")
         else:
