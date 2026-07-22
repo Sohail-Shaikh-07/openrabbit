@@ -25,7 +25,12 @@ def test_run_init_creates_all_templates(tmp_path: Path) -> None:
     assert result.overwritten == []
     for name, content in TEMPLATES.items():
         assert (scaffold / name).read_text(encoding="utf-8") == content
-    assert "  ast_instructions: []" in (scaffold / "config.yml").read_text(encoding="utf-8")
+    config_text = (scaffold / "config.yml").read_text(encoding="utf-8")
+    assert "  ast_instructions: []" in config_text
+    assert "docs/knowledge-connectors.md" in config_text
+    assert "allowed_tools: [search_docs]" in config_text
+    assert "OpenRabbit does not auto-clone" in config_text
+    assert "write_enabled: false" in config_text
     assert (scaffold / ".gitignore").read_text(
         encoding="utf-8"
     ) == "state/\nmemory/\ncache/\n*.db\n"

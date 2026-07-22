@@ -91,31 +91,58 @@ knowledge:
   connectors:
     # Optional connectors are disabled by default. Store tokens in environment
     # variables and reference their names here instead of writing secrets to
-    # this file.
+    # this file. See docs/knowledge-connectors.md for setup and troubleshooting.
     mcp:
       enabled: false
+      # Each enabled MCP server must approve at least one tool or resource.
+      # Example Streamable HTTP server:
+      # servers:
+      #   - name: docs
+      #     transport: streamable-http
+      #     url: https://mcp.example.test/mcp
+      #     allowed_tools: [search_docs]
+      # Example stdio server:
+      # servers:
+      #   - name: local-docs
+      #     transport: stdio
+      #     command: python
+      #     args: ["-m", "local_docs_mcp"]
+      #     allowed_resources: [docs://architecture]
       servers: []
       max_items: 8
       timeout_seconds: 10
     web_search:
       enabled: false
-      # Web search is routed through an explicitly configured MCP server.
+      # Web search is routed through an explicitly configured MCP server and
+      # one of that server's approved tools. Keep private code queries disabled
+      # unless the selected provider is approved for repository metadata.
       # mcp_server: docs
       allow_private_code_queries: false
       max_items: 5
     multi_repo:
       enabled: false
+      # Only explicitly listed local paths are scanned. Repository handles are
+      # allowlist labels for future integrations; OpenRabbit does not auto-clone.
+      # repositories:
+      #   - name: shared-core
+      #     path: ../shared-core
+      #     repo: owner/shared-core
       repositories: []
       max_items: 8
     jira:
       enabled: false
       # base_url: https://example.atlassian.net
+      # Set this environment variable outside the config file. It may contain a
+      # raw token, Bearer value, or Basic value with read access to linked issues.
       token_env: JIRA_API_TOKEN
+      # Write mode only creates or updates one managed OpenRabbit summary comment.
       write_enabled: false
       managed_comments: true
       max_items: 8
     linear:
       enabled: false
+      # Set this environment variable outside the config file with a Linear API
+      # key that can read linked issues. Write mode only manages one summary comment.
       token_env: LINEAR_API_KEY
       write_enabled: false
       managed_comments: true

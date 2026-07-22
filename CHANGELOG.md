@@ -14,6 +14,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added Jira and Linear connector runtimes for linked issue reads plus opt-in managed issue-tracker summary comments.
 - Added explicit multi-repo local context loading for configured sibling repositories without auto-cloning or arbitrary organization scans.
 - Wired enabled connector snippets into `review`, `describe`, `ask`, and `improve` prompt context, with untrusted-source labeling, deduplication, provenance, and eval connector totals.
+- Expanded connector setup documentation, generated config comments, permission boundaries, and `connector-health` troubleshooting for MCP, web search, multi-repo, Jira, and Linear.
 
 ## v1.5.0 - 2026-07-17
 
