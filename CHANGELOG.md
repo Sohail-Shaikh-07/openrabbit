@@ -4,7 +4,7 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
-No changes yet.
+- Added the v1.7 Context Precision plan for RAG and connector context selection, packing, evaluation, documentation, and release work.
 
 ## v1.6.0 - 2026-07-22
 
