@@ -2,7 +2,7 @@
 
 OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors are future adapters that can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. MCP, web search, and Jira context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. OP-103 adds a Linear connector runtime for linked issue reads and opt-in managed Linear comments. MCP, web search, Jira, and Linear context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
 
 ## Contract
 
@@ -46,6 +46,10 @@ Issue tracker connectors may fetch linked work item title, state, labels, and a 
 The Jira runtime extracts linked issue keys such as `SEC-42` from bounded request text, fetches summary, status, labels, URL, and description preview through Jira's REST API, and returns source-labeled untrusted context. Jira reads fail open per issue, so an unavailable issue or tenant does not block a review.
 
 Jira write mode is opt-in with `write_enabled: true` and is limited to one managed OpenRabbit comment marked with `<!-- openrabbit:jira-managed-comment -->`. The connector creates that comment when missing or updates the existing marked comment. It does not create issues, transition status, assign users, mutate labels, or publish arbitrary comments.
+
+The Linear runtime extracts linked issue identifiers such as `ENG-42` from bounded request text, fetches identifier, title, state, labels, URL, and description preview through Linear's GraphQL API, and returns source-labeled untrusted context. Linear reads fail open per issue, so an unavailable issue or workspace does not block a review.
+
+Linear write mode is opt-in with `write_enabled: true` and is limited to one managed OpenRabbit comment marked with `<!-- openrabbit:linear-managed-comment -->`. The connector creates that comment when missing or updates the existing marked comment. It does not create issues, change status, assign users, mutate labels, or publish arbitrary comments.
 
 ### Document Systems
 
@@ -160,6 +164,21 @@ knowledge:
 ```
 
 When `write_enabled` is `false`, Jira remains read-only. When `write_enabled` is `true`, the only supported mutation is create-or-update of the managed OpenRabbit Jira summary comment. A raw token is sent as `Bearer <token>`; a value that already starts with `Bearer ` or `Basic ` is used as provided.
+
+For Linear, keep the API key in the configured environment variable. The default endpoint is `https://api.linear.app/graphql`; `base_url` can point to a compatible GraphQL endpoint when needed:
+
+```yaml
+knowledge:
+  connectors:
+    linear:
+      enabled: true
+      token_env: LINEAR_API_KEY
+      write_enabled: false
+      managed_comments: true
+      max_items: 8
+```
+
+When `write_enabled` is `false`, Linear remains read-only. When `write_enabled` is `true`, the only supported mutation is create-or-update of the managed OpenRabbit Linear summary comment.
 
 ## Prompt Flow
 
