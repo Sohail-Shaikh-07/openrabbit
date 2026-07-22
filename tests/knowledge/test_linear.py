@@ -21,10 +21,12 @@ class FakeLinearClient:
     updated: list[tuple[str, str]] = field(default_factory=list)
     fail_fetch: bool = False
     fail_write: bool = False
+    fail_fetch_message: str = "linear unavailable token: secret-value"
+    fail_write_message: str = "comment lookup failed"
 
     def fetch_issue(self, identifier: str) -> Mapping[str, object]:
         if self.fail_fetch:
-            raise LinearClientError("linear unavailable token: secret-value")
+            raise LinearClientError(self.fail_fetch_message)
         issue = self.issues.get(identifier)
         if issue is None:
             raise LinearClientError("not found")
@@ -32,18 +34,18 @@ class FakeLinearClient:
 
     def list_comments(self, issue_id: str) -> Sequence[Mapping[str, object]]:
         if self.fail_write:
-            raise LinearClientError("comment lookup failed")
+            raise LinearClientError(self.fail_write_message)
         return self.comments.get(issue_id, [])
 
     def create_comment(self, issue_id: str, body: str) -> str:
         if self.fail_write:
-            raise LinearClientError("comment create failed")
+            raise LinearClientError(self.fail_write_message)
         self.created.append((issue_id, body))
         return "created-linear"
 
     def update_comment(self, comment_id: str, body: str) -> str:
         if self.fail_write:
-            raise LinearClientError("comment update failed")
+            raise LinearClientError(self.fail_write_message)
         self.updated.append((comment_id, body))
         return comment_id
 
@@ -174,6 +176,32 @@ def test_linear_retrieve_fails_open_when_client_fails() -> None:
     assert items == []
 
 
+def test_linear_retrieve_fails_open_for_auth_rate_limit_and_malformed_responses() -> None:
+    auth_failure = _connector(
+        {"linear": {"enabled": True}},
+        client=FakeLinearClient(
+            fail_fetch=True,
+            fail_fetch_message="401 unauthorized token: leaked-secret-value",
+        ),
+    )
+    rate_limited = _connector(
+        {"linear": {"enabled": True}},
+        client=FakeLinearClient(
+            fail_fetch=True,
+            fail_fetch_message="429 rate limited token: leaked-secret-value",
+        ),
+    )
+    malformed = _connector(
+        {"linear": {"enabled": True}},
+        client=FakeLinearClient(issues={"SEC-42": {"id": "", "identifier": "", "title": ""}}),
+    )
+    request = KnowledgeConnectorRequest(repo="owner/repo", pr_number=42, query="SEC-42")
+
+    assert auth_failure.retrieve(request) == []
+    assert rate_limited.retrieve(request) == []
+    assert malformed.retrieve(request)[0].title == "SEC-42"
+
+
 def test_linear_managed_comment_write_is_opt_in() -> None:
     connector = _connector(
         {"linear": {"enabled": True}},
@@ -220,6 +248,24 @@ def test_linear_managed_comment_creates_comment_with_marker() -> None:
     ]
 
 
+def test_linear_managed_comment_redacts_and_bounds_body() -> None:
+    client = FakeLinearClient(issues={"SEC-42": _issue("SEC-42", issue_id="issue-sec-42")})
+    connector = _connector(
+        {"linear": {"enabled": True, "write_enabled": True}},
+        client=client,
+    )
+    raw_body = "token=super-secret-value " + ("x" * 7000)
+
+    result = connector.publish_managed_comment("SEC-42", raw_body)
+
+    assert result.action == "created"
+    body = client.created[0][1]
+    assert body.startswith(MANAGED_LINEAR_COMMENT_MARKER)
+    assert "super-secret-value" not in body
+    assert "token=[REDACTED]" in body
+    assert len(body) <= len(MANAGED_LINEAR_COMMENT_MARKER) + 1 + 6000
+
+
 def test_linear_managed_comment_updates_existing_marker_comment() -> None:
     client = FakeLinearClient(
         issues={"SEC-42": _issue("SEC-42", issue_id="issue-sec-42")},
@@ -240,16 +286,42 @@ def test_linear_managed_comment_updates_existing_marker_comment() -> None:
     assert client.created == []
 
 
+def test_linear_managed_comment_updates_one_existing_marker_without_duplicate_create() -> None:
+    client = FakeLinearClient(
+        issues={"SEC-42": _issue("SEC-42", issue_id="issue-sec-42")},
+        comments={
+            "issue-sec-42": [
+                {"id": "comment-unmanaged", "body": "Human comment"},
+                {"id": "comment-managed", "body": f"{MANAGED_LINEAR_COMMENT_MARKER}\nOld"},
+                {"id": "comment-managed-later", "body": f"{MANAGED_LINEAR_COMMENT_MARKER}\nOlder"},
+            ]
+        },
+    )
+    connector = _connector(
+        {"linear": {"enabled": True, "write_enabled": True}},
+        client=client,
+    )
+
+    result = connector.publish_managed_comment("SEC-42", "New summary")
+
+    assert result.action == "updated"
+    assert result.comment_id == "comment-managed"
+    assert client.updated == [("comment-managed", f"{MANAGED_LINEAR_COMMENT_MARKER}\nNew summary")]
+    assert client.created == []
+
+
 def test_linear_managed_comment_fails_open_when_write_fails() -> None:
     connector = _connector(
         {"linear": {"enabled": True, "write_enabled": True}},
         client=FakeLinearClient(
             issues={"SEC-42": _issue("SEC-42", issue_id="issue-sec-42")},
             fail_write=True,
+            fail_write_message="401 unauthorized token: leaked-secret-value",
         ),
     )
 
     result = connector.publish_managed_comment("SEC-42", "OpenRabbit summary")
 
     assert result.action == "failed"
-    assert result.reason == "comment lookup failed"
+    assert result.reason == "401 unauthorized token: [REDACTED]"
+    assert "leaked-secret-value" not in result.reason

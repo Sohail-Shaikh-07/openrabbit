@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from agents.prompting import format_context
+from cli.commands.review_context import filter_model_review_context
 from configs.settings import Settings
 from knowledge.connectors import (
     KnowledgeConnectorHealth,
@@ -15,6 +16,7 @@ from knowledge.connectors import (
 )
 from knowledge.context import load_connector_context
 from rag.retriever import RetrievalResult
+from review_controls import ReviewControlResult, SkippedPath
 
 
 class _FakeConnector:
@@ -157,3 +159,71 @@ def test_connector_context_prompt_entries_are_deduplicated_across_dimensions() -
     context = format_context([hit, hit])
 
     assert context.count("Connector context") == 1
+
+
+def test_load_connector_context_redacts_and_bounds_prompt_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connector = _FakeConnector(
+        [
+            KnowledgeItem(
+                source_id="runbook",
+                source_kind=KnowledgeSourceKind.DOCUMENT,
+                title="Export runbook",
+                body="token=super-secret-value " + ("x" * 2000),
+                score=0.5,
+                metadata={"provider": "docs", "api_key": "token=secret-token-value"},
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        "knowledge.context._enabled_connectors", lambda *_args, **_kwargs: [connector]
+    )
+
+    bundle = load_connector_context(Settings(), _pr_payload(), repo="o/r")
+
+    retrieval = bundle.retrieval_result
+    assert isinstance(retrieval, RetrievalResult)
+    payload = retrieval.security[0]["payload"]
+    assert "super-secret-value" not in payload["text"]
+    assert "secret-token-value" not in str(payload)
+    assert "token=[REDACTED]" in payload["text"]
+    assert payload["metadata_api_key"] == "token=[REDACTED]"
+    assert len(payload["text"]) < 1200
+
+
+def test_connector_context_respects_skipped_path_filtering() -> None:
+    controls = ReviewControlResult(
+        filtered_payload=SimpleNamespace(files=[SimpleNamespace(path="src/allowed.py")]),
+        skipped_paths=[SkippedPath(path="docs/hidden.md", reason="path_excluded")],
+    )
+    retrieval = RetrievalResult(
+        security=[
+            {
+                "payload": {
+                    "kind": "connector_context",
+                    "source_path": "docs/hidden.md",
+                    "text": "SKIPPED_CONNECTOR_CONTEXT",
+                }
+            },
+            {
+                "payload": {
+                    "kind": "connector_context",
+                    "source_path": "https://docs.example/export",
+                    "text": "GENERAL_CONNECTOR_CONTEXT",
+                }
+            },
+        ]
+    )
+
+    result = filter_model_review_context(
+        controls,
+        retrieval_result=retrieval,
+        pr_history=None,
+        quality_results=[],
+    )
+
+    assert isinstance(result.retrieval_result, RetrievalResult)
+    assert [hit["payload"]["text"] for hit in result.retrieval_result.security] == [
+        "GENERAL_CONNECTOR_CONTEXT"
+    ]
