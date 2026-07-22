@@ -277,6 +277,22 @@ async def test_retrieve_query_includes_changed_symbol_hints() -> None:
 
 
 @pytest.mark.asyncio
+async def test_retrieve_query_includes_related_test_and_nearby_directory_hints() -> None:
+    engine = _mock_engine()
+    store = _mock_store()
+    retriever = ContextRetriever(engine=engine, store=store)
+    pr = _make_pr_payload(title="Add task export", filenames=["src/tasks/export.py"])
+
+    await retriever.retrieve(pr)
+
+    query_text = engine.aencode.call_args[0][0][0].text
+    assert "nearby directories:" in query_text
+    assert "src/tasks" in query_text
+    assert "related tests:" in query_text
+    assert "tests/tasks/test_export.py" in query_text
+
+
+@pytest.mark.asyncio
 async def test_retrieve_prioritizes_changed_file_context_with_path_filters() -> None:
     store = _mock_store()
 
@@ -332,7 +348,9 @@ async def test_retrieve_path_filter_includes_all_changed_files() -> None:
         for condition in call.kwargs["filter"]["should"]
         if condition["key"] == "source_path"
     }
-    assert values == {"src/auth/login.py", "src/auth/session.py"}
+    assert {"src/auth/login.py", "src/auth/session.py"}.issubset(values)
+    assert "tests/auth/test_login.py" in values
+    assert "tests/auth/test_session.py" in values
 
 
 @pytest.mark.asyncio
@@ -361,6 +379,77 @@ async def test_retrieve_queries_function_context_by_changed_symbols() -> None:
         )
     ]
     assert symbol_calls
+
+
+@pytest.mark.asyncio
+async def test_retrieve_queries_related_test_paths_and_labels_results() -> None:
+    store = _mock_store()
+
+    async def search_side_effect(
+        collection: str,
+        _query_vec: object,
+        *,
+        top_k: int = 10,
+        filter: dict | None = None,
+    ) -> list[dict]:
+        _ = top_k
+        if collection != COLLECTION_FUNCTIONS:
+            return []
+        conditions = (filter or {}).get("should", [])
+        if any(
+            condition["key"] == "source_path"
+            and condition["match"]["value"] == "tests/tasks/test_export.py"
+            for condition in conditions
+        ):
+            return [_payload_hit("test_export", "tests/tasks/test_export.py", score=0.2)]
+        return [_payload_hit("semantic-helper", "src/other.py", score=0.99)]
+
+    store.search.side_effect = search_side_effect
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+    pr = _make_pr_payload(title="Add task export", filenames=["src/tasks/export.py"])
+
+    result = await retriever.retrieve(pr)
+
+    assert result.tests[0]["payload"]["source_path"] == "tests/tasks/test_export.py"
+    assert result.tests[0]["payload"]["retrieval_reason"] == "related_test"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_queries_scoped_guidelines_and_architecture_docs() -> None:
+    store = _mock_store()
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+    pr = _make_pr_payload(filenames=["services/api/export.py"])
+
+    await retriever.retrieve(pr)
+
+    rule_calls = [
+        call
+        for call in store.search.await_args_list
+        if call.args[0] == COLLECTION_RULES and call.kwargs.get("filter")
+    ]
+    assert rule_calls
+    rule_scopes = {
+        condition["match"]["value"]
+        for call in rule_calls
+        for condition in call.kwargs["filter"]["should"]
+        if condition["key"] == "scope_path"
+    }
+    assert {".", "services", "services/api"}.issubset(rule_scopes)
+
+    doc_calls = [
+        call
+        for call in store.search.await_args_list
+        if call.args[0] == COLLECTION_DOCS and call.kwargs.get("filter")
+    ]
+    assert doc_calls
+    doc_paths = {
+        condition["match"]["value"]
+        for call in doc_calls
+        for condition in call.kwargs["filter"]["should"]
+        if condition["key"] == "source_path"
+    }
+    assert "docs/architecture.md" in doc_paths
+    assert "docs/services/api/architecture.md" in doc_paths
 
 
 @pytest.mark.asyncio
@@ -435,6 +524,33 @@ async def test_retrieve_labels_global_guidelines_as_repository_guidelines() -> N
     result = await retriever.retrieve(_make_pr_payload())
 
     assert result.security[0]["payload"]["retrieval_reason"] == "repository_guideline"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_prioritizes_architecture_docs_in_architecture_dimension() -> None:
+    store = _mock_store()
+
+    async def search_side_effect(
+        collection: str,
+        _query_vec: object,
+        *,
+        top_k: int = 10,
+        filter: dict | None = None,
+    ) -> list[dict]:
+        _ = top_k
+        if collection != COLLECTION_DOCS:
+            return []
+        if filter:
+            return [_payload_hit("architecture", "docs/architecture.md", score=0.1)]
+        return [_payload_hit("general-doc", "docs/general.md", score=0.99)]
+
+    store.search.side_effect = search_side_effect
+    retriever = ContextRetriever(engine=_mock_engine(), store=store)
+
+    result = await retriever.retrieve(_make_pr_payload(filenames=["src/auth/login.py"]))
+
+    assert result.architecture[0]["payload"]["source_path"] == "docs/architecture.md"
+    assert result.architecture[0]["payload"]["retrieval_reason"] == "architecture_doc"
 
 
 def test_retrieval_result_exposes_context_provenance() -> None:
