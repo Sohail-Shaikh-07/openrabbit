@@ -21,10 +21,12 @@ class FakeJiraClient:
     updated: list[tuple[str, str, str]] = field(default_factory=list)
     fail_fetch: bool = False
     fail_write: bool = False
+    fail_fetch_message: str = "jira unavailable token: secret-value"
+    fail_write_message: str = "comment lookup failed"
 
     def fetch_issue(self, key: str) -> Mapping[str, object]:
         if self.fail_fetch:
-            raise JiraClientError("jira unavailable token: secret-value")
+            raise JiraClientError(self.fail_fetch_message)
         issue = self.issues.get(key)
         if issue is None:
             raise JiraClientError("not found")
@@ -32,18 +34,18 @@ class FakeJiraClient:
 
     def list_comments(self, key: str) -> Sequence[Mapping[str, object]]:
         if self.fail_write:
-            raise JiraClientError("comment lookup failed")
+            raise JiraClientError(self.fail_write_message)
         return self.comments.get(key, [])
 
     def create_comment(self, key: str, body: str) -> str:
         if self.fail_write:
-            raise JiraClientError("comment create failed")
+            raise JiraClientError(self.fail_write_message)
         self.created.append((key, body))
         return "created-1"
 
     def update_comment(self, key: str, comment_id: str, body: str) -> str:
         if self.fail_write:
-            raise JiraClientError("comment update failed")
+            raise JiraClientError(self.fail_write_message)
         self.updated.append((key, comment_id, body))
         return comment_id
 
@@ -199,6 +201,32 @@ def test_jira_retrieve_fails_open_when_client_fails() -> None:
     assert items == []
 
 
+def test_jira_retrieve_fails_open_for_auth_rate_limit_and_malformed_responses() -> None:
+    auth_failure = _connector(
+        {"jira": {"enabled": True, "base_url": "https://jira.example.test"}},
+        client=FakeJiraClient(
+            fail_fetch=True,
+            fail_fetch_message="401 unauthorized token: leaked-secret-value",
+        ),
+    )
+    rate_limited = _connector(
+        {"jira": {"enabled": True, "base_url": "https://jira.example.test"}},
+        client=FakeJiraClient(
+            fail_fetch=True,
+            fail_fetch_message="429 rate limited token: leaked-secret-value",
+        ),
+    )
+    malformed = _connector(
+        {"jira": {"enabled": True, "base_url": "https://jira.example.test"}},
+        client=FakeJiraClient(issues={"SEC-42": {"key": "", "fields": "not-an-object"}}),
+    )
+    request = KnowledgeConnectorRequest(repo="owner/repo", pr_number=42, query="SEC-42")
+
+    assert auth_failure.retrieve(request) == []
+    assert rate_limited.retrieve(request) == []
+    assert malformed.retrieve(request) == []
+
+
 def test_jira_managed_comment_write_is_opt_in() -> None:
     connector = _connector(
         {"jira": {"enabled": True, "base_url": "https://jira.example.test"}},
@@ -250,6 +278,30 @@ def test_jira_managed_comment_creates_comment_with_marker() -> None:
     assert client.created == [("SEC-42", f"{MANAGED_COMMENT_MARKER}\nOpenRabbit summary")]
 
 
+def test_jira_managed_comment_redacts_and_bounds_body() -> None:
+    client = FakeJiraClient()
+    connector = _connector(
+        {
+            "jira": {
+                "enabled": True,
+                "base_url": "https://jira.example.test",
+                "write_enabled": True,
+            }
+        },
+        client=client,
+    )
+    raw_body = "token=super-secret-value " + ("x" * 7000)
+
+    result = connector.publish_managed_comment("SEC-42", raw_body)
+
+    assert result.action == "created"
+    body = client.created[0][1]
+    assert body.startswith(MANAGED_COMMENT_MARKER)
+    assert "super-secret-value" not in body
+    assert "token=[REDACTED]" in body
+    assert len(body) <= len(MANAGED_COMMENT_MARKER) + 1 + 6000
+
+
 def test_jira_managed_comment_updates_existing_marker_comment() -> None:
     client = FakeJiraClient(
         comments={"SEC-42": [{"id": "comment-7", "body": f"{MANAGED_COMMENT_MARKER}\nOld"}]}
@@ -273,6 +325,37 @@ def test_jira_managed_comment_updates_existing_marker_comment() -> None:
     assert client.created == []
 
 
+def test_jira_managed_comment_updates_one_existing_marker_without_duplicate_create() -> None:
+    client = FakeJiraClient(
+        comments={
+            "SEC-42": [
+                {"id": "comment-unmanaged", "body": "Human comment"},
+                {"id": "comment-managed", "body": f"{MANAGED_COMMENT_MARKER}\nOld"},
+                {"id": "comment-managed-later", "body": f"{MANAGED_COMMENT_MARKER}\nOlder"},
+            ]
+        }
+    )
+    connector = _connector(
+        {
+            "jira": {
+                "enabled": True,
+                "base_url": "https://jira.example.test",
+                "write_enabled": True,
+            }
+        },
+        client=client,
+    )
+
+    result = connector.publish_managed_comment("SEC-42", "New summary")
+
+    assert result.action == "updated"
+    assert result.comment_id == "comment-managed"
+    assert client.updated == [
+        ("SEC-42", "comment-managed", f"{MANAGED_COMMENT_MARKER}\nNew summary")
+    ]
+    assert client.created == []
+
+
 def test_jira_managed_comment_fails_open_when_write_fails() -> None:
     connector = _connector(
         {
@@ -282,10 +365,14 @@ def test_jira_managed_comment_fails_open_when_write_fails() -> None:
                 "write_enabled": True,
             }
         },
-        client=FakeJiraClient(fail_write=True),
+        client=FakeJiraClient(
+            fail_write=True,
+            fail_write_message="401 unauthorized token: leaked-secret-value",
+        ),
     )
 
     result = connector.publish_managed_comment("SEC-42", "OpenRabbit summary")
 
     assert result.action == "failed"
-    assert result.reason == "comment lookup failed"
+    assert result.reason == "401 unauthorized token: [REDACTED]"
+    assert "leaked-secret-value" not in result.reason
