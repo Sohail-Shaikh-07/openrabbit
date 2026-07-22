@@ -27,6 +27,7 @@ from knowledge.linear import (
     extract_linear_issue_ids,
 )
 from knowledge.mcp_runtime import McpConnectorRuntime, McpServerHealth, mcp_sdk_available
+from knowledge.multi_repo import MultiRepoConnector
 from knowledge.registry import (
     ConnectorHealthResult,
     KnowledgeConnectorRegistry,
@@ -56,6 +57,7 @@ __all__ = [
     "McpConnectorRuntime",
     "McpServerHealth",
     "McpWebSearchConnector",
+    "MultiRepoConnector",
     "build_connector_registry",
     "extract_jira_issue_keys",
     "extract_linear_issue_ids",
