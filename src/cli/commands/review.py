@@ -27,6 +27,7 @@ from configs.settings import Settings
 from github_ import GitHubAuthError, GitHubClient, PullRequestParser, RepositoryHandle
 from github_.publisher import GitHubPublisher
 from knowledge.context import load_connector_context
+from knowledge.diagnostics import build_context_precision_diagnostics
 from memory.backends import (
     PullRequestMemoryBackend,
     compare_with_history_compat,
@@ -274,6 +275,11 @@ async def run_review(
             )
 
     context_provenance = _context_provenance(retrieval_result)
+    context_diagnostics = build_context_precision_diagnostics(
+        retrieval_result,
+        connector_context=connector_context_summary,
+        command="review",
+    )
     return {
         "repo": handle.full_name,
         "number": payload.number,
@@ -297,6 +303,7 @@ async def run_review(
         "ast_unsupported_path_count": len(controls_result.unsupported_paths),
         "context_loaded": context_loaded,
         "context_provenance": context_provenance,
+        "context_diagnostics": context_diagnostics,
         "connector_context": connector_context_summary,
         "findings": _serialize_ranked_findings(ranked, memory_comparison),
         "comments_posted": comments_posted,

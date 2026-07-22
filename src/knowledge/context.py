@@ -76,13 +76,19 @@ def load_connector_context(
         max_items=_MAX_CONNECTOR_ITEMS,
         max_body_chars=_CONNECTOR_BODY_CHARS,
     )
+    dropped_items = max(0, len(items) - len(normalized))
     merged = _merge_items(_coerce_retrieval_result(retrieval_result), normalized)
     return ConnectorContextBundle(
         retrieval_result=merged,
         summary={
             "enabled": checked,
             "available": available,
+            "candidate_items": len(items),
             "items": len(normalized),
+            "dropped_items": dropped_items,
+            "dropped_reasons": (
+                {"connector_item_limit": dropped_items} if dropped_items > 0 else {}
+            ),
             "sources": _source_counts(normalized),
             "unavailable": unavailable,
             "failures": failures,
@@ -201,6 +207,7 @@ def _merge_items(
         architecture=[*base.architecture, *hits],
         performance=[*base.performance, *hits],
         tests=[*base.tests, *hits],
+        diagnostics=dict(base.diagnostics),
     )
 
 

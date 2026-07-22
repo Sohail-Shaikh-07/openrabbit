@@ -44,6 +44,7 @@ from github_ import (
     ReviewComment,
 )
 from knowledge.context import load_connector_context
+from knowledge.diagnostics import build_context_precision_diagnostics
 from memory.history import PullRequestHistory
 from ranking.grounding import DiffGroundingIndex, build_diff_grounding_index
 from review_controls import prepare_review_controls
@@ -245,6 +246,11 @@ async def run_improve(
         "ast_unsupported_path_count": len(controls_result.unsupported_paths),
         "context_loaded": _has_retrieval_context(retrieval_result),
         "context_provenance": _context_provenance(retrieval_result),
+        "context_diagnostics": build_context_precision_diagnostics(
+            retrieval_result,
+            connector_context=connector_context.summary,
+            command="improve",
+        ),
         "connector_context": connector_context.summary,
         "conversation_count": pr_history_result.conversation_count,
         "learning_count": pr_history_result.learning_count,

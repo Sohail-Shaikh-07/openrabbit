@@ -75,6 +75,7 @@ class RetrievalResult:
     architecture: list[dict[str, Any]] = field(default_factory=list)
     performance: list[dict[str, Any]] = field(default_factory=list)
     tests: list[dict[str, Any]] = field(default_factory=list)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, list[dict[str, Any]]]:
         """Return the result as a plain dict keyed by dimension name."""
@@ -177,7 +178,18 @@ class ContextRetriever:
                 logger.info(
                     "RAG index is unavailable; continuing review with diff only",
                 )
-                return RetrievalResult()
+                return RetrievalResult(
+                    diagnostics={
+                        "retriever": {
+                            "available": False,
+                            "candidate_items": 0,
+                            "selected_items": 0,
+                            "dropped_items": 0,
+                            "dropped_reasons": {"rag_index_unavailable": 1},
+                            "dimensions": {},
+                        }
+                    }
+                )
             plan = _retrieval_plan_from_pr(pr)
             query_vec = await self._build_query_vector(plan.query_text)
             results = await asyncio.gather(
@@ -187,11 +199,29 @@ class ContextRetriever:
                 self._fetch_function_context(query_vec, plan),
             )
             rules, docs, reviews, funcs = results
+            security_candidates = rules + funcs
+            architecture_candidates = docs + funcs
+            performance_candidates = funcs
+            tests_candidates = reviews + funcs
+            security = _pack_hits(security_candidates, plan, limit=self._top_k)
+            architecture = _pack_hits(architecture_candidates, plan, limit=self._top_k)
+            performance = _pack_hits(performance_candidates, plan, limit=self._top_k)
+            tests = _pack_hits(tests_candidates, plan, limit=self._top_k)
+            diagnostics = _retrieval_diagnostics(
+                {
+                    AgentDimension.security.value: (security_candidates, security),
+                    AgentDimension.architecture.value: (architecture_candidates, architecture),
+                    AgentDimension.performance.value: (performance_candidates, performance),
+                    AgentDimension.tests.value: (tests_candidates, tests),
+                },
+                limit=self._top_k,
+            )
             return RetrievalResult(
-                security=_pack_hits(rules + funcs, plan, limit=self._top_k),
-                architecture=_pack_hits(docs + funcs, plan, limit=self._top_k),
-                performance=_pack_hits(funcs, plan, limit=self._top_k),
-                tests=_pack_hits(reviews + funcs, plan, limit=self._top_k),
+                security=security,
+                architecture=architecture,
+                performance=performance,
+                tests=tests,
+                diagnostics={"retriever": diagnostics},
             )
         except Exception as exc:
             logger.warning(
@@ -199,7 +229,18 @@ class ContextRetriever:
                 exc,
             )
             logger.debug("RAG retrieval traceback", exc_info=True)
-            return RetrievalResult()
+            return RetrievalResult(
+                diagnostics={
+                    "retriever": {
+                        "available": False,
+                        "candidate_items": 0,
+                        "selected_items": 0,
+                        "dropped_items": 0,
+                        "dropped_reasons": {"retrieval_failed": 1},
+                        "dimensions": {},
+                    }
+                }
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -305,6 +346,65 @@ def _pack_hits(
         reverse=True,
     )
     return _dedup(ranked)[:limit]
+
+
+def _retrieval_diagnostics(
+    dimensions: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]],
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    """Return compact retrieval counts for eval and troubleshooting output."""
+    dimension_stats: dict[str, dict[str, Any]] = {}
+    dropped_reasons: dict[str, int] = {}
+    candidate_total = 0
+    selected_total = 0
+    for dimension, (candidates, selected) in dimensions.items():
+        unique_candidates = _dedup([hit for hit in candidates if isinstance(hit, dict)])
+        deduplicated = max(0, len(candidates) - len(unique_candidates))
+        over_limit = max(0, len(unique_candidates) - limit)
+        selected_count = len(selected)
+        candidate_count = len(candidates)
+        candidate_total += candidate_count
+        selected_total += selected_count
+        for reason, count in (
+            ("deduplicated", deduplicated),
+            ("top_k_limit", over_limit),
+        ):
+            if count > 0:
+                dropped_reasons[reason] = dropped_reasons.get(reason, 0) + count
+        dimension_stats[dimension] = {
+            "candidate_items": candidate_count,
+            "selected_items": selected_count,
+            "dropped_items": max(0, candidate_count - selected_count),
+            "dropped_reasons": {
+                reason: count
+                for reason, count in {
+                    "deduplicated": deduplicated,
+                    "top_k_limit": over_limit,
+                }.items()
+                if count > 0
+            },
+            "selected_reasons": _selected_reason_counts(selected),
+        }
+    return {
+        "available": True,
+        "candidate_items": candidate_total,
+        "selected_items": selected_total,
+        "dropped_items": max(0, candidate_total - selected_total),
+        "dropped_reasons": dropped_reasons,
+        "dimensions": dimension_stats,
+    }
+
+
+def _selected_reason_counts(hits: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for hit in hits:
+        payload = hit.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        reason = str(payload.get("retrieval_reason") or "unknown")
+        counts[reason] = counts.get(reason, 0) + 1
+    return counts
 
 
 def _annotate_hit(hit: dict[str, Any], reason: str) -> dict[str, Any]:

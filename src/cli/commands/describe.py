@@ -42,6 +42,7 @@ from cli.logging import get_logger
 from configs.settings import Settings
 from github_ import GitHubClient, PullRequestParser, RepositoryHandle
 from knowledge.context import load_connector_context
+from knowledge.diagnostics import build_context_precision_diagnostics
 from memory.history import PullRequestHistory
 from review_controls import prepare_review_controls
 
@@ -188,6 +189,11 @@ async def run_describe(
             "ast_unsupported_path_count": len(controls_result.unsupported_paths),
             "context_loaded": _has_retrieval_context(retrieval_result),
             "context_provenance": _context_provenance(retrieval_result),
+            "context_diagnostics": build_context_precision_diagnostics(
+                retrieval_result,
+                connector_context=connector_context.summary,
+                command="describe",
+            ),
             "connector_context": connector_context.summary,
             "conversation_count": pr_history_result.conversation_count,
             "learning_count": pr_history_result.learning_count,

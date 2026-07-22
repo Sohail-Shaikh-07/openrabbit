@@ -99,7 +99,10 @@ def test_load_connector_context_merges_items_into_all_model_dimensions(
     assert isinstance(retrieval, RetrievalResult)
     assert bundle.summary["enabled"] == 1
     assert bundle.summary["available"] == 1
+    assert bundle.summary["candidate_items"] == 1
     assert bundle.summary["items"] == 1
+    assert bundle.summary["dropped_items"] == 0
+    assert bundle.summary["dropped_reasons"] == {}
     assert bundle.summary["sources"] == {"jira": 1}
     for hits in (
         retrieval.security,
@@ -141,7 +144,9 @@ def test_load_connector_context_fails_open_for_unavailable_and_failing_connector
     assert bundle.retrieval_result is None
     assert bundle.summary["enabled"] == 2
     assert bundle.summary["available"] == 1
+    assert bundle.summary["candidate_items"] == 0
     assert bundle.summary["items"] == 0
+    assert bundle.summary["dropped_items"] == 0
     assert bundle.summary["unavailable"] == [{"connector": "jira", "reason": "missing token"}]
     assert bundle.summary["failures"] == [
         {"connector": "jira", "reason": "RuntimeError: provider down"}
@@ -227,3 +232,31 @@ def test_connector_context_respects_skipped_path_filtering() -> None:
     assert [hit["payload"]["text"] for hit in result.retrieval_result.security] == [
         "GENERAL_CONNECTOR_CONTEXT"
     ]
+
+
+def test_load_connector_context_records_connector_item_limit_drops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connector = _FakeConnector(
+        [
+            KnowledgeItem(
+                source_id=f"PROJ-{index}",
+                source_kind=KnowledgeSourceKind.ISSUE_TRACKER,
+                title=f"Ticket {index}",
+                body="Relevant issue context.",
+                score=0.5,
+                metadata={"provider": "jira"},
+            )
+            for index in range(14)
+        ]
+    )
+    monkeypatch.setattr(
+        "knowledge.context._enabled_connectors", lambda *_args, **_kwargs: [connector]
+    )
+
+    bundle = load_connector_context(Settings(), _pr_payload(), repo="o/r")
+
+    assert bundle.summary["candidate_items"] == 14
+    assert bundle.summary["items"] == 12
+    assert bundle.summary["dropped_items"] == 2
+    assert bundle.summary["dropped_reasons"] == {"connector_item_limit": 2}
