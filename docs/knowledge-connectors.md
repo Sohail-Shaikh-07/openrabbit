@@ -2,7 +2,7 @@
 
 OpenRabbit's default review loop remains local-first and service-free. Optional knowledge connectors are future adapters that can add context from MCP servers, web search, other repositories, Jira, Linear, or document systems after the user explicitly configures them.
 
-The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. OP-103 adds a Linear connector runtime for linked issue reads and opt-in managed Linear comments. MCP, web search, Jira, and Linear context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
+The OP-95 scope added design and adapter boundaries. OP-99 adds disabled-by-default configuration, a connector registry, and the `openrabbit connector-health` command. OP-100 adds an MCP client runtime for explicitly configured servers. OP-101 adds an MCP-backed web search connector flow. OP-102 adds a Jira connector runtime for linked issue reads and opt-in managed Jira comments. OP-103 adds a Linear connector runtime for linked issue reads and opt-in managed Linear comments. OP-104 adds explicit multi-repo local context loading. MCP, web search, Jira, Linear, and multi-repo context are not yet wired into review, describe, ask, improve, index, memory, or eval; later v1.6 tasks decide where connector snippets enter prompts.
 
 ## Contract
 
@@ -38,6 +38,8 @@ OpenRabbit does not ship direct Tavily, Firecrawl, or other vendor SDK clients f
 ### Multi-Repo
 
 A multi-repo connector may read sibling repositories configured by path or explicit repository handle. It must not auto-clone repositories or scan arbitrary directories. Returned snippets should identify the source repo and path.
+
+The multi-repo runtime scans only configured local paths, uses the existing repository scanner and chunker, skips hidden, generated, dependency, binary, and oversized files by default, and returns small source-labeled snippets with repo/path provenance. Repository handles without a local path are allowed identifiers for future integrations, but they do not trigger cloning or network access.
 
 ### Jira And Linear
 
@@ -101,6 +103,22 @@ knowledge:
 ```
 
 This shape is available in the generated `.openrabbit/config.yml` scaffold. All connectors stay disabled by default. Token-like fields such as `token`, `api_key`, `secret`, `password`, or `credential` are rejected under `knowledge` config; use `token_env` to name an environment variable instead.
+
+For multi-repo context, configure only repositories OpenRabbit is allowed to read:
+
+```yaml
+knowledge:
+  connectors:
+    multi_repo:
+      enabled: true
+      repositories:
+        - name: shared-core
+          path: ../shared-core
+          repo: owner/shared-core
+      max_items: 8
+```
+
+Relative paths resolve from the workspace root used to load OpenRabbit settings. Entries with only `repo` are recorded as allowed handles but are not cloned or scanned by this runtime.
 
 For Streamable HTTP MCP servers, configure an explicit URL:
 
