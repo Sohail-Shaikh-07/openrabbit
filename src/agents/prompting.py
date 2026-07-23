@@ -7,6 +7,16 @@ from collections.abc import Iterable
 from typing import Any
 
 from agents.models import ReviewState
+from diff_summarization import (
+    CODE_SUFFIXES,
+    LOW_SIGNAL_SUFFIXES,
+    RISKY_PATH_MARKERS,
+    LargeLowRiskFileSummary,
+    file_change_count,
+    file_counts,
+    file_path,
+    summarize_large_low_risk_file,
+)
 from knowledge.context_packing import (
     DEFAULT_SOURCE_TOKEN_BUDGETS,
     ContextSection,
@@ -54,56 +64,6 @@ DEFAULT_DIFF_TOKEN_BUDGET = DEFAULT_SOURCE_TOKEN_BUDGETS["diff"]
 DEFAULT_CHANGED_LINE_EVIDENCE_TOKEN_BUDGET = DEFAULT_SOURCE_TOKEN_BUDGETS["changed_line_evidence"]
 _MIN_DIFF_RESERVATION_CHARS = 128
 _MAX_DIFF_RESERVATION_CHARS = 2048
-
-_RISKY_PATH_MARKERS = (
-    "auth",
-    "authorization",
-    "permission",
-    "policy",
-    "admin",
-    "security",
-    "secret",
-    "token",
-    "credential",
-    "password",
-    "session",
-    "cookie",
-    "payment",
-    "billing",
-    "webhook",
-    "sql",
-    "query",
-    "migration",
-    "database",
-    "db",
-    "crypto",
-    "cors",
-)
-_CODE_SUFFIXES = (
-    ".py",
-    ".js",
-    ".jsx",
-    ".ts",
-    ".tsx",
-    ".go",
-    ".rs",
-    ".java",
-    ".kt",
-    ".cs",
-    ".rb",
-    ".php",
-    ".sql",
-)
-_LOW_SIGNAL_SUFFIXES = (
-    ".md",
-    ".txt",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".svg",
-    ".lock",
-)
 
 
 def estimate_prompt_tokens(text: str) -> int:
@@ -513,7 +473,7 @@ def _format_structured_diff_with_evidence(files: list[Any], *, max_chars: int) -
 
 def _first_structured_evidence(files: list[Any]) -> str:
     for file_ in sorted(files, key=_file_priority_key):
-        path = _file_path(file_)
+        path = file_path(file_)
         if bool(getattr(file_, "is_binary", False)):
             return "\n".join(
                 (
@@ -596,9 +556,9 @@ def _fit_control_context(control_context: str, *, max_chars: int) -> str:
 
 
 def _diff_section_for_file(file_: Any) -> tuple[list[str], int]:
-    path = _file_path(file_)
+    path = file_path(file_)
     status = str(getattr(file_, "status", "") or "modified")
-    additions, deletions, changes = _file_counts(file_)
+    additions, deletions, changes = file_counts(file_)
     lines = [
         f"diff --git a/{path} b/{path}",
         f"# status: {status}; additions: {additions}; deletions: {deletions}; changes: {changes}",
@@ -607,6 +567,11 @@ def _diff_section_for_file(file_: Any) -> tuple[list[str], int]:
     if bool(getattr(file_, "is_binary", False)):
         lines.append("# binary, renamed-without-patch, or too-large patch omitted by GitHub")
         return lines, 0
+
+    low_risk_summary = summarize_large_low_risk_file(file_)
+    if low_risk_summary is not None:
+        lines.extend(_low_risk_summary_lines(low_risk_summary))
+        return lines, low_risk_summary.diff_lines
 
     hunks = getattr(file_, "hunks", None)
     if not isinstance(hunks, list) or not hunks:
@@ -657,47 +622,37 @@ def _count_diff_body_lines(lines: list[str]) -> int:
 
 
 def _file_priority_key(file_: Any) -> tuple[bool, int, str]:
-    path = _file_path(file_)
+    path = file_path(file_)
     lowered = path.lower()
-    score = _file_change_count(file_)
-    if any(marker in lowered for marker in _RISKY_PATH_MARKERS):
+    score = file_change_count(file_)
+    if any(marker in lowered for marker in RISKY_PATH_MARKERS):
         score += 1000
-    if lowered.endswith(_CODE_SUFFIXES):
+    if lowered.endswith(CODE_SUFFIXES):
         score += 200
-    if lowered.endswith(_LOW_SIGNAL_SUFFIXES):
+    if lowered.endswith(LOW_SIGNAL_SUFFIXES):
         score -= 200
     if "/test" in lowered or "\\test" in lowered or lowered.startswith("tests/"):
         score -= 50
     return (bool(getattr(file_, "is_binary", False)), -score, path)
 
 
-def _file_path(file_: Any) -> str:
-    return str(getattr(file_, "path", "") or getattr(getattr(file_, "file", None), "filename", ""))
-
-
-def _file_counts(file_: Any) -> tuple[int, int, int]:
-    api_file = getattr(file_, "file", None)
-    additions = _int_attr(file_, "additions", api_file)
-    deletions = _int_attr(file_, "deletions", api_file)
-    changes = _int_attr(file_, "changes", api_file)
-    if changes == 0:
-        changes = additions + deletions
-    return additions, deletions, changes
-
-
-def _file_change_count(file_: Any) -> int:
-    additions, deletions, changes = _file_counts(file_)
-    return changes or additions + deletions
-
-
-def _int_attr(file_: Any, name: str, api_file: Any) -> int:
-    value = getattr(file_, name, None)
-    if value is None and api_file is not None:
-        value = getattr(api_file, name, 0)
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+def _low_risk_summary_lines(summary: LargeLowRiskFileSummary) -> list[str]:
+    lines = [
+        "# low-risk oversized file summarized before agent review; summary is not a full diff.",
+        (
+            f"# summary: reasons={', '.join(summary.reasons)}; "
+            f"hunks={summary.hunks}; diff_lines={summary.diff_lines}"
+        ),
+    ]
+    if summary.added_preview:
+        lines.append("# added preview:")
+        lines.extend(f"#   + {text}" for text in summary.added_preview)
+    if summary.deleted_preview:
+        lines.append("# deleted preview:")
+        lines.extend(f"#   - {text}" for text in summary.deleted_preview)
+    if not summary.added_preview and not summary.deleted_preview:
+        lines.append("# no textual hunk preview available.")
+    return lines
 
 
 def _diff_prefix(kind: str) -> str:

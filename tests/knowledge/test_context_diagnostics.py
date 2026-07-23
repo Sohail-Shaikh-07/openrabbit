@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from github_.diff import DiffLine, Hunk
 from knowledge.diagnostics import build_context_precision_diagnostics
 from rag.retriever import RetrievalResult
 
@@ -71,3 +74,57 @@ def test_build_context_precision_diagnostics_summarizes_rag_and_connector_contex
     assert diagnostics["source_packing"]["quality"]["candidate_items"] == 0
     assert diagnostics["prompt_packing"]["context_items"] == 2
     assert diagnostics["prompt_packing"]["estimated_tokens"] > 0
+
+
+def test_build_context_precision_diagnostics_counts_large_low_risk_files() -> None:
+    payload = SimpleNamespace(
+        files=[
+            SimpleNamespace(
+                path="docs/generated-api.md",
+                status="modified",
+                is_binary=False,
+                additions=130,
+                deletions=0,
+                changes=130,
+                hunks=[
+                    Hunk(
+                        old_start=1,
+                        old_lines=1,
+                        new_start=1,
+                        new_lines=130,
+                        lines=[
+                            DiffLine(kind="addition", text=f"generated docs {index}")
+                            for index in range(130)
+                        ],
+                    )
+                ],
+            ),
+            SimpleNamespace(
+                path="app/auth/session.py",
+                status="modified",
+                is_binary=False,
+                additions=130,
+                deletions=0,
+                changes=130,
+                hunks=[
+                    Hunk(
+                        old_start=1,
+                        old_lines=1,
+                        new_start=1,
+                        new_lines=130,
+                        lines=[
+                            DiffLine(kind="addition", text=f"authorize_{index} = True")
+                            for index in range(130)
+                        ],
+                    )
+                ],
+            ),
+        ],
+    )
+
+    diagnostics = build_context_precision_diagnostics(None, pr_payload=payload, command="review")
+
+    diff_summary = diagnostics["source_packing"]["diff"]
+    assert diff_summary["large_low_risk_files"] == 1
+    assert diff_summary["large_low_risk_changes"] == 130
+    assert diff_summary["large_low_risk_diff_lines"] == 130
