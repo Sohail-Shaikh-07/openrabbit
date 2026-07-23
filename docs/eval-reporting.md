@@ -33,6 +33,8 @@ Each run receives a `scenario_group` field. The top-level `scenario_groups` arra
 
 When `--compare` is used, `dashboard.trend` mirrors the comparison deltas in chart-friendly form.
 
+Use [context-precision.md](context-precision.md) when interpreting selected sources, retrieval reasons, RAG and connector contribution, source-budget overages, prompt token estimates, or missing and noisy context.
+
 ## Privacy
 
 Eval reports do not include raw tool output, raw prompt text, tokens, API keys, or credentials. Local quality gates contribute normalized diagnostics only. Context precision diagnostics expose counts, source labels, drop reasons, scores, and estimated prompt-packing size without embedding unbounded source or connector bodies.

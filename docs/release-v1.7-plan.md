@@ -32,6 +32,7 @@ OpenRabbit v1.7 focuses on making review context more precise before it reaches 
 - OP-116 adds deterministic connector relevance scoring and filtering with signals from linked issue keys, changed paths, changed symbols, repository handles, source kind, provider scores, and text overlap.
 - OP-117 adds visibly marked compressed-diff summaries for oversized low-risk files and diagnostics for summarized low-risk file counts, changes, and diff lines.
 - OP-118 adds eval report fields and dashboard summaries for selected source labels, retrieval reasons, RAG and connector contribution, source-budget usage, prompt-packing estimates, and large low-risk summaries. It also adds a packaged v1.7 context precision regression corpus.
+- OP-119 adds a context precision troubleshooting guide for retrieval reasons, source budgets, connector relevance, eval interpretation, missing context, noisy context, budget pressure, and privacy boundaries.
 
 ## Non Goals
 

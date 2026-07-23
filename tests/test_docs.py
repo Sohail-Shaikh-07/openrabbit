@@ -24,6 +24,12 @@ def test_readme_links_to_knowledge_connectors_guide() -> None:
     assert "[docs/knowledge-connectors.md](docs/knowledge-connectors.md)" in readme
 
 
+def test_readme_links_to_context_precision_guide() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="ascii")
+
+    assert "[docs/context-precision.md](docs/context-precision.md)" in readme
+
+
 def test_ast_review_controls_guide_documents_contract() -> None:
     guide = (ROOT / "docs" / "ast-review-controls.md").read_text(encoding="ascii").lower()
 
@@ -135,6 +141,41 @@ def test_knowledge_connectors_guide_documents_contract() -> None:
         "one openrabbit summary comment",
     ):
         assert claim in guide
+
+
+def test_context_precision_guide_documents_troubleshooting_contract() -> None:
+    guide = (ROOT / "docs" / "context-precision.md").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "changed-line evidence",
+        "compressed diff evidence",
+        "source budgets",
+        "retrieval reasons",
+        "changed_file",
+        "changed_symbol",
+        "related_test",
+        "nearby_path",
+        "scoped_guideline",
+        "architecture_doc",
+        "connector relevance",
+        "weak_connector_relevance",
+        "connector_item_limit",
+        "large_low_risk_files",
+        "context_diagnostics",
+        "source_packing",
+        "prompt_packing",
+        "troubleshooting missing context",
+        "troubleshooting noisy context",
+        "troubleshooting budget pressure",
+        "eval interpretation",
+        "default_v1_7_context_precision_corpus",
+        "privacy boundaries",
+        "fail open",
+    ):
+        assert claim in guide
+
+    for budget in ("3000", "6000", "4500", "1200", "1600", "2000"):
+        assert budget in guide
 
 
 def test_readme_documents_connector_setup_quickstart() -> None:
