@@ -11,6 +11,9 @@ from typing import Any
 from benchmarks.schema import BenchmarkCase
 
 DEFAULT_V1_1_CORPUS = files("benchmarks").joinpath("corpora/v1_1_regression.jsonl")
+DEFAULT_V1_7_CONTEXT_PRECISION_CORPUS = files("benchmarks").joinpath(
+    "corpora/v1_7_context_precision.jsonl"
+)
 
 CorpusSource = str | Path | Traversable
 

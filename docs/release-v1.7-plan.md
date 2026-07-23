@@ -31,6 +31,7 @@ OpenRabbit v1.7 focuses on making review context more precise before it reaches 
 - OP-115 adds shared source budgets for changed-line evidence, compressed diff evidence, repository RAG, connector snippets, PR memory, linked GitHub issues, and local quality diagnostics so noisy auxiliary sources cannot crowd out higher-priority review evidence.
 - OP-116 adds deterministic connector relevance scoring and filtering with signals from linked issue keys, changed paths, changed symbols, repository handles, source kind, provider scores, and text overlap.
 - OP-117 adds visibly marked compressed-diff summaries for oversized low-risk files and diagnostics for summarized low-risk file counts, changes, and diff lines.
+- OP-118 adds eval report fields and dashboard summaries for selected source labels, retrieval reasons, RAG and connector contribution, source-budget usage, prompt-packing estimates, and large low-risk summaries. It also adds a packaged v1.7 context precision regression corpus.
 
 ## Non Goals
 

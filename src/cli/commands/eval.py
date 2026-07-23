@@ -133,6 +133,29 @@ async def run_eval(
                     "context_selected_items": 0,
                     "context_dropped_items": 0,
                     "context_prompt_tokens": 0,
+                    "context_selected_sources": {},
+                    "context_selected_reasons": {},
+                    "context_scores": _empty_score_summary(),
+                    "rag_candidate_items": 0,
+                    "rag_selected_items": 0,
+                    "rag_dropped_items": 0,
+                    "rag_dropped_reasons": {},
+                    "rag_selected_sources": {},
+                    "rag_selected_reasons": {},
+                    "rag_scores": _empty_score_summary(),
+                    "connector_candidate_items": 0,
+                    "connector_selected_items": 0,
+                    "connector_dropped_items": 0,
+                    "connector_dropped_reasons": {},
+                    "connector_selected_sources": {},
+                    "connector_configured_sources": {},
+                    "connector_relevance_scores": _empty_score_summary(),
+                    "source_budget_limit_tokens": {},
+                    "source_budget_estimated_tokens": {},
+                    "source_budget_overages": {},
+                    "large_low_risk_files": 0,
+                    "large_low_risk_changes": 0,
+                    "large_low_risk_diff_lines": 0,
                     "quality_gates": [],
                     "quality_status_counts": {},
                     "quality_diagnostics_count": 0,
@@ -250,6 +273,13 @@ def _run_record_from_summary(
     finding_items = findings if isinstance(findings, list) else []
     connector_context = _object_dict(summary.get("connector_context"))
     context_diagnostics = _object_dict(summary.get("context_diagnostics"))
+    rag_context = _object_dict(context_diagnostics.get("rag"))
+    connector_diagnostics = _object_dict(context_diagnostics.get("connectors"))
+    connector_relevance = _object_dict(connector_context.get("relevance"))
+    source_budgets = _budget_limit_tokens(context_diagnostics)
+    source_packing = _budget_estimated_tokens(context_diagnostics)
+    source_overages = _budget_overage_counts(context_diagnostics)
+    diff_packing = _object_dict(_object_dict(context_diagnostics.get("source_packing")).get("diff"))
     return {
         "command": command,
         "repo": repo,
@@ -280,6 +310,29 @@ def _run_record_from_summary(
             "prompt_packing",
             "estimated_tokens",
         ),
+        "context_selected_sources": _count_map(context_diagnostics.get("selected_sources")),
+        "context_selected_reasons": _count_map(context_diagnostics.get("selected_reasons")),
+        "context_scores": _score_summary_dict(context_diagnostics.get("scores")),
+        "rag_candidate_items": _coerce_int(rag_context.get("candidate_items")),
+        "rag_selected_items": _coerce_int(rag_context.get("selected_items")),
+        "rag_dropped_items": _coerce_int(rag_context.get("dropped_items")),
+        "rag_dropped_reasons": _count_map(rag_context.get("dropped_reasons")),
+        "rag_selected_sources": _count_map(rag_context.get("selected_sources")),
+        "rag_selected_reasons": _count_map(rag_context.get("selected_reasons")),
+        "rag_scores": _score_summary_dict(rag_context.get("scores")),
+        "connector_candidate_items": _coerce_int(connector_diagnostics.get("candidate_items")),
+        "connector_selected_items": _coerce_int(connector_diagnostics.get("selected_items")),
+        "connector_dropped_items": _coerce_int(connector_diagnostics.get("dropped_items")),
+        "connector_dropped_reasons": _count_map(connector_diagnostics.get("dropped_reasons")),
+        "connector_selected_sources": _count_map(connector_diagnostics.get("selected_sources")),
+        "connector_configured_sources": _count_map(connector_diagnostics.get("configured_sources")),
+        "connector_relevance_scores": _score_summary_dict(connector_relevance.get("scores")),
+        "source_budget_limit_tokens": source_budgets,
+        "source_budget_estimated_tokens": source_packing,
+        "source_budget_overages": source_overages,
+        "large_low_risk_files": _coerce_int(diff_packing.get("large_low_risk_files")),
+        "large_low_risk_changes": _coerce_int(diff_packing.get("large_low_risk_changes")),
+        "large_low_risk_diff_lines": _coerce_int(diff_packing.get("large_low_risk_diff_lines")),
         "quality_gates": _dict_list(summary.get("quality_gates")),
         "quality_status_counts": _object_dict(summary.get("quality_status_counts")),
         "quality_diagnostics_count": _int_summary(summary, "quality_diagnostics_count"),
@@ -312,6 +365,20 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
     quality_statuses: dict[str, int] = {}
     connector_sources: dict[str, int] = {}
     context_dropped_reasons: dict[str, int] = {}
+    context_selected_sources: dict[str, int] = {}
+    context_selected_reasons: dict[str, int] = {}
+    rag_dropped_reasons: dict[str, int] = {}
+    rag_selected_sources: dict[str, int] = {}
+    rag_selected_reasons: dict[str, int] = {}
+    connector_dropped_reasons: dict[str, int] = {}
+    connector_selected_sources: dict[str, int] = {}
+    connector_configured_sources: dict[str, int] = {}
+    source_budget_limit_tokens: dict[str, int] = {}
+    source_budget_estimated_tokens: dict[str, int] = {}
+    source_budget_overages: dict[str, int] = {}
+    context_scores: list[dict[str, object]] = []
+    rag_scores: list[dict[str, object]] = []
+    connector_relevance_scores: list[dict[str, object]] = []
     for run in runs:
         raw_categories = run.get("categories")
         if isinstance(raw_categories, dict):
@@ -332,6 +399,22 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
         raw_context_diagnostics = _object_dict(run.get("context_diagnostics"))
         raw_rag = _object_dict(raw_context_diagnostics.get("rag"))
         raw_connector = _object_dict(raw_context_diagnostics.get("connectors"))
+        _merge_counts(context_selected_sources, run.get("context_selected_sources"))
+        _merge_counts(context_selected_reasons, run.get("context_selected_reasons"))
+        _merge_counts(rag_dropped_reasons, run.get("rag_dropped_reasons"))
+        _merge_counts(rag_selected_sources, run.get("rag_selected_sources"))
+        _merge_counts(rag_selected_reasons, run.get("rag_selected_reasons"))
+        _merge_counts(connector_dropped_reasons, run.get("connector_dropped_reasons"))
+        _merge_counts(connector_selected_sources, run.get("connector_selected_sources"))
+        _merge_counts(connector_configured_sources, run.get("connector_configured_sources"))
+        _merge_counts(source_budget_limit_tokens, run.get("source_budget_limit_tokens"))
+        _merge_counts(source_budget_estimated_tokens, run.get("source_budget_estimated_tokens"))
+        _merge_counts(source_budget_overages, run.get("source_budget_overages"))
+        context_scores.append(_score_summary_dict(run.get("context_scores")))
+        rag_scores.append(_score_summary_dict(run.get("rag_scores")))
+        connector_relevance_scores.append(
+            _score_summary_dict(run.get("connector_relevance_scores"))
+        )
         for reasons in (
             _object_dict(raw_rag.get("dropped_reasons")),
             _object_dict(raw_connector.get("dropped_reasons")),
@@ -354,6 +437,33 @@ def _totals(runs: list[dict[str, object]]) -> dict[str, object]:
         "context_dropped_items": sum(_int_run(run, "context_dropped_items") for run in runs),
         "context_prompt_tokens": sum(_int_run(run, "context_prompt_tokens") for run in runs),
         "context_dropped_reasons": context_dropped_reasons,
+        "context_selected_sources": context_selected_sources,
+        "context_selected_reasons": context_selected_reasons,
+        "context_scores": _merge_score_summaries(context_scores),
+        "rag_candidate_items": sum(_int_run(run, "rag_candidate_items") for run in runs),
+        "rag_selected_items": sum(_int_run(run, "rag_selected_items") for run in runs),
+        "rag_dropped_items": sum(_int_run(run, "rag_dropped_items") for run in runs),
+        "rag_dropped_reasons": rag_dropped_reasons,
+        "rag_selected_sources": rag_selected_sources,
+        "rag_selected_reasons": rag_selected_reasons,
+        "rag_scores": _merge_score_summaries(rag_scores),
+        "connector_candidate_items": sum(
+            _int_run(run, "connector_candidate_items") for run in runs
+        ),
+        "connector_selected_items": sum(_int_run(run, "connector_selected_items") for run in runs),
+        "connector_dropped_items": sum(_int_run(run, "connector_dropped_items") for run in runs),
+        "connector_dropped_reasons": connector_dropped_reasons,
+        "connector_selected_sources": connector_selected_sources,
+        "connector_configured_sources": connector_configured_sources,
+        "connector_relevance_scores": _merge_score_summaries(connector_relevance_scores),
+        "source_budget_limit_tokens": source_budget_limit_tokens,
+        "source_budget_estimated_tokens": source_budget_estimated_tokens,
+        "source_budget_overages": source_budget_overages,
+        "large_low_risk_files": sum(_int_run(run, "large_low_risk_files") for run in runs),
+        "large_low_risk_changes": sum(_int_run(run, "large_low_risk_changes") for run in runs),
+        "large_low_risk_diff_lines": sum(
+            _int_run(run, "large_low_risk_diff_lines") for run in runs
+        ),
         "guideline_sources": sorted(
             {source for run in runs for source in _string_list(run.get("guideline_sources"))}
         ),
@@ -393,6 +503,13 @@ def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
     )
     connector_sources: dict[str, int] = {}
     context_dropped_reasons: dict[str, int] = {}
+    context_selected_sources: dict[str, int] = {}
+    context_selected_reasons: dict[str, int] = {}
+    rag_dropped_reasons: dict[str, int] = {}
+    connector_dropped_reasons: dict[str, int] = {}
+    source_budget_limit_tokens: dict[str, int] = {}
+    source_budget_estimated_tokens: dict[str, int] = {}
+    source_budget_overages: dict[str, int] = {}
     for run in runs:
         raw_sources = run.get("connector_context_sources")
         if isinstance(raw_sources, dict):
@@ -403,6 +520,13 @@ def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
         raw_context_diagnostics = _object_dict(run.get("context_diagnostics"))
         raw_rag = _object_dict(raw_context_diagnostics.get("rag"))
         raw_connector = _object_dict(raw_context_diagnostics.get("connectors"))
+        _merge_counts(context_selected_sources, run.get("context_selected_sources"))
+        _merge_counts(context_selected_reasons, run.get("context_selected_reasons"))
+        _merge_counts(rag_dropped_reasons, run.get("rag_dropped_reasons"))
+        _merge_counts(connector_dropped_reasons, run.get("connector_dropped_reasons"))
+        _merge_counts(source_budget_limit_tokens, run.get("source_budget_limit_tokens"))
+        _merge_counts(source_budget_estimated_tokens, run.get("source_budget_estimated_tokens"))
+        _merge_counts(source_budget_overages, run.get("source_budget_overages"))
         for reasons in (
             _object_dict(raw_rag.get("dropped_reasons")),
             _object_dict(raw_connector.get("dropped_reasons")),
@@ -423,6 +547,20 @@ def _context_sources(runs: list[dict[str, object]]) -> dict[str, object]:
         "context_dropped_items": sum(_int_run(run, "context_dropped_items") for run in runs),
         "context_prompt_tokens": sum(_int_run(run, "context_prompt_tokens") for run in runs),
         "context_dropped_reasons": context_dropped_reasons,
+        "context_selected_sources": context_selected_sources,
+        "context_selected_reasons": context_selected_reasons,
+        "rag_dropped_reasons": rag_dropped_reasons,
+        "connector_dropped_reasons": connector_dropped_reasons,
+        "rag_selected_items": sum(_int_run(run, "rag_selected_items") for run in runs),
+        "connector_selected_items": sum(_int_run(run, "connector_selected_items") for run in runs),
+        "source_budget_limit_tokens": source_budget_limit_tokens,
+        "source_budget_estimated_tokens": source_budget_estimated_tokens,
+        "source_budget_overages": source_budget_overages,
+        "large_low_risk_files": sum(_int_run(run, "large_low_risk_files") for run in runs),
+        "large_low_risk_changes": sum(_int_run(run, "large_low_risk_changes") for run in runs),
+        "large_low_risk_diff_lines": sum(
+            _int_run(run, "large_low_risk_diff_lines") for run in runs
+        ),
         "linked_issue_count": sum(_int_run(run, "linked_issue_count") for run in runs),
         "learning_count": sum(_int_run(run, "learning_count") for run in runs),
     }
@@ -460,8 +598,11 @@ def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
             "failures": _coerce_int(totals.get("failures")),
             "dropped_findings": _coerce_int(totals.get("dropped_findings")),
             "connector_context_items": _coerce_int(totals.get("connector_context_items")),
+            "connector_selected_items": _coerce_int(totals.get("connector_selected_items")),
             "context_selected_items": _coerce_int(totals.get("context_selected_items")),
             "context_dropped_items": _coerce_int(totals.get("context_dropped_items")),
+            "context_prompt_tokens": _coerce_int(totals.get("context_prompt_tokens")),
+            "large_low_risk_files": _coerce_int(totals.get("large_low_risk_files")),
             "quality_diagnostics": _coerce_int(totals.get("quality_diagnostics")),
             "runtime_ms": _coerce_float(totals.get("runtime_ms")),
         },
@@ -484,7 +625,27 @@ def _dashboard_summary(report: dict[str, object]) -> dict[str, object]:
             ],
             "context_modes": context_sources.get("context_modes", {}),
             "context_dropped_reasons": context_sources.get("context_dropped_reasons", {}),
+            "context_selected_sources": context_sources.get("context_selected_sources", {}),
+            "context_selected_reasons": context_sources.get("context_selected_reasons", {}),
+            "source_budget_overages": context_sources.get("source_budget_overages", {}),
             "connector_sources": context_sources.get("connector_sources", {}),
+            "large_low_risk_by_pr": [
+                {
+                    "pr": run.get("pr"),
+                    "files": _int_run(run, "large_low_risk_files"),
+                    "changes": _int_run(run, "large_low_risk_changes"),
+                    "scenario_group": run.get("scenario_group", "ungrouped"),
+                }
+                for run in runs
+            ],
+            "context_prompt_tokens_by_pr": [
+                {
+                    "pr": run.get("pr"),
+                    "estimated_tokens": _int_run(run, "context_prompt_tokens"),
+                    "scenario_group": run.get("scenario_group", "ungrouped"),
+                }
+                for run in runs
+            ],
             "quality_statuses": totals.get("quality_status_counts", {}),
             "categories": totals.get("categories", {}),
         },
@@ -523,6 +684,8 @@ def _markdown_report(report: dict[str, object]) -> str:
         f"- Context selected items: {totals.get('context_selected_items', 0)}",
         f"- Context candidate items: {totals.get('context_candidate_items', 0)}",
         f"- Context dropped items: {totals.get('context_dropped_items', 0)}",
+        f"- Context prompt tokens: {totals.get('context_prompt_tokens', 0)}",
+        f"- Large low-risk files: {totals.get('large_low_risk_files', 0)}",
         f"- Quality diagnostics: {totals.get('quality_diagnostics', 0)}",
         "",
         *_markdown_dashboard_sections(report),
@@ -598,9 +761,18 @@ def _markdown_dashboard_sections(report: dict[str, object]) -> list[str]:
             f"- Connector context items: {context_sources.get('connector_context_items', 0)}",
             f"- Connector sources: {_category_text(context_sources.get('connector_sources'))}",
             f"- Context selected items: {context_sources.get('context_selected_items', 0)}",
+            f"- Context selected sources: {_category_text(context_sources.get('context_selected_sources'))}",
+            f"- Context selected reasons: {_category_text(context_sources.get('context_selected_reasons'))}",
             f"- Context candidates: {context_sources.get('context_candidate_items', 0)}",
             f"- Context dropped: {context_sources.get('context_dropped_items', 0)}",
             f"- Context dropped reasons: {_category_text(context_sources.get('context_dropped_reasons'))}",
+            f"- RAG selected items: {context_sources.get('rag_selected_items', 0)}",
+            f"- RAG dropped reasons: {_category_text(context_sources.get('rag_dropped_reasons'))}",
+            f"- Connector selected items: {context_sources.get('connector_selected_items', 0)}",
+            f"- Connector dropped reasons: {_category_text(context_sources.get('connector_dropped_reasons'))}",
+            f"- Source budget estimated tokens: {_category_text(context_sources.get('source_budget_estimated_tokens'))}",
+            f"- Source budget overages: {_category_text(context_sources.get('source_budget_overages'))}",
+            f"- Large low-risk files: {context_sources.get('large_low_risk_files', 0)}",
             f"- Guideline sources: {context_sources.get('guideline_source_count', 0)}",
             f"- Linked issues: {context_sources.get('linked_issue_count', 0)}",
             "",
@@ -885,6 +1057,98 @@ def _category_text(value: object) -> str:
     if not isinstance(value, dict) or not value:
         return ""
     return ", ".join(f"{key}:{count}" for key, count in sorted(value.items()))
+
+
+def _budget_limit_tokens(context_diagnostics: dict[str, object]) -> dict[str, int]:
+    return _count_map(context_diagnostics.get("source_budgets"))
+
+
+def _budget_estimated_tokens(context_diagnostics: dict[str, object]) -> dict[str, int]:
+    source_packing = _object_dict(context_diagnostics.get("source_packing"))
+    estimated: dict[str, int] = {}
+    for source, raw_summary in source_packing.items():
+        summary = _object_dict(raw_summary)
+        tokens = _coerce_int(summary.get("estimated_tokens"))
+        if tokens > 0:
+            estimated[source] = tokens
+    return estimated
+
+
+def _budget_overage_counts(context_diagnostics: dict[str, object]) -> dict[str, int]:
+    source_packing = _object_dict(context_diagnostics.get("source_packing"))
+    overages: dict[str, int] = {}
+    for source, raw_summary in source_packing.items():
+        summary = _object_dict(raw_summary)
+        if summary.get("over_budget") is True:
+            overages[source] = overages.get(source, 0) + 1
+    return overages
+
+
+def _count_map(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key, raw_count in value.items():
+        count = _coerce_int(raw_count)
+        if count > 0:
+            counts[str(key)] = count
+    return counts
+
+
+def _merge_counts(target: dict[str, int], value: object) -> None:
+    for key, count in _count_map(value).items():
+        target[key] = target.get(key, 0) + count
+
+
+def _empty_score_summary() -> dict[str, object]:
+    return {"count": 0, "min": None, "max": None, "avg": None}
+
+
+def _score_summary_dict(value: object) -> dict[str, object]:
+    summary = _object_dict(value)
+    count = _coerce_int(summary.get("count"))
+    if count <= 0:
+        return _empty_score_summary()
+    minimum = summary.get("min")
+    maximum = summary.get("max")
+    average = summary.get("avg")
+    return {
+        "count": count,
+        "min": round(_coerce_float(minimum), 4) if minimum is not None else None,
+        "max": round(_coerce_float(maximum), 4) if maximum is not None else None,
+        "avg": round(_coerce_float(average), 4) if average is not None else None,
+    }
+
+
+def _merge_score_summaries(summaries: list[dict[str, object]]) -> dict[str, object]:
+    total_count = 0
+    weighted_total = 0.0
+    minimum: float | None = None
+    maximum: float | None = None
+    for raw_summary in summaries:
+        summary = _score_summary_dict(raw_summary)
+        count = _coerce_int(summary.get("count"))
+        if count <= 0:
+            continue
+        total_count += count
+        average = _coerce_float(summary.get("avg"))
+        weighted_total += average * count
+        raw_min = summary.get("min")
+        raw_max = summary.get("max")
+        if raw_min is not None:
+            value = _coerce_float(raw_min)
+            minimum = value if minimum is None else min(minimum, value)
+        if raw_max is not None:
+            value = _coerce_float(raw_max)
+            maximum = value if maximum is None else max(maximum, value)
+    if total_count <= 0:
+        return _empty_score_summary()
+    return {
+        "count": total_count,
+        "min": round(minimum or 0.0, 4),
+        "max": round(maximum or 0.0, 4),
+        "avg": round(weighted_total / total_count, 4),
+    }
 
 
 def _int_summary(summary: dict[str, object], key: str) -> int:

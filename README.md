@@ -506,9 +506,9 @@ openrabbit eval --repo owner/repo --expectations .openrabbit/eval-expectations.j
 openrabbit eval --repo owner/repo --scenario-group security=1,4 --scenario-group quality=2,3
 ```
 
-Each run captures the command, PR number, provider, model, context mode, context precision diagnostics, memory context, active learning count, guideline sources, linked issue count, local quality gate statuses and diagnostics, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails. `--compare` adds trend deltas against a previous JSON report. `--expectations` checks minimum or maximum finding counts and category counts for curated regression PRs.
+Each run captures the command, PR number, provider, model, context mode, context precision diagnostics, selected source and retrieval reason counts, RAG and connector contribution, source-budget usage, large low-risk summary counts, memory context, active learning count, guideline sources, linked issue count, local quality gate statuses and diagnostics, finding count, finding categories, dropped findings, skipped paths, runtime, and failure text when a PR run fails. `--compare` adds trend deltas against a previous JSON report. `--expectations` checks minimum or maximum finding counts and category counts for curated regression PRs.
 
-The JSON report also includes dashboard-ready `dashboard`, `command_outcomes`, `context_sources`, `tool_findings`, and `scenario_groups` sections. These are derived from the same local run records and can be used to build charts without sending code or results to a hosted service. See [docs/eval-reporting.md](docs/eval-reporting.md).
+The JSON report also includes dashboard-ready `dashboard`, `command_outcomes`, `context_sources`, `tool_findings`, and `scenario_groups` sections. These are derived from the same local run records and can be used to build charts without sending code or results to a hosted service. The packaged benchmark corpora include a v1.7 context precision scenario set for changed symbols, linked connector evidence, and large low-risk file summaries. See [docs/eval-reporting.md](docs/eval-reporting.md) and [docs/benchmark-corpus.md](docs/benchmark-corpus.md).
 
 Example expectations file:
 
