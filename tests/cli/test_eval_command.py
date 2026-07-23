@@ -77,15 +77,51 @@ async def test_run_eval_writes_json_and_markdown_reports(
             "guideline_sources": ["AGENTS.md"] if number == 1 else [],
             "linked_issue_count": 1 if number == 1 else 0,
             "connector_context": (
-                {"items": 2, "sources": {"jira": 1, "multi_repo": 1}} if number == 1 else {}
+                {
+                    "items": 2,
+                    "sources": {"jira": 1, "multi_repo": 1},
+                    "relevance": {"scores": {"count": 2, "min": 0.71, "max": 0.92, "avg": 0.815}},
+                }
+                if number == 1
+                else {}
             ),
             "context_diagnostics": (
                 {
                     "candidate_items": 7,
                     "selected_items": 4,
                     "dropped_items": 3,
-                    "rag": {"dropped_reasons": {"top_k_limit": 2}},
-                    "connectors": {"dropped_reasons": {"connector_item_limit": 1}},
+                    "selected_sources": {"AGENTS.md": 1, "jira": 1, "src/app.py": 2},
+                    "selected_reasons": {"changed_symbol": 2, "guideline": 1, "linked_issue": 1},
+                    "scores": {"count": 4, "min": 0.65, "max": 0.94, "avg": 0.8},
+                    "rag": {
+                        "candidate_items": 5,
+                        "selected_items": 3,
+                        "dropped_items": 2,
+                        "dropped_reasons": {"top_k_limit": 2},
+                        "selected_sources": {"AGENTS.md": 1, "src/app.py": 2},
+                        "selected_reasons": {"changed_symbol": 2, "guideline": 1},
+                        "scores": {"count": 3, "min": 0.65, "max": 0.94, "avg": 0.83},
+                    },
+                    "connectors": {
+                        "candidate_items": 2,
+                        "selected_items": 1,
+                        "dropped_items": 1,
+                        "dropped_reasons": {"connector_item_limit": 1},
+                        "selected_sources": {"jira": 1},
+                        "configured_sources": {"jira": 1, "multi_repo": 1},
+                    },
+                    "source_budgets": {"rag": 4500, "connector": 1200, "diff": 3000},
+                    "source_packing": {
+                        "rag": {"estimated_tokens": 300, "over_budget": False},
+                        "connector": {"estimated_tokens": 150, "over_budget": False},
+                        "diff": {
+                            "estimated_tokens": 3500,
+                            "over_budget": True,
+                            "large_low_risk_files": 1,
+                            "large_low_risk_changes": 130,
+                            "large_low_risk_diff_lines": 130,
+                        },
+                    },
                     "prompt_packing": {"estimated_tokens": 25},
                 }
                 if number == 1
@@ -143,6 +179,55 @@ async def test_run_eval_writes_json_and_markdown_reports(
         "connector_item_limit": 1,
         "top_k_limit": 2,
     }
+    assert data["totals"]["context_selected_sources"] == {
+        "AGENTS.md": 1,
+        "jira": 1,
+        "src/app.py": 2,
+    }
+    assert data["totals"]["context_selected_reasons"] == {
+        "changed_symbol": 2,
+        "guideline": 1,
+        "linked_issue": 1,
+    }
+    assert data["totals"]["context_scores"] == {
+        "count": 4,
+        "min": 0.65,
+        "max": 0.94,
+        "avg": 0.8,
+    }
+    assert data["totals"]["rag_candidate_items"] == 5
+    assert data["totals"]["rag_selected_items"] == 3
+    assert data["totals"]["rag_dropped_items"] == 2
+    assert data["totals"]["rag_dropped_reasons"] == {"top_k_limit": 2}
+    assert data["totals"]["rag_selected_sources"] == {"AGENTS.md": 1, "src/app.py": 2}
+    assert data["totals"]["rag_selected_reasons"] == {"changed_symbol": 2, "guideline": 1}
+    assert data["totals"]["rag_scores"] == {"count": 3, "min": 0.65, "max": 0.94, "avg": 0.83}
+    assert data["totals"]["connector_candidate_items"] == 2
+    assert data["totals"]["connector_selected_items"] == 1
+    assert data["totals"]["connector_dropped_items"] == 1
+    assert data["totals"]["connector_dropped_reasons"] == {"connector_item_limit": 1}
+    assert data["totals"]["connector_selected_sources"] == {"jira": 1}
+    assert data["totals"]["connector_configured_sources"] == {"jira": 1, "multi_repo": 1}
+    assert data["totals"]["connector_relevance_scores"] == {
+        "count": 2,
+        "min": 0.71,
+        "max": 0.92,
+        "avg": 0.815,
+    }
+    assert data["totals"]["source_budget_limit_tokens"] == {
+        "connector": 1200,
+        "diff": 3000,
+        "rag": 4500,
+    }
+    assert data["totals"]["source_budget_estimated_tokens"] == {
+        "connector": 150,
+        "diff": 3500,
+        "rag": 300,
+    }
+    assert data["totals"]["source_budget_overages"] == {"diff": 1}
+    assert data["totals"]["large_low_risk_files"] == 1
+    assert data["totals"]["large_low_risk_changes"] == 130
+    assert data["totals"]["large_low_risk_diff_lines"] == 130
     assert data["totals"]["guideline_sources"] == ["AGENTS.md"]
     assert data["runs"][0]["command"] == "openrabbit review --pr 1 --repo o/r --dry-run"
     assert data["runs"][0]["scenario_group"] == "default"
@@ -157,6 +242,15 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["runs"][0]["context_selected_items"] == 4
     assert data["runs"][0]["context_dropped_items"] == 3
     assert data["runs"][0]["context_prompt_tokens"] == 25
+    assert data["runs"][0]["context_selected_sources"] == {
+        "AGENTS.md": 1,
+        "jira": 1,
+        "src/app.py": 2,
+    }
+    assert data["runs"][0]["rag_selected_items"] == 3
+    assert data["runs"][0]["connector_selected_items"] == 1
+    assert data["runs"][0]["source_budget_overages"] == {"diff": 1}
+    assert data["runs"][0]["large_low_risk_files"] == 1
     assert data["runs"][0]["categories"] == {"security": 1, "tests": 1}
     assert data["runs"][0]["quality_gates"][0]["tool"] == "ruff"
     assert data["runs"][0]["quality_status_counts"] == {"failed": 1}
@@ -166,9 +260,26 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert data["runs"][1]["scenario_group"] == "default"
     assert data["dashboard"]["cards"]["prs"] == 2
     assert data["dashboard"]["cards"]["connector_context_items"] == 2
+    assert data["dashboard"]["cards"]["connector_selected_items"] == 1
     assert data["dashboard"]["cards"]["context_selected_items"] == 4
     assert data["dashboard"]["cards"]["context_dropped_items"] == 3
+    assert data["dashboard"]["cards"]["context_prompt_tokens"] == 25
+    assert data["dashboard"]["cards"]["large_low_risk_files"] == 1
     assert data["dashboard"]["charts"]["connector_sources"] == {"jira": 1, "multi_repo": 1}
+    assert data["dashboard"]["charts"]["context_selected_sources"] == {
+        "AGENTS.md": 1,
+        "jira": 1,
+        "src/app.py": 2,
+    }
+    assert data["dashboard"]["charts"]["source_budget_overages"] == {"diff": 1}
+    assert data["dashboard"]["charts"]["large_low_risk_by_pr"] == [
+        {"pr": 1, "files": 1, "changes": 130, "scenario_group": "default"},
+        {"pr": 2, "files": 0, "changes": 0, "scenario_group": "default"},
+    ]
+    assert data["dashboard"]["charts"]["context_prompt_tokens_by_pr"] == [
+        {"pr": 1, "estimated_tokens": 25, "scenario_group": "default"},
+        {"pr": 2, "estimated_tokens": 0, "scenario_group": "default"},
+    ]
     assert data["dashboard"]["charts"]["findings_by_pr"] == [
         {"pr": 1, "findings": 2, "scenario_group": "default"},
         {"pr": 2, "findings": 0, "scenario_group": "default"},
@@ -186,6 +297,27 @@ async def test_run_eval_writes_json_and_markdown_reports(
         "connector_item_limit": 1,
         "top_k_limit": 2,
     }
+    assert data["context_sources"]["context_selected_sources"] == {
+        "AGENTS.md": 1,
+        "jira": 1,
+        "src/app.py": 2,
+    }
+    assert data["context_sources"]["context_selected_reasons"] == {
+        "changed_symbol": 2,
+        "guideline": 1,
+        "linked_issue": 1,
+    }
+    assert data["context_sources"]["rag_selected_items"] == 3
+    assert data["context_sources"]["rag_dropped_reasons"] == {"top_k_limit": 2}
+    assert data["context_sources"]["connector_selected_items"] == 1
+    assert data["context_sources"]["connector_dropped_reasons"] == {"connector_item_limit": 1}
+    assert data["context_sources"]["source_budget_estimated_tokens"] == {
+        "connector": 150,
+        "diff": 3500,
+        "rag": 300,
+    }
+    assert data["context_sources"]["source_budget_overages"] == {"diff": 1}
+    assert data["context_sources"]["large_low_risk_files"] == 1
     assert data["tool_findings"]["tools"]["ruff"]["diagnostics"] == 2
     assert report["output_path"] == str(output)
     markdown_text = markdown.read_text(encoding="utf-8")
@@ -194,6 +326,8 @@ async def test_run_eval_writes_json_and_markdown_reports(
     assert "## Scenario Groups" in markdown_text
     assert "## Context Sources" in markdown_text
     assert "## Tool Findings" in markdown_text
+    assert "Context selected sources: AGENTS.md:1, jira:1, src/app.py:2" in markdown_text
+    assert "Source budget overages: diff:1" in markdown_text
 
 
 @pytest.mark.asyncio
