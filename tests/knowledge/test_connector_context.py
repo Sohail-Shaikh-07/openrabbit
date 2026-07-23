@@ -135,7 +135,7 @@ def test_load_connector_context_fails_open_for_unavailable_and_failing_connector
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     unavailable = _FakeConnector(available=False)
-    failing = _FakeConnector(error=RuntimeError("provider down"))
+    failing = _FakeConnector(error=RuntimeError("provider down token=super-secret-value"))
     monkeypatch.setattr(
         "knowledge.context._enabled_connectors",
         lambda *_args, **_kwargs: [unavailable, failing],
@@ -151,8 +151,33 @@ def test_load_connector_context_fails_open_for_unavailable_and_failing_connector
     assert bundle.summary["dropped_items"] == 0
     assert bundle.summary["unavailable"] == [{"connector": "jira", "reason": "missing token"}]
     assert bundle.summary["failures"] == [
-        {"connector": "jira", "reason": "RuntimeError: provider down"}
+        {"connector": "jira", "reason": "RuntimeError: provider down token=[REDACTED]"}
     ]
+    assert "super-secret-value" not in str(bundle.summary)
+
+
+def test_connector_request_metadata_is_redacted_before_connector_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connector = _FakeConnector()
+    monkeypatch.setattr(
+        "knowledge.context._enabled_connectors", lambda *_args, **_kwargs: [connector]
+    )
+    payload = _pr_payload()
+    payload.pull_request.title = "Rotate token=super-secret-value"
+    payload.pull_request.body = "Fixes PROJ-123 with api_key=another-secret-value"
+    payload.linked_issues[0].body_preview = "Authorization secret=linked-secret-value"
+
+    load_connector_context(Settings(), payload, repo="o/r")
+
+    request = connector.requests[0]
+    request_text = f"{request.query} {request.metadata}"
+    assert "super-secret-value" not in request_text
+    assert "another-secret-value" not in request_text
+    assert "linked-secret-value" not in request_text
+    assert "token=[REDACTED]" in request_text
+    assert "api_key=[REDACTED]" in request_text
+    assert "secret=[REDACTED]" in request_text
 
 
 def test_connector_context_prompt_entries_are_deduplicated_across_dimensions() -> None:
