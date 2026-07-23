@@ -8,6 +8,7 @@ import pytest
 from agents.prompting import format_context
 from cli.commands.review_context import filter_model_review_context
 from configs.settings import Settings
+from github_.diff import DiffLine, Hunk
 from knowledge.connectors import (
     KnowledgeConnectorHealth,
     KnowledgeConnectorRequest,
@@ -124,6 +125,7 @@ def test_load_connector_context_merges_items_into_all_model_dimensions(
     assert request.pr_number == 42
     assert request.head_sha == "abcdef"
     assert request.changed_paths == ("src/export.py",)
+    assert request.changed_symbols == ()
     assert "Add export endpoint" in request.query
     assert "Prefer admin auth" in request.query
     assert "admin" in request.query
@@ -260,3 +262,61 @@ def test_load_connector_context_records_connector_item_limit_drops(
     assert bundle.summary["items"] == 12
     assert bundle.summary["dropped_items"] == 2
     assert bundle.summary["dropped_reasons"] == {"connector_item_limit": 2}
+
+
+def test_load_connector_context_filters_weak_items_and_passes_changed_symbols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connector = _FakeConnector(
+        [
+            KnowledgeItem(
+                source_id="weak",
+                source_kind=KnowledgeSourceKind.DOCUMENT,
+                title="Unrelated",
+                body="A distant note.",
+            ),
+            KnowledgeItem(
+                source_id="SEC-42",
+                source_kind=KnowledgeSourceKind.ISSUE_TRACKER,
+                title="Admin-only exports",
+                body="SEC-42 requires export_admin_report authorization.",
+                score=0.3,
+                metadata={"provider": "jira"},
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "knowledge.context._enabled_connectors", lambda *_args, **_kwargs: [connector]
+    )
+    payload = _pr_payload()
+    payload.pull_request.body = "Fixes SEC-42."
+    payload.files = [
+        SimpleNamespace(
+            path="src/export.py",
+            hunks=[
+                Hunk(
+                    old_start=1,
+                    old_lines=1,
+                    new_start=1,
+                    new_lines=2,
+                    lines=[
+                        DiffLine(kind="context", text="class ExportService:"),
+                        DiffLine(kind="addition", text="def export_admin_report():"),
+                    ],
+                )
+            ],
+        )
+    ]
+
+    bundle = load_connector_context(Settings(), payload, repo="o/r")
+
+    assert connector.requests[0].changed_symbols == ("ExportService", "export_admin_report")
+    assert bundle.summary["candidate_items"] == 2
+    assert bundle.summary["items"] == 1
+    assert bundle.summary["dropped_reasons"] == {"weak_connector_relevance": 1}
+    assert bundle.summary["relevance"]["scores"]["count"] == 1
+    retrieval = bundle.retrieval_result
+    assert isinstance(retrieval, RetrievalResult)
+    payload = retrieval.security[0]["payload"]
+    assert payload["source_id"] == "SEC-42"
+    assert payload["metadata_relevance_reasons"]

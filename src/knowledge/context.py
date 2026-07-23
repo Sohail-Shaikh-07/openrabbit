@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,6 +20,7 @@ from knowledge.jira import JiraConnector
 from knowledge.linear import LinearConnector
 from knowledge.mcp_runtime import McpConnectorRuntime
 from knowledge.multi_repo import MultiRepoConnector
+from knowledge.relevance import DEFAULT_CONNECTOR_RELEVANCE_THRESHOLD, score_connector_items
 from knowledge.web_search import McpWebSearchConnector
 from rag.retriever import AgentDimension, RetrievalResult
 
@@ -73,23 +75,34 @@ def load_connector_context(
 
     normalized = normalize_knowledge_items(
         items,
-        max_items=_MAX_CONNECTOR_ITEMS,
+        max_items=50,
         max_body_chars=_CONNECTOR_BODY_CHARS,
     )
-    dropped_items = max(0, len(items) - len(normalized))
-    merged = _merge_items(_coerce_retrieval_result(retrieval_result), normalized)
+    relevance = score_connector_items(
+        request,
+        normalized,
+        max_items=_MAX_CONNECTOR_ITEMS,
+    )
+    dropped_items = max(0, len(items) - len(relevance.items))
+    dropped_reasons = dict(relevance.dropped_reasons)
+    sanitized_drops = max(0, len(items) - len(normalized))
+    if sanitized_drops:
+        dropped_reasons["empty_connector_item"] = sanitized_drops
+    merged = _merge_items(_coerce_retrieval_result(retrieval_result), relevance.items)
     return ConnectorContextBundle(
         retrieval_result=merged,
         summary={
             "enabled": checked,
             "available": available,
             "candidate_items": len(items),
-            "items": len(normalized),
+            "items": len(relevance.items),
             "dropped_items": dropped_items,
-            "dropped_reasons": (
-                {"connector_item_limit": dropped_items} if dropped_items > 0 else {}
-            ),
-            "sources": _source_counts(normalized),
+            "dropped_reasons": dropped_reasons,
+            "sources": _source_counts(relevance.items),
+            "relevance": {
+                "min_score": DEFAULT_CONNECTOR_RELEVANCE_THRESHOLD,
+                "scores": relevance.scores,
+            },
             "unavailable": unavailable,
             "failures": failures,
         },
@@ -162,7 +175,7 @@ def _connector_request(
         pr_number=int(getattr(pr_payload, "number", 0) or 1),
         head_sha=str(getattr(pr_payload, "head_sha", "") or ""),
         changed_paths=_changed_paths(pr_payload),
-        changed_symbols=(),
+        changed_symbols=_changed_symbols(pr_payload),
         query=query,
         max_items=_MAX_CONNECTOR_ITEMS,
         metadata={
@@ -315,3 +328,37 @@ def _changed_paths(pr_payload: Any) -> tuple[str, ...]:
         if path:
             paths.append(path)
     return tuple(paths)
+
+
+_PY_SYMBOL_RE = re.compile(r"^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
+_JS_SYMBOL_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)"
+)
+
+
+def _changed_symbols(pr_payload: Any) -> tuple[str, ...]:
+    files = getattr(pr_payload, "files", None)
+    if not isinstance(files, list):
+        return ()
+    symbols: set[str] = set()
+    for file_ in files:
+        hunks = getattr(file_, "hunks", None)
+        if not isinstance(hunks, list):
+            continue
+        for hunk in hunks:
+            hunk_lines = getattr(hunk, "lines", None)
+            if not isinstance(hunk_lines, list):
+                continue
+            for line in hunk_lines:
+                text = str(getattr(line, "text", "") or "")
+                symbols.update(_symbols_from_line(text))
+    return tuple(sorted(symbols))
+
+
+def _symbols_from_line(text: str) -> set[str]:
+    symbols: set[str] = set()
+    for pattern in (_PY_SYMBOL_RE, _JS_SYMBOL_RE):
+        match = pattern.match(text)
+        if match:
+            symbols.add(match.group(1))
+    return symbols

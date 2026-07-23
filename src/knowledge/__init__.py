@@ -34,6 +34,10 @@ from knowledge.registry import (
     KnowledgeConnectorRegistry,
     build_connector_registry,
 )
+from knowledge.relevance import (
+    ConnectorRelevanceResult,
+    score_connector_items,
+)
 from knowledge.web_search import McpWebSearchConnector
 
 __all__ = [
@@ -42,6 +46,7 @@ __all__ = [
     "MANAGED_LINEAR_COMMENT_MARKER",
     "ConnectorContextBundle",
     "ConnectorHealthResult",
+    "ConnectorRelevanceResult",
     "JiraClientError",
     "JiraCommentPublishResult",
     "JiraConnector",
@@ -67,4 +72,5 @@ __all__ = [
     "mcp_sdk_available",
     "normalize_knowledge_items",
     "sanitize_knowledge_text",
+    "score_connector_items",
 ]
