@@ -184,6 +184,71 @@ def test_format_prompt_diff_prioritizes_risky_files_inside_budget() -> None:
     )
 
 
+def test_format_prompt_diff_summarizes_large_low_risk_files() -> None:
+    docs_hunk = Hunk(
+        old_start=1,
+        old_lines=1,
+        new_start=1,
+        new_lines=140,
+        lines=[
+            DiffLine(kind="addition", text=f"documentation line {index} {'x' * 40}")
+            for index in range(140)
+        ],
+    )
+    risky_hunk = Hunk(
+        old_start=5,
+        old_lines=1,
+        new_start=5,
+        new_lines=2,
+        lines=[
+            DiffLine(kind="context", text="def authorize_export(user):"),
+            DiffLine(kind="addition", text="return user.is_admin"),
+        ],
+    )
+
+    diff = format_prompt_diff(
+        _payload(
+            [
+                _file("docs/generated-api.md", [docs_hunk], additions=140),
+                _file("app/auth/export.py", [risky_hunk], additions=1),
+            ]
+        ),
+        max_tokens=240,
+    )
+
+    assert estimate_prompt_tokens(diff) <= 240
+    assert "app/auth/export.py" in diff
+    assert "+return user.is_admin" in diff
+    assert "docs/generated-api.md" in diff
+    assert "low-risk oversized file summarized before agent review" in diff
+    assert "summary is not a full diff" in diff
+    assert "documentation line 0" in diff
+    assert "documentation line 20" not in diff
+    assert diff.find("app/auth/export.py") < diff.find("docs/generated-api.md")
+
+
+def test_format_prompt_diff_does_not_summarize_large_risky_files() -> None:
+    hunk = Hunk(
+        old_start=1,
+        old_lines=1,
+        new_start=1,
+        new_lines=130,
+        lines=[
+            DiffLine(kind="addition", text=f"authorize_session_{index} = True")
+            for index in range(130)
+        ],
+    )
+
+    diff = format_prompt_diff(
+        _payload([_file("app/auth/session.py", [hunk], additions=130)]),
+        max_tokens=2000,
+    )
+
+    assert "low-risk oversized file summarized" not in diff
+    assert "+authorize_session_0 = True" in diff
+    assert "+authorize_session_20 = True" in diff
+
+
 def test_format_prompt_diff_summarizes_binary_files() -> None:
     diff = format_prompt_diff(
         _payload([_file("assets/logo.png", [], is_binary=True, additions=0, deletions=0)])

@@ -22,6 +22,7 @@ packages = [
     { include = "benchmarks", from = "src" },
     { include = "cli", from = "src" },
     { include = "configs", from = "src" },
+    { include = "diff_summarization.py", from = "src" },
     { include = "finetuning", from = "src" },
     { include = "github_", from = "src" },
     { include = "knowledge", from = "src" },

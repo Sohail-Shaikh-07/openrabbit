@@ -6,6 +6,7 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
+from diff_summarization import summarize_large_low_risk_file
 from knowledge.context_packing import DEFAULT_SOURCE_TOKEN_BUDGETS
 from memory.history import PullRequestHistory, format_history_context
 from quality.models import ToolRunResult
@@ -286,9 +287,19 @@ def _diff_summary(pr_payload: Any | None) -> dict[str, object]:
             for hunk in hunks:
                 for line in getattr(hunk, "lines", []) or []:
                     chars += len(str(getattr(line, "text", "") or ""))
+    large_low_risk_summaries = []
+    if isinstance(files, list):
+        large_low_risk_summaries = [
+            low_risk_summary
+            for file_ in files
+            if (low_risk_summary := summarize_large_low_risk_file(file_)) is not None
+        ]
     summary = _budget_summary("diff", candidate_items=max(file_count, hunk_count), chars=chars)
     summary["files"] = file_count
     summary["hunks"] = hunk_count
+    summary["large_low_risk_files"] = len(large_low_risk_summaries)
+    summary["large_low_risk_changes"] = sum(item.changes for item in large_low_risk_summaries)
+    summary["large_low_risk_diff_lines"] = sum(item.diff_lines for item in large_low_risk_summaries)
     return summary
 
 
