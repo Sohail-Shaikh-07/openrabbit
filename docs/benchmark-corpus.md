@@ -21,6 +21,8 @@ The v1.7 context precision corpus focuses on retrieval and packing behavior:
 - Linked issue and connector relevance when unrelated snippets are available
 - Large low-risk file summaries while preserving risky code diffs
 
+Use [context-precision.md](context-precision.md) to interpret the retrieval reasons, source budgets, connector relevance, and prompt-packing fields that these scenarios exercise.
+
 ## How To Run It
 
 ```python

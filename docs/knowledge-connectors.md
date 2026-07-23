@@ -19,7 +19,7 @@ When connectors are enabled and available, OpenRabbit builds one bounded request
 
 Prompt packing keeps changed-line and compressed diff evidence ahead of auxiliary sources. Repository RAG and connector snippets have separate budgets, so noisy external context cannot crowd out local code, rules, architecture docs, memory, linked issues, or quality diagnostics.
 
-Before connector snippets enter prompt packing, OpenRabbit normalizes provider scores and adds deterministic relevance signals. Exact linked issue key matches, changed path matches, changed symbol matches, repository handle matches, source-kind fit, and text overlap raise an item's score. Items below the relevance threshold are dropped with `weak_connector_relevance`; relevant items beyond the connector item limit are dropped with `connector_item_limit`. Selected connector hits carry `relevance_score`, `relevance_reasons`, and `provider_score` metadata for troubleshooting.
+Before connector snippets enter prompt packing, OpenRabbit normalizes provider scores and adds deterministic relevance signals. Exact linked issue key matches, changed path matches, changed symbol matches, repository handle matches, source-kind fit, and text overlap raise an item's score. Items below the relevance threshold are dropped with `weak_connector_relevance`; relevant items beyond the connector item limit are dropped with `connector_item_limit`. Selected connector hits carry `relevance_score`, `relevance_reasons`, and `provider_score` metadata for troubleshooting. See [context precision troubleshooting](context-precision.md) for interpreting relevance scores, selected reasons, source budgets, and noisy connector context.
 
 ## Setup Checklist
 
@@ -86,6 +86,7 @@ A document connector may read explicitly configured design docs, runbooks, or de
 - Optional connector configuration must name token environment variables rather than storing token values in repository config.
 - `review`, `describe`, `ask`, and `improve` continue when a connector is disabled, unavailable, or fails during retrieval.
 - Command summaries include connector counts, provenance, source budgets, relevance score summaries, dropped reasons, and `context_diagnostics` for loaded connector snippets. `openrabbit eval` aggregates connector item totals, source counts, context candidate and selected counts, dropped reasons, and prompt-packing estimates in JSON, dashboard, and Markdown reports.
+- Context precision diagnostics are documented in [context-precision.md](context-precision.md), including missing context, noisy context, and source-budget troubleshooting.
 
 ## Configuration Shape
 
