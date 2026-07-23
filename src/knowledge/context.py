@@ -179,9 +179,9 @@ def _connector_request(
         query=query,
         max_items=_MAX_CONNECTOR_ITEMS,
         metadata={
-            "pr_title": _pr_title(pr_payload),
-            "pr_body": _pr_body(pr_payload),
-            "linked_issues": _linked_issue_text(pr_payload),
+            "pr_title": sanitize_knowledge_text(_pr_title(pr_payload), max_chars=300),
+            "pr_body": sanitize_knowledge_text(_pr_body(pr_payload), max_chars=600),
+            "linked_issues": sanitize_knowledge_text(_linked_issue_text(pr_payload), max_chars=600),
         },
     )
 
