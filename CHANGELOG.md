@@ -12,6 +12,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added `suggestion_quality` metadata to `openrabbit improve` output with raw, grounded, kept, dropped, and drop-reason counts for noisy or unsafe suggestions.
 - Added read-only `openrabbit labels` output for PR label proposals with reasons, confidence, repository-label availability, and stable JSON.
 - Added interactive PR workflow documentation and a manual GitHub Actions example for `describe`, `ask`, `improve`, and `labels`.
+- Added v1.8 regression coverage for interactive JSON contracts, managed comment markers, read-only label boundaries, and privacy-safe label proposal summaries.
 
 ## v1.7.0 - 2026-07-26
 
