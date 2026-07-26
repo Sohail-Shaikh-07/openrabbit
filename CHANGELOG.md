@@ -4,7 +4,41 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
-- Added the v1.7 Context Precision plan for RAG and connector context selection, packing, evaluation, documentation, and release work.
+- No unreleased changes.
+
+## v1.7.0 - 2026-07-26
+
+OpenRabbit v1.7.0 ships Context Precision: more focused repository RAG, explicit source budgets, connector relevance scoring, bounded large-file summaries, richer eval metrics, and troubleshooting guidance for missing or noisy context.
+
+### Context Precision
+
+- Added structured context precision diagnostics for model-facing commands, including candidate counts, selected sources, selected reasons, dropped reasons, score summaries, connector availability, source budgets, and prompt-packing estimates.
+- Improved repository RAG planning so changed files, changed symbols, related tests, nearby paths, scoped guideline files, and architecture docs are preferred before broad semantic context.
+- Added shared prompt source budgets for changed-line evidence, compressed diff evidence, repository RAG, connector snippets, PR memory, linked GitHub issues, and local quality diagnostics.
+- Added deterministic connector relevance scoring for linked issue keys, changed paths, changed symbols, repository handles, source kind, provider score, and PR text overlap.
+- Added visible summaries for oversized low-risk files so generated docs, lock-style files, and manifests can stay bounded while risky code diffs remain visible.
+
+### Evaluation And Documentation
+
+- Expanded `openrabbit eval` with context precision fields and dashboard summaries for selected sources, selected reasons, RAG and connector contribution, relevance scores, source-budget usage, budget overages, prompt tokens, and large low-risk summaries.
+- Added a packaged v1.7 context precision benchmark corpus for changed-symbol context, linked connector evidence, and large low-risk summary scenarios.
+- Added `docs/context-precision.md` for retrieval reasons, source budgets, connector relevance, eval interpretation, missing context, noisy context, budget pressure, and privacy boundaries.
+- Updated README, RAG, connector, eval, benchmark, GitHub Actions, PR-Agent gap analysis, and release planning docs for v1.7.0.
+
+### Security And Privacy
+
+- Added regressions for connector request metadata redaction, fail-open error redaction, source-budget isolation, skipped-path context behavior, prompt bounds, and privacy-safe context packing diagnostics.
+- Sanitized connector request metadata before optional connectors receive PR title, body, or linked issue text.
+- Preserved local-first defaults: Qdrant remains optional, connectors remain disabled by default, and connector snippets stay bounded, redacted, source-labeled, untrusted, and fail open.
+
+### Release Notes
+
+- Package version is `1.7.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- Existing `.openrabbit/config.yml` files continue to work.
+- Eval reports remain local artifacts and do not include raw prompt text, raw tool output, API keys, credentials, or unbounded connector bodies.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.
 
 ## v1.6.0 - 2026-07-22
 
