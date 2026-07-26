@@ -471,12 +471,13 @@ openrabbit --quiet describe --pr 42 --repo owner/repo
 
 ### `openrabbit ask`
 
-Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, and answers a focused question about the pull request. The answer is separated into direct answer, evidence, uncertainty, and follow-up checks. The command uses the same configured model provider as `openrabbit review`, but it never posts comments or mutates the pull request.
+Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, and answers a focused question about the pull request. The answer is separated into direct answer, evidence, uncertainty, and follow-up checks. The command uses the same configured model provider as `openrabbit review`. By default it is read-only; add `--publish` to create or update one OpenRabbit-managed PR answer comment. JSON output includes a `managed_answer` object with the marker, status, comment ID, and comment URL so automation can distinguish read-only, created, and updated runs.
 
 ```bash
 openrabbit ask --pr 42 --repo owner/repo "Does this change add enough test coverage?"
 openrabbit ask --pr 42 --repo owner/repo --format markdown "What files should I inspect first?"
 openrabbit ask --pr 42 --repo owner/repo --format json "What files should I inspect first?"
+openrabbit ask --pr 42 --repo owner/repo --publish "What files should I inspect first?"
 openrabbit --quiet ask --pr 42 --repo owner/repo "What files should I inspect first?"
 ```
 

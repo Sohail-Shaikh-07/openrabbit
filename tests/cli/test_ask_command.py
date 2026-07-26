@@ -23,6 +23,7 @@ from cli.commands.ask import (
 from cli.commands.ask import (
     _build_prompt as _build_ask_prompt,
 )
+from cli.commands.pr_answer import ANSWER_MARKER, PRAnswerPublishResult
 from configs import load_settings
 from configs.schema import AstInstruction
 from configs.settings import Settings
@@ -280,6 +281,14 @@ async def test_run_ask_returns_evidence_based_answer(scaffold_repo: Path) -> Non
     assert summary["number"] == 42
     assert summary["question"] == "What changed in search?"
     assert summary["context_loaded"] is False
+    assert summary["publish_status"] == "read_only"
+    assert summary["managed_answer"] == {
+        "enabled": False,
+        "status": "read_only",
+        "marker": ANSWER_MARKER,
+        "comment_id": None,
+        "comment_url": None,
+    }
     assert summary["answer"]["answer"].startswith("The PR changes search")
     assert summary["answer"]["evidence"][0]["file"] == "src/search.py"
 
@@ -419,6 +428,182 @@ async def test_run_ask_passes_active_learnings(scaffold_repo: Path) -> None:
     assert history.learnings[0].instruction == "Prefer bind parameters for raw SQL."
 
 
+@respx.mock
+async def test_run_ask_publish_creates_managed_answer(scaffold_repo: Path) -> None:
+    _mock_pr()
+    captured: dict[str, object] = {}
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> PullRequestAnswer:
+        return PullRequestAnswer(
+            answer="The PR changes search to accept a query.",
+            evidence=[
+                AnswerEvidence(
+                    source="changed_lines",
+                    file="src/search.py",
+                    line=1,
+                    detail="The signature now accepts query.",
+                )
+            ],
+            uncertainty=["No callers are visible."],
+            follow_up_checks=["Run search tests."],
+        )
+
+    respx.get(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode()
+        return httpx.Response(
+            200,
+            json={
+                "id": 92,
+                "user": {"login": "openrabbit", "id": 42},
+                "body": "created",
+                "html_url": "https://github.com/o/r/pull/42#issuecomment-92",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+
+    respx.post(f"{_BASE}/repos/o/r/issues/42/comments").mock(side_effect=handler)
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_ask(
+        settings,
+        number=42,
+        question="What changed?",
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+    )
+
+    assert summary["publish_status"] == "created"
+    assert summary["answer_comment_id"] == 92
+    assert summary["answer_comment_url"] == "https://github.com/o/r/pull/42#issuecomment-92"
+    assert summary["managed_answer"] == {
+        "enabled": True,
+        "status": "created",
+        "marker": ANSWER_MARKER,
+        "comment_id": 92,
+        "comment_url": "https://github.com/o/r/pull/42#issuecomment-92",
+    }
+    body = str(captured["body"])
+    assert ANSWER_MARKER in body
+    assert "### Question" in body
+    assert "What changed?" in body
+    assert "`changed_lines` `src/search.py:1`" in body
+
+
+@respx.mock
+async def test_run_ask_publish_updates_existing_managed_answer(scaffold_repo: Path) -> None:
+    _mock_pr()
+    captured: dict[str, object] = {}
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> PullRequestAnswer:
+        return PullRequestAnswer(answer="Updated answer.")
+
+    respx.get(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 93,
+                    "user": {"login": "openrabbit", "id": 42},
+                    "body": f"{ANSWER_MARKER}\nold body",
+                    "html_url": "https://github.com/o/r/pull/42#issuecomment-93",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                }
+            ],
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode()
+        return httpx.Response(
+            200,
+            json={
+                "id": 93,
+                "user": {"login": "openrabbit", "id": 42},
+                "body": "updated",
+                "html_url": "https://github.com/o/r/pull/42#issuecomment-93",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:05:00Z",
+            },
+        )
+
+    respx.patch(f"{_BASE}/repos/o/r/issues/comments/93").mock(side_effect=handler)
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_ask(
+        settings,
+        number=42,
+        question="What changed?",
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+    )
+
+    assert summary["publish_status"] == "updated"
+    assert summary["answer_comment_id"] == 93
+    assert summary["answer_comment_url"] == "https://github.com/o/r/pull/42#issuecomment-93"
+    assert summary["managed_answer"] == {
+        "enabled": True,
+        "status": "updated",
+        "marker": ANSWER_MARKER,
+        "comment_id": 93,
+        "comment_url": "https://github.com/o/r/pull/42#issuecomment-93",
+    }
+    assert "Updated answer." in str(captured["body"])
+
+
+@respx.mock
+async def test_run_ask_publish_uses_injected_answer_publisher(scaffold_repo: Path) -> None:
+    _mock_pr()
+    published_answers: list[dict[str, object]] = []
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> PullRequestAnswer:
+        return PullRequestAnswer(answer="Injected publisher answer.")
+
+    async def fake_publisher(
+        _handle: object,
+        *,
+        pr_number: int,
+        summary: dict[str, object],
+    ) -> PRAnswerPublishResult:
+        assert pr_number == 42
+        published_answers.append(summary)
+        return PRAnswerPublishResult(action="created", comment_id=94, html_url="https://example/94")
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_ask(
+        settings,
+        number=42,
+        question="What changed?",
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+        answer_publisher=fake_publisher,
+    )
+
+    assert published_answers == [summary]
+    assert summary["managed_answer"] == {
+        "enabled": True,
+        "status": "created",
+        "marker": ANSWER_MARKER,
+        "comment_id": 94,
+        "comment_url": "https://example/94",
+    }
+
+
 async def test_run_ask_rejects_empty_question(scaffold_repo: Path) -> None:
     settings = load_settings(scaffold_repo, env={})
 
@@ -445,6 +630,8 @@ def test_render_answer_prints_sections() -> None:
         "hunks": 1,
         "commits": 1,
         "context_loaded": True,
+        "publish_status": "created",
+        "answer_comment_url": "https://github.com/o/r/pull/42#issuecomment-92",
         "question": "What changed?",
         "answer": {
             "answer": "Search now accepts a query.",
@@ -467,6 +654,7 @@ def test_render_answer_prints_sections() -> None:
     text = out.getvalue()
     assert "PR #42 on o/r" in text
     assert "Context:      loaded" in text
+    assert "Published:    answer comment created" in text
     assert "Question:" in text
     assert "Answer:" in text
     assert "Evidence:" in text
@@ -487,6 +675,8 @@ def test_render_answer_markdown_prints_report_sections() -> None:
         "hunks": 1,
         "commits": 1,
         "context_loaded": False,
+        "publish_status": "updated",
+        "answer_comment_url": "https://github.com/o/r/pull/42#issuecomment-93",
         "question": "What changed?",
         "answer": {
             "answer": "Search now accepts a query.",
@@ -508,6 +698,7 @@ def test_render_answer_markdown_prints_report_sections() -> None:
 
     text = out.getvalue()
     assert "# PR #42 Ask" in text
+    assert "- Published: answer comment updated" in text
     assert "## Question" in text
     assert "## Evidence" in text
     assert "- `changed_lines` `src/search.py:1`: The signature now includes query." in text
@@ -520,6 +711,13 @@ def test_render_answer_json_prints_deterministic_summary() -> None:
         "repo": "o/r",
         "number": 42,
         "question": "What changed?",
+        "managed_answer": {
+            "enabled": True,
+            "status": "created",
+            "marker": ANSWER_MARKER,
+            "comment_id": 92,
+            "comment_url": "https://github.com/o/r/pull/42#issuecomment-92",
+        },
         "answer": {"answer": "Search now accepts a query."},
     }
     out = io.StringIO()
@@ -530,5 +728,6 @@ def test_render_answer_json_prints_deterministic_summary() -> None:
     assert text.endswith("\n")
     assert '"answer": {' in text
     assert '"command": "ask"' in text
+    assert '"managed_answer": {' in text
     assert '"question": "What changed?"' in text
     assert '"schema_version": "1.0"' in text

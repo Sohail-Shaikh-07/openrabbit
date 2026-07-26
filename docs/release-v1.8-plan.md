@@ -31,6 +31,7 @@ OpenRabbit v1.8 focuses on making PR interaction commands more scriptable and mo
 - OP-122 creates the v1.8 planning track and repository roadmap link.
 - OP-123 adds top-level `schema_version` and `command` fields to `describe`, `ask`, and `improve` JSON payloads, plus `openrabbit improve --format json` for scripting.
 - OP-124 adds explicit `managed_summary` metadata to `describe` output so read-only and `--publish` runs expose the managed marker, status, comment ID, and comment URL.
+- OP-125 adds `ask --publish` for one managed PR answer comment plus `managed_answer` metadata for read-only and published runs.
 
 ## Scope Notes
 

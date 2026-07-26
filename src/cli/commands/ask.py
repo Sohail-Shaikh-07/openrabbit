@@ -1,8 +1,9 @@
 """Implementation of ``openrabbit ask --pr N "question"``.
 
-The ask command is read-only. It fetches a pull request, optionally loads
-repository context, asks the configured model provider a focused question, and
-prints an evidence-based answer locally.
+The ask command is read-only by default. It fetches a pull request, optionally
+loads repository context, asks the configured model provider a focused question,
+and prints an evidence-based answer locally. Publishing is explicit and updates
+one OpenRabbit-managed answer comment.
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ from agents.prompting import (
 )
 from cli.commands.history import load_pr_history
 from cli.commands.output import render_json
+from cli.commands.pr_answer import (
+    ANSWER_MARKER,
+    PRAnswerPublishResult,
+    publish_or_update_pr_answer,
+)
 from cli.commands.review import (
     ContextLoader,
     _context_provenance,
@@ -66,6 +72,7 @@ class PullRequestAnswer:
 
 
 AnswerGenerator = Callable[..., Awaitable[PullRequestAnswer]]
+AnswerPublisher = Callable[..., Awaitable[PRAnswerPublishResult]]
 
 _PROMPT_TEMPLATE = """You are OpenRabbit's PR question-answering agent. Answer the user's question like a senior maintainer who has inspected the supplied pull request evidence.
 
@@ -130,6 +137,8 @@ async def run_ask(
     env: dict[str, str] | None = None,
     generator: AnswerGenerator | None = None,
     context_loader: ContextLoader | None = None,
+    publish: bool = False,
+    answer_publisher: AnswerPublisher | None = None,
 ) -> dict[str, object]:
     """Fetch a PR, answer a question, and return a summary dict."""
     cleaned_question = _clean_text(question)
@@ -149,81 +158,95 @@ async def run_ask(
         )
         payload = controls_result.filtered_payload
         pr_history_result = await load_pr_history(settings, handle=handle, payload=payload)
+
+        retrieval_result: Any | None = None
+        loader = context_loader or _load_review_context
+        try:
+            retrieval_result = await loader(payload)
+        except Exception as exc:
+            _log.warning(
+                "ask.context_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            retrieval_result = None
+
+        connector_context = load_connector_context(
+            settings,
+            payload,
+            repo=handle.full_name,
+            env=env,
+            retrieval_result=retrieval_result,
+            query_extra=cleaned_question,
+        )
+        retrieval_result = connector_context.retrieval_result
+        model_context = filter_model_review_context(
+            controls_result,
+            retrieval_result=retrieval_result,
+            pr_history=pr_history_result.history,
+        )
+        retrieval_result = model_context.retrieval_result
+
+        answerer = generator or _generate_answer
+        answer = await answerer(
+            payload,
+            question=cleaned_question,
+            settings=settings,
+            retrieval_result=retrieval_result,
+            pr_history=model_context.pr_history,
+            env=env,
+        )
+
+        hunk_total = sum(len(f.hunks) for f in original_payload.files)
+        binary_count = sum(1 for f in original_payload.files if f.is_binary)
+        summary: dict[str, object] = {
+            "schema_version": "1.0",
+            "command": "ask",
+            "repo": handle.full_name,
+            "number": payload.number,
+            "title": payload.pull_request.title,
+            "state": payload.pull_request.state,
+            "head_sha": payload.head_sha[:12],
+            "files_changed": len(original_payload.files),
+            "binary_files": binary_count,
+            "hunks": hunk_total,
+            "commits": len(original_payload.commits),
+            "ast_instruction_count": len(controls_result.ast_matches),
+            "review_control_warning_count": len(controls_result.warnings),
+            "review_control_warnings": [item.as_dict() for item in controls_result.warnings],
+            "ast_unsupported_path_count": len(controls_result.unsupported_paths),
+            "context_loaded": _has_retrieval_context(retrieval_result),
+            "context_provenance": _context_provenance(retrieval_result),
+            "context_diagnostics": build_context_precision_diagnostics(
+                retrieval_result,
+                connector_context=connector_context.summary,
+                pr_payload=payload,
+                pr_history=model_context.pr_history,
+                quality_results=[],
+                command="ask",
+            ),
+            "connector_context": connector_context.summary,
+            "conversation_count": pr_history_result.conversation_count,
+            "learning_count": pr_history_result.learning_count,
+            "question": cleaned_question,
+            "publish_status": "read_only",
+            "managed_answer": _managed_answer_status(enabled=False),
+            "answer": _serialize_answer(answer),
+        }
+        if publish:
+            publisher = answer_publisher or publish_or_update_pr_answer
+            summary["managed_answer"] = _managed_answer_status(enabled=True)
+            result = await publisher(handle, pr_number=payload.number, summary=summary)
+            summary["publish_status"] = result.action
+            summary["answer_comment_id"] = result.comment_id
+            summary["answer_comment_url"] = result.html_url
+            summary["managed_answer"] = _managed_answer_status(
+                enabled=True,
+                result=result,
+            )
+        return summary
     finally:
         await client.aclose()
-
-    retrieval_result: Any | None = None
-    loader = context_loader or _load_review_context
-    try:
-        retrieval_result = await loader(payload)
-    except Exception as exc:
-        _log.warning(
-            "ask.context_failed",
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        retrieval_result = None
-
-    connector_context = load_connector_context(
-        settings,
-        payload,
-        repo=handle.full_name,
-        env=env,
-        retrieval_result=retrieval_result,
-        query_extra=cleaned_question,
-    )
-    retrieval_result = connector_context.retrieval_result
-    model_context = filter_model_review_context(
-        controls_result,
-        retrieval_result=retrieval_result,
-        pr_history=pr_history_result.history,
-    )
-    retrieval_result = model_context.retrieval_result
-
-    answerer = generator or _generate_answer
-    answer = await answerer(
-        payload,
-        question=cleaned_question,
-        settings=settings,
-        retrieval_result=retrieval_result,
-        pr_history=model_context.pr_history,
-        env=env,
-    )
-
-    hunk_total = sum(len(f.hunks) for f in original_payload.files)
-    binary_count = sum(1 for f in original_payload.files if f.is_binary)
-    return {
-        "schema_version": "1.0",
-        "command": "ask",
-        "repo": handle.full_name,
-        "number": payload.number,
-        "title": payload.pull_request.title,
-        "state": payload.pull_request.state,
-        "head_sha": payload.head_sha[:12],
-        "files_changed": len(original_payload.files),
-        "binary_files": binary_count,
-        "hunks": hunk_total,
-        "commits": len(original_payload.commits),
-        "ast_instruction_count": len(controls_result.ast_matches),
-        "review_control_warning_count": len(controls_result.warnings),
-        "review_control_warnings": [item.as_dict() for item in controls_result.warnings],
-        "ast_unsupported_path_count": len(controls_result.unsupported_paths),
-        "context_loaded": _has_retrieval_context(retrieval_result),
-        "context_provenance": _context_provenance(retrieval_result),
-        "context_diagnostics": build_context_precision_diagnostics(
-            retrieval_result,
-            connector_context=connector_context.summary,
-            pr_payload=payload,
-            pr_history=model_context.pr_history,
-            quality_results=[],
-            command="ask",
-        ),
-        "connector_context": connector_context.summary,
-        "conversation_count": pr_history_result.conversation_count,
-        "learning_count": pr_history_result.learning_count,
-        "question": cleaned_question,
-        "answer": _serialize_answer(answer),
-    }
 
 
 def run_ask_blocking(
@@ -233,9 +256,12 @@ def run_ask_blocking(
     question: str,
     repo: str | None = None,
     env: dict[str, str] | None = None,
+    publish: bool = False,
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
-    return asyncio.run(run_ask(settings, number=number, question=question, repo=repo, env=env))
+    return asyncio.run(
+        run_ask(settings, number=number, question=question, repo=repo, env=env, publish=publish)
+    )
 
 
 def render_answer(summary: dict[str, object], out: TextIO) -> None:
@@ -253,6 +279,7 @@ def render_answer(summary: dict[str, object], out: TextIO) -> None:
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
+    _print_publish_status(summary, out, markdown=False)
 
     print("", file=out)
     print("Question:", file=out)
@@ -275,6 +302,7 @@ def render_answer_markdown(summary: dict[str, object], out: TextIO) -> None:
     print(f"# PR #{summary['number']} Ask", file=out)
     print("", file=out)
     _print_metadata(summary, out)
+    _print_publish_status(summary, out, markdown=True)
     print("", file=out)
     print("## Question", file=out)
     print("", file=out)
@@ -396,6 +424,21 @@ def _serialize_evidence(evidence: AnswerEvidence) -> dict[str, object]:
     }
 
 
+def _managed_answer_status(
+    *,
+    enabled: bool,
+    result: PRAnswerPublishResult | None = None,
+) -> dict[str, object]:
+    status = result.action if result is not None else "read_only"
+    return {
+        "enabled": enabled,
+        "status": status,
+        "marker": ANSWER_MARKER,
+        "comment_id": result.comment_id if result is not None else None,
+        "comment_url": result.html_url if result is not None else None,
+    }
+
+
 def _evidence_list(value: object) -> list[AnswerEvidence]:
     if not isinstance(value, list):
         return []
@@ -509,6 +552,21 @@ def _print_metadata(summary: dict[str, object], out: TextIO) -> None:
     ]
     for label, value in rows:
         print(f"- {label}: {value}", file=out)
+
+
+def _print_publish_status(summary: dict[str, object], out: TextIO, *, markdown: bool) -> None:
+    publish_status = summary.get("publish_status")
+    if publish_status not in {"created", "updated"}:
+        return
+    url = str(summary.get("answer_comment_url") or "").strip()
+    label = "created" if publish_status == "created" else "updated"
+    value = f"answer comment {label}"
+    if url:
+        value = f"{value} ({url})"
+    if markdown:
+        print(f"- Published: {value}", file=out)
+    else:
+        print(f"  Published:    {value}", file=out)
 
 
 def _print_markdown_evidence(value: object, out: TextIO) -> None:

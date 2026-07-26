@@ -443,6 +443,11 @@ def ask(
         case_sensitive=False,
         help="Output format: text, markdown, or json.",
     ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        help="Create or update OpenRabbit's managed PR answer comment.",
+    ),
 ) -> None:
     """Ask an evidence-based question about a pull request."""
     workspace = workspace.resolve()
@@ -453,6 +458,7 @@ def ask(
             number=pr,
             question=question,
             repo=repo,
+            publish=publish,
         )
     except ValueError as exc:
         _err.print(f"[red]{exc}[/red]")
