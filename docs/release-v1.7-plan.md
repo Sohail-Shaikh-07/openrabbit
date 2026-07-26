@@ -34,6 +34,7 @@ OpenRabbit v1.7 focuses on making review context more precise before it reaches 
 - OP-118 adds eval report fields and dashboard summaries for selected source labels, retrieval reasons, RAG and connector contribution, source-budget usage, prompt-packing estimates, and large low-risk summaries. It also adds a packaged v1.7 context precision regression corpus.
 - OP-119 adds a context precision troubleshooting guide for retrieval reasons, source budgets, connector relevance, eval interpretation, missing context, noisy context, budget pressure, and privacy boundaries.
 - OP-120 adds regression coverage for redacted connector request metadata, redacted fail-open errors, source-budget isolation, and privacy-safe context packing diagnostics.
+- OP-121 bumps the package to `1.7.0` and adds v1.7.0 release notes, changelog archive, top-level changelog entry, release pinning guidance, and release-readiness validation.
 
 ## Non Goals
 

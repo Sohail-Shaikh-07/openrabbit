@@ -1,8 +1,8 @@
 # OpenRabbit vs PR-Agent Gap Analysis
 
-Date: 2026-07-22
+Date: 2026-07-26
 
-This document compares the current OpenRabbit `v1.6.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
+This document compares the current OpenRabbit `v1.7.0` implementation with The-PR-Agent/pr-agent and turns the remaining gap into a practical roadmap.
 
 Sources reviewed:
 
@@ -109,7 +109,7 @@ Recommended tasks:
 
 ### 6. Connector context now has a first runtime pass
 
-OpenRabbit v1.6 adds disabled-by-default MCP, MCP-backed web search, Jira, Linear, and multi-repo connectors. Enabled connectors provide bounded, redacted, source-labeled, untrusted context to `review`, `describe`, `ask`, `improve`, and `eval` without becoming mandatory services.
+OpenRabbit v1.6 adds disabled-by-default MCP, MCP-backed web search, Jira, Linear, and multi-repo connectors. OpenRabbit v1.7 adds context precision scoring, source budgets, eval metrics, and troubleshooting around those sources. Enabled connectors provide bounded, redacted, source-labeled, untrusted context to `review`, `describe`, `ask`, `improve`, and `eval` without becoming mandatory services.
 
 Recommended tasks:
 
@@ -167,7 +167,7 @@ Recommended tasks:
 
 ### 12. Quality evidence now has a local PR test log
 
-OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, findings, categories, dropped findings, skipped paths, runtime, and failures. v1.4 adds historical report comparison through `--compare` and expected finding assertions through `--expectations`.
+OpenRabbit now has `openrabbit eval`, which runs selected PRs in dry-run review mode and writes JSON plus Markdown reports. The first regression set targets `testing-openrabbit` PRs #1 through #5 and captures provider, model, context mode, memory context, active learning count, guideline sources, linked issue count, findings, categories, dropped findings, skipped paths, runtime, and failures. v1.4 adds historical report comparison through `--compare` and expected finding assertions through `--expectations`; v1.7 adds context precision totals, source reasons, source budgets, connector contribution, prompt-packing estimates, and a packaged context precision corpus.
 
 Recommended tasks:
 
