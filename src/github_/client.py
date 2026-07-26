@@ -226,6 +226,20 @@ class GitHubClient:
         )
         return _LABELS.validate_python(pages)
 
+    async def add_issue_labels(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        labels: list[str],
+    ) -> list[Label]:
+        data = await self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/issues/{number}/labels",
+            json={"labels": labels},
+        )
+        return _LABELS.validate_python(data)
+
     async def list_pull_requests(
         self,
         owner: str,

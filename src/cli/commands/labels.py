@@ -1,4 +1,4 @@
-"""Read-only pull request label proposal command."""
+"""Pull request label proposal and opt-in application command."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from cli.commands.output import render_json
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
 from configs.settings import Settings
-from github_ import GitHubClient, PullRequestParser, RepositoryHandle
+from github_ import GitHubAPIError, GitHubClient, PullRequestParser, RepositoryHandle
 
 _log = get_logger(__name__)
 
@@ -92,8 +92,9 @@ async def run_label_proposals(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     limit: int = 8,
+    apply: bool = False,
 ) -> dict[str, object]:
-    """Fetch a PR and return deterministic, read-only label proposals."""
+    """Fetch a PR and return deterministic label proposals, optionally applying them."""
     if limit < 1:
         raise ValueError("--limit must be at least 1")
 
@@ -109,42 +110,50 @@ async def run_label_proposals(
             payload=payload,
             include_conversation=False,
         )
+
+        current_labels = _current_label_names(payload)
+        proposals = _propose_labels(
+            payload,
+            current_labels=current_labels,
+            repository_labels=repo_labels,
+            history=pr_history_result.history,
+            limit=limit,
+        )
+        application = await _apply_label_proposals(
+            handle,
+            pr_number=payload.number,
+            proposals=proposals,
+            repository_labels_loaded=labels_loaded,
+            apply=apply,
+        )
+        hunk_total = sum(len(f.hunks) for f in payload.files)
+        binary_count = sum(1 for f in payload.files if f.is_binary)
+        return {
+            "schema_version": "1.0",
+            "command": "labels",
+            "repo": handle.full_name,
+            "number": payload.number,
+            "title": payload.pull_request.title,
+            "state": payload.pull_request.state,
+            "head_sha": payload.head_sha[:12],
+            "files_changed": len(payload.files),
+            "binary_files": binary_count,
+            "hunks": hunk_total,
+            "commits": len(payload.commits),
+            "current_labels": current_labels,
+            "repository_labels_loaded": labels_loaded,
+            "repository_labels_count": len(repo_labels),
+            "linked_issue_count": len(payload.linked_issues),
+            "memory_enabled": pr_history_result.history is not None,
+            "learning_count": pr_history_result.learning_count,
+            "conversation_count": pr_history_result.conversation_count,
+            "proposal_count": len(proposals),
+            "label_proposals": [_serialize_proposal(proposal) for proposal in proposals],
+            "label_application": application,
+            "mutates_github": application["status"] == "applied",
+        }
     finally:
         await client.aclose()
-
-    current_labels = _current_label_names(payload)
-    proposals = _propose_labels(
-        payload,
-        current_labels=current_labels,
-        repository_labels=repo_labels,
-        history=pr_history_result.history,
-        limit=limit,
-    )
-    hunk_total = sum(len(f.hunks) for f in payload.files)
-    binary_count = sum(1 for f in payload.files if f.is_binary)
-    return {
-        "schema_version": "1.0",
-        "command": "labels",
-        "repo": handle.full_name,
-        "number": payload.number,
-        "title": payload.pull_request.title,
-        "state": payload.pull_request.state,
-        "head_sha": payload.head_sha[:12],
-        "files_changed": len(payload.files),
-        "binary_files": binary_count,
-        "hunks": hunk_total,
-        "commits": len(payload.commits),
-        "current_labels": current_labels,
-        "repository_labels_loaded": labels_loaded,
-        "repository_labels_count": len(repo_labels),
-        "linked_issue_count": len(payload.linked_issues),
-        "memory_enabled": pr_history_result.history is not None,
-        "learning_count": pr_history_result.learning_count,
-        "conversation_count": pr_history_result.conversation_count,
-        "proposal_count": len(proposals),
-        "label_proposals": [_serialize_proposal(proposal) for proposal in proposals],
-        "mutates_github": False,
-    }
 
 
 def run_label_proposals_blocking(
@@ -154,6 +163,7 @@ def run_label_proposals_blocking(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     limit: int = 8,
+    apply: bool = False,
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
     return asyncio.run(
@@ -163,6 +173,7 @@ def run_label_proposals_blocking(
             repo=repo,
             env=env,
             limit=limit,
+            apply=apply,
         )
     )
 
@@ -181,7 +192,11 @@ def render_label_proposals(summary: dict[str, object], out: TextIO) -> None:
     print(f"  Commits:      {summary['commits']}", file=out)
     print(f"  Existing:     {_format_labels(summary.get('current_labels'))}", file=out)
     print(f"  Proposals:    {summary['proposal_count']}", file=out)
-    print("  GitHub write: no", file=out)
+    application = _label_application(summary)
+    if application.get("enabled") is True:
+        print(f"  GitHub write: {application.get('status', 'requested')}", file=out)
+    else:
+        print("  GitHub write: no", file=out)
 
     raw_proposals = summary.get("label_proposals")
     proposals = raw_proposals if isinstance(raw_proposals, list) else []
@@ -205,6 +220,15 @@ def render_label_proposals(summary: dict[str, object], out: TextIO) -> None:
         if isinstance(signals, list) and signals:
             print(f"    Signals: {', '.join(str(signal) for signal in signals[:4])}", file=out)
 
+    if application.get("enabled") is True:
+        print("", file=out)
+        print("Label application:", file=out)
+        print(f"  Applied:      {_format_labels(application.get('applied_labels'))}", file=out)
+        print(f"  Skipped:      {_format_label_skips(application)}", file=out)
+        error = str(application.get("error") or "").strip()
+        if error:
+            print(f"  Error:        {error}", file=out)
+
 
 def render_label_proposals_json(summary: dict[str, object], out: TextIO) -> None:
     """Render label proposals as deterministic JSON."""
@@ -222,6 +246,85 @@ async def _load_repository_labels(handle: RepositoryHandle) -> tuple[list[str], 
         )
         return [], False
     return sorted({label.name for label in labels}, key=str.lower), True
+
+
+async def _apply_label_proposals(
+    handle: RepositoryHandle,
+    *,
+    pr_number: int,
+    proposals: list[LabelProposal],
+    repository_labels_loaded: bool,
+    apply: bool,
+) -> dict[str, object]:
+    skipped = _label_application_skips(
+        proposals,
+        repository_labels_loaded=repository_labels_loaded,
+    )
+    applicable = [proposal.name for proposal in proposals if proposal.exists_in_repository is True]
+    if not apply:
+        return {
+            "enabled": False,
+            "status": "dry_run",
+            "requested_labels": applicable,
+            "applied_labels": [],
+            "skipped_labels": skipped,
+            "failed_labels": [],
+        }
+    if not repository_labels_loaded:
+        return {
+            "enabled": True,
+            "status": "skipped_repository_labels_unavailable",
+            "requested_labels": [],
+            "applied_labels": [],
+            "skipped_labels": skipped,
+            "failed_labels": [],
+        }
+    if not applicable:
+        return {
+            "enabled": True,
+            "status": "no_applicable_labels",
+            "requested_labels": [],
+            "applied_labels": [],
+            "skipped_labels": skipped,
+            "failed_labels": [],
+        }
+    try:
+        applied = await handle.add_issue_labels(pr_number, applicable)
+    except GitHubAPIError as exc:
+        return {
+            "enabled": True,
+            "status": "failed",
+            "requested_labels": applicable,
+            "applied_labels": [],
+            "skipped_labels": skipped,
+            "failed_labels": applicable,
+            "error": str(exc),
+            "error_status_code": exc.status_code,
+        }
+    return {
+        "enabled": True,
+        "status": "applied",
+        "requested_labels": applicable,
+        "applied_labels": sorted({label.name for label in applied}, key=str.lower),
+        "skipped_labels": skipped,
+        "failed_labels": [],
+    }
+
+
+def _label_application_skips(
+    proposals: list[LabelProposal],
+    *,
+    repository_labels_loaded: bool,
+) -> list[dict[str, str]]:
+    skipped: list[dict[str, str]] = []
+    for proposal in proposals:
+        if proposal.exists_in_repository is True:
+            continue
+        reason = (
+            "repository_labels_unavailable" if not repository_labels_loaded else "not_in_repository"
+        )
+        skipped.append({"name": proposal.name, "reason": reason})
+    return skipped
 
 
 def _propose_labels(
@@ -394,3 +497,25 @@ def _format_labels(value: object) -> str:
         return "none"
     labels = [str(label) for label in value if str(label).strip()]
     return ", ".join(labels) if labels else "none"
+
+
+def _label_application(summary: dict[str, object]) -> dict[str, object]:
+    application = summary.get("label_application")
+    return application if isinstance(application, dict) else {"enabled": False}
+
+
+def _format_label_skips(application: dict[str, object]) -> str:
+    skipped = application.get("skipped_labels")
+    if not isinstance(skipped, list) or not skipped:
+        return "none"
+    parts: list[str] = []
+    for item in skipped:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        reason = str(item.get("reason") or "").strip()
+        if name and reason:
+            parts.append(f"{name} ({reason})")
+        elif name:
+            parts.append(name)
+    return ", ".join(parts) if parts else "none"

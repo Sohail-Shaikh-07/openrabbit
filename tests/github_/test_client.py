@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import traceback
 
 import httpx
@@ -240,6 +241,26 @@ async def test_list_labels_returns_typed_labels() -> None:
     async with _client() as client:
         labels = await client.list_labels("o", "r")
 
+    assert [label.name for label in labels] == ["security", "tests"]
+
+
+@respx.mock
+async def test_add_issue_labels_sends_payload() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json=[{"name": "security"}, {"name": "tests"}],
+        )
+
+    respx.post(f"{_BASE}/repos/o/r/issues/42/labels").mock(side_effect=handler)
+
+    async with _client() as client:
+        labels = await client.add_issue_labels("o", "r", 42, ["security", "tests"])
+
+    assert captured["json"] == {"labels": ["security", "tests"]}
     assert [label.name for label in labels] == ["security", "tests"]
 
 

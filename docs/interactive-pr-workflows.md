@@ -12,7 +12,7 @@ polling comment command that maps to a managed OpenRabbit comment.
 | `openrabbit describe` | Read-only PR summary and walkthrough | `--publish` creates or updates one managed summary comment | `schema_version`, `command`, `description`, `managed_summary`, `publish_status`, `context_diagnostics` |
 | `openrabbit ask` | Read-only answer to one PR question | `--publish` creates or updates one managed answer comment | `schema_version`, `command`, `answer`, `ask_focus`, `managed_answer`, `publish_status`, `context_diagnostics` |
 | `openrabbit improve` | Read-only changed-line improvement suggestions | `--publish` posts grounded suggestions to a PR review | `schema_version`, `command`, `suggestions`, `suggestion_quality`, `publish_status`, `context_diagnostics` |
-| `openrabbit labels` | Read-only label proposals | None | `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `label_proposals`, `mutates_github` |
+| `openrabbit labels` | Read-only label proposals | `--apply` adds proposed labels that already exist in the repository | `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `label_proposals`, `label_application`, `mutates_github` |
 
 `review` remains the main review command. This guide focuses on the interactive
 commands that help maintainers inspect, ask, improve, and triage a pull request.
@@ -99,13 +99,15 @@ snippets.
 
 ## Label Proposals
 
-`labels` proposes labels without mutating GitHub. It does not create repository
-labels and does not apply labels to the pull request.
+`labels` proposes labels without mutating GitHub by default. It does not create
+repository labels. Use `--apply` only when you want OpenRabbit to add proposed
+labels that already exist in the repository label list.
 
 ```bash
 openrabbit labels --pr 42 --repo owner/repo
 openrabbit labels --pr 42 --repo owner/repo --limit 5
 openrabbit labels --pr 42 --repo owner/repo --format json
+openrabbit labels --pr 42 --repo owner/repo --apply
 ```
 
 Each proposal includes a label name, confidence, reason, signals, and
@@ -113,6 +115,10 @@ Each proposal includes a label name, confidence, reason, signals, and
 suggested from evidence but was not present in the repository label list fetched
 from GitHub. Automation should treat these as suggestions for humans, not as a
 permission to create labels.
+
+JSON output includes `label_application` with the dry-run, applied, skipped, or
+failed status. Permission failures are reported there instead of hiding which
+labels were requested.
 
 ## PR Comment Commands
 
@@ -158,7 +164,8 @@ selected command. It keeps publishing opt-in through the workflow input.
 ## Privacy And Safety Defaults
 
 - `describe`, `ask`, `improve`, and `labels` are read-only by default.
-- `labels` has no write mode.
+- `labels --apply` is the only label write mode and only applies labels that
+  already exist in the repository.
 - `improve --publish` only posts grounded, actionable suggestions.
 - `describe --publish` and `ask --publish` update one managed comment each.
 - Connector snippets remain optional, bounded, source-labeled, and untrusted.

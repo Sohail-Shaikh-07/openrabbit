@@ -28,6 +28,7 @@ OpenRabbit v1.9 focuses on repository maintenance automation after the v1.8 inte
 ## Progress Notes
 
 - OP-132 creates the v1.9 planning track, seeds the Notion task sequence, and links the repository roadmap to this plan.
+- OP-133 adds an explicit `openrabbit labels --apply` path that applies only existing repository labels, keeps dry-run as the default, and reports applied, skipped, and failed labels in JSON.
 
 ## Scope Notes
 
