@@ -436,6 +436,13 @@ async def test_run_improve_drops_ungrounded_suggestions(scaffold_repo: Path) -> 
 
     assert summary["suggestions_count"] == 1
     assert summary["dropped_suggestions_count"] == 2
+    assert summary["suggestion_quality"] == {
+        "raw_suggestions_count": 3,
+        "grounded_suggestions_count": 1,
+        "kept_suggestions_count": 1,
+        "dropped_suggestions_count": 2,
+        "dropped_reasons": {"ungrounded": 2},
+    }
     assert summary["suggestions"][0]["title"] == "Grounded"
 
 
@@ -601,6 +608,91 @@ async def test_run_improve_publish_posts_inline_and_summary_suggestions(
 
 
 @respx.mock
+async def test_run_improve_reports_quality_evaluation_counts(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+
+    async def fake_generator(*_args: object, **_kwargs: object) -> list[ImprovementSuggestion]:
+        return [
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=1,
+                title="Validate query",
+                reason="The changed search path accepts a new query value.",
+                suggestion="Guard against an empty query before returning.",
+                fix="if not query:\n    return []",
+            ),
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=99,
+                title="Wrong line",
+                reason="This is not a changed line.",
+                suggestion="Drop this ungrounded suggestion.",
+            ),
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=2,
+                title="Maybe normalize",
+                reason="This does not identify a concrete defect.",
+                suggestion="Consider normalizing the query.",
+            ),
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=2,
+                title="Leave a note",
+                reason="A note would describe the validation behavior.",
+                suggestion="Document this behavior in a comment.",
+                fix="# Keep this validation behavior in mind",
+            ),
+            ImprovementSuggestion(
+                file="src/search.py",
+                line=2,
+                title="Require admin",
+                reason="The changed route needs an explicit admin dependency.",
+                suggestion="Use the repository admin authorization dependency.",
+                fix="return Depends(require_admin)",
+            ),
+        ]
+
+    published: list[dict[str, object]] = []
+
+    async def fake_publisher(**kwargs: object) -> None:
+        published.append(kwargs)
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_improve(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        publish=True,
+        publisher=fake_publisher,
+    )
+
+    assert summary["suggestions_count"] == 1
+    assert summary["dropped_suggestions_count"] == 1
+    assert summary["dropped_actionability_count"] == 3
+    assert summary["suggestion_quality"] == {
+        "raw_suggestions_count": 5,
+        "grounded_suggestions_count": 4,
+        "kept_suggestions_count": 1,
+        "dropped_suggestions_count": 4,
+        "dropped_reasons": {
+            "comment_only_fix": 1,
+            "ungrounded": 1,
+            "unavailable_security_dependency": 1,
+            "vague_without_fix": 1,
+        },
+    }
+    assert len(published) == 1
+    assert len(published[0]["inline_suggestions"]) == 1
+
+
+@respx.mock
 async def test_run_improve_publish_drops_unavailable_security_dependency_fix(
     scaffold_repo: Path,
 ) -> None:
@@ -640,6 +732,13 @@ async def test_run_improve_publish_drops_unavailable_security_dependency_fix(
     assert summary["publish_status"] == "no_suggestions"
     assert summary["suggestions_count"] == 0
     assert summary["dropped_actionability_count"] == 1
+    assert summary["suggestion_quality"] == {
+        "raw_suggestions_count": 1,
+        "grounded_suggestions_count": 1,
+        "kept_suggestions_count": 0,
+        "dropped_suggestions_count": 1,
+        "dropped_reasons": {"unavailable_security_dependency": 1},
+    }
     assert published == []
 
 
@@ -705,6 +804,13 @@ def test_render_improvements_prints_sections() -> None:
         "suggestions_count": 1,
         "dropped_suggestions_count": 2,
         "dropped_actionability_count": 0,
+        "suggestion_quality": {
+            "raw_suggestions_count": 3,
+            "grounded_suggestions_count": 1,
+            "kept_suggestions_count": 1,
+            "dropped_suggestions_count": 2,
+            "dropped_reasons": {"ungrounded": 2},
+        },
         "publish_status": "dry_run",
         "published_inline_count": 0,
         "published_summary_count": 0,
@@ -727,6 +833,7 @@ def test_render_improvements_prints_sections() -> None:
     assert "PR #42 on o/r" in text
     assert "Suggestions:  1" in text
     assert "Dropped:      2 ungrounded" in text
+    assert "Quality:      1 kept, 2 dropped" in text
     assert "Context:      loaded" in text
     assert "Published:    no (dry run)" in text
     assert "Improvement suggestions:" in text

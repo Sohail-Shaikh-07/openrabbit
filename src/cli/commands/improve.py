@@ -11,7 +11,7 @@ import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TextIO
 
 from agents.factory import build_llm_client
@@ -85,6 +85,7 @@ class ImprovementPublishPlan:
     inline_source_suggestions: list[ImprovementSuggestion]
     summary_suggestions: list[ImprovementSuggestion]
     dropped_actionability_count: int = 0
+    dropped_actionability_reasons: dict[str, int] = field(default_factory=dict)
 
 
 _PROMPT_TEMPLATE = """You are OpenRabbit's improve agent. Propose small, reviewable fixes for this pull request.
@@ -208,6 +209,11 @@ async def run_improve(
     )
     result = _ground_suggestions(raw_suggestions, payload)
     publish_plan = _build_publish_plan(result.suggestions, payload)
+    suggestion_quality = _build_suggestion_quality_summary(
+        raw_suggestions=raw_suggestions,
+        grounded_result=result,
+        publish_plan=publish_plan,
+    )
 
     publish_status = "dry_run"
     published_inline_count = 0
@@ -264,6 +270,7 @@ async def run_improve(
         + len(publish_plan.summary_suggestions),
         "dropped_suggestions_count": result.dropped_suggestions_count,
         "dropped_actionability_count": publish_plan.dropped_actionability_count,
+        "suggestion_quality": suggestion_quality,
         "publish_status": publish_status,
         "published_inline_count": published_inline_count,
         "published_summary_count": published_summary_count,
@@ -315,6 +322,12 @@ def render_improvements(summary: dict[str, object], out: TextIO) -> None:
     dropped_actionability = summary.get("dropped_actionability_count")
     if isinstance(dropped_actionability, int) and dropped_actionability > 0:
         print(f"  Dropped:      {dropped_actionability} non-actionable", file=out)
+    quality = summary.get("suggestion_quality")
+    if isinstance(quality, dict):
+        kept = quality.get("kept_suggestions_count")
+        dropped_total = quality.get("dropped_suggestions_count")
+        if isinstance(kept, int) and isinstance(dropped_total, int):
+            print(f"  Quality:      {kept} kept, {dropped_total} dropped", file=out)
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
@@ -473,11 +486,14 @@ def _build_publish_plan(
     inline_source: list[ImprovementSuggestion] = []
     summary: list[ImprovementSuggestion] = []
     dropped = 0
+    dropped_reasons: dict[str, int] = {}
     source_by_path = _source_text_by_path(pr_payload)
     for suggestion in suggestions:
         source_text = source_by_path.get(_normalise_path(suggestion.file))
-        if not _is_actionable(suggestion, source_text=source_text):
+        drop_reason = _actionability_drop_reason(suggestion, source_text=source_text)
+        if drop_reason is not None:
             dropped += 1
+            dropped_reasons[drop_reason] = dropped_reasons.get(drop_reason, 0) + 1
             continue
         if _has_safe_replacement(suggestion):
             inline.append(_to_review_comment(suggestion))
@@ -489,6 +505,7 @@ def _build_publish_plan(
         inline_source_suggestions=inline_source,
         summary_suggestions=summary,
         dropped_actionability_count=dropped,
+        dropped_actionability_reasons=dropped_reasons,
     )
 
 
@@ -567,25 +584,60 @@ def _is_actionable(
     *,
     source_text: str | None = None,
 ) -> bool:
+    return _actionability_drop_reason(suggestion, source_text=source_text) is None
+
+
+def _actionability_drop_reason(
+    suggestion: ImprovementSuggestion,
+    *,
+    source_text: str | None = None,
+) -> str | None:
     text = " ".join(
         (suggestion.title, suggestion.reason, suggestion.suggestion, suggestion.fix)
     ).lower()
     if "todo" in text or "fixme" in text:
-        return False
+        return "todo_or_fixme"
     if "add a comment" in text or "comment-only" in text:
-        return False
+        return "comment_only"
     if not suggestion.fix and _starts_vague(suggestion.suggestion):
-        return False
+        return "vague_without_fix"
     if "refactor" in suggestion.suggestion.lower() and not suggestion.fix:
-        return False
+        return "broad_refactor_without_fix"
     if not suggestion.fix:
-        return True
-    if _is_comment_only_fix(suggestion.fix) or _has_placeholder_fix_comment(suggestion.fix):
-        return False
-    return not _introduces_unavailable_security_dependency(
+        return None
+    if _has_placeholder_fix_comment(suggestion.fix):
+        return "placeholder_fix"
+    if _is_comment_only_fix(suggestion.fix):
+        return "comment_only_fix"
+    if _introduces_unavailable_security_dependency(
         suggestion.fix,
         source_text=source_text,
-    )
+    ):
+        return "unavailable_security_dependency"
+    return None
+
+
+def _build_suggestion_quality_summary(
+    *,
+    raw_suggestions: list[ImprovementSuggestion],
+    grounded_result: ImprovementResult,
+    publish_plan: ImprovementPublishPlan,
+) -> dict[str, object]:
+    kept_count = len(_publishable_suggestions(publish_plan))
+    dropped_reasons = {
+        "ungrounded": grounded_result.dropped_suggestions_count,
+        **publish_plan.dropped_actionability_reasons,
+    }
+    dropped_reasons = {
+        reason: count for reason, count in sorted(dropped_reasons.items()) if count > 0
+    }
+    return {
+        "raw_suggestions_count": len(raw_suggestions),
+        "grounded_suggestions_count": len(grounded_result.suggestions),
+        "kept_suggestions_count": kept_count,
+        "dropped_suggestions_count": sum(dropped_reasons.values()),
+        "dropped_reasons": dropped_reasons,
+    }
 
 
 def _has_safe_replacement(suggestion: ImprovementSuggestion) -> bool:
