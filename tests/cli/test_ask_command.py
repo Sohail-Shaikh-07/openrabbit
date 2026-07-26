@@ -429,6 +429,133 @@ async def test_run_ask_passes_active_learnings(scaffold_repo: Path) -> None:
 
 
 @respx.mock
+async def test_run_ask_focuses_selected_changed_line(scaffold_repo: Path) -> None:
+    _mock_pr()
+    captured_focus: list[str] = []
+    model_prompts: list[str] = []
+
+    async def fake_generator(*args: object, **kwargs: object) -> PullRequestAnswer:
+        focus_context = str(kwargs["focus_context"])
+        captured_focus.append(focus_context)
+        model_prompts.append(
+            _build_ask_prompt(
+                args[0],
+                kwargs["question"],
+                kwargs["retrieval_result"],
+                kwargs["pr_history"],
+                focus_context=focus_context,
+            )
+        )
+        return PullRequestAnswer(
+            answer="The focused line returns the query argument.",
+            evidence=[
+                AnswerEvidence(
+                    source="changed_lines",
+                    file="src/search.py",
+                    line=2,
+                    detail="The selected added line returns query.",
+                )
+            ],
+        )
+
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_ask(
+        settings,
+        number=42,
+        question="Is this line safe?",
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        generator=fake_generator,
+        context_loader=_empty_context_loader,
+        focus_file="b/src/search.py",
+        focus_line=2,
+    )
+
+    assert summary["ask_focus"] == {
+        "enabled": True,
+        "file": "src/search.py",
+        "line": 2,
+        "changed_line": "    return query",
+        "nearby_diff": [
+            "-1 def search():",
+            "+1 def search(query):",
+            "+2     return query",
+        ],
+    }
+    assert captured_focus == [
+        "\n".join(
+            [
+                "- Target: `src/search.py:2`",
+                "- Selected added line: +2     return query",
+                "- Nearby diff:",
+                "  -1 def search():",
+                "  +1 def search(query):",
+                "  +2     return query",
+            ]
+        )
+    ]
+    assert "Focused line context:" in model_prompts[0]
+    assert "Target: `src/search.py:2`" in model_prompts[0]
+    assert summary["answer"]["evidence"][0]["line"] == 2
+
+
+async def test_run_ask_rejects_partial_focus_arguments(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(ValueError, match="--file and --line must be provided together"):
+        await run_ask(
+            settings,
+            number=42,
+            question="Is this line safe?",
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+            context_loader=_empty_context_loader,
+            focus_file="src/search.py",
+        )
+
+
+async def test_run_ask_rejects_invalid_focus_line(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(ValueError, match="--line must be a positive new-side line number"):
+        await run_ask(
+            settings,
+            number=42,
+            question="Is this line safe?",
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+            context_loader=_empty_context_loader,
+            focus_file="src/search.py",
+            focus_line=0,
+        )
+
+
+@respx.mock
+async def test_run_ask_rejects_focus_line_outside_changed_additions(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+    settings = load_settings(scaffold_repo, env={})
+
+    with pytest.raises(
+        ValueError,
+        match=r"--line must reference an added changed line in src/search\.py: 99",
+    ):
+        await run_ask(
+            settings,
+            number=42,
+            question="Is this line safe?",
+            repo="o/r",
+            env={"GITHUB_TOKEN": "tkn"},
+            generator=lambda *_args, **_kwargs: PullRequestAnswer(answer="unused"),
+            context_loader=_empty_context_loader,
+            focus_file="src/search.py",
+            focus_line=99,
+        )
+
+
+@respx.mock
 async def test_run_ask_publish_creates_managed_answer(scaffold_repo: Path) -> None:
     _mock_pr()
     captured: dict[str, object] = {}
@@ -630,6 +757,11 @@ def test_render_answer_prints_sections() -> None:
         "hunks": 1,
         "commits": 1,
         "context_loaded": True,
+        "ask_focus": {
+            "enabled": True,
+            "file": "src/search.py",
+            "line": 2,
+        },
         "publish_status": "created",
         "answer_comment_url": "https://github.com/o/r/pull/42#issuecomment-92",
         "question": "What changed?",
@@ -654,6 +786,7 @@ def test_render_answer_prints_sections() -> None:
     text = out.getvalue()
     assert "PR #42 on o/r" in text
     assert "Context:      loaded" in text
+    assert "Focus:        src/search.py:2" in text
     assert "Published:    answer comment created" in text
     assert "Question:" in text
     assert "Answer:" in text
@@ -675,6 +808,11 @@ def test_render_answer_markdown_prints_report_sections() -> None:
         "hunks": 1,
         "commits": 1,
         "context_loaded": False,
+        "ask_focus": {
+            "enabled": True,
+            "file": "src/search.py",
+            "line": 2,
+        },
         "publish_status": "updated",
         "answer_comment_url": "https://github.com/o/r/pull/42#issuecomment-93",
         "question": "What changed?",
@@ -698,6 +836,7 @@ def test_render_answer_markdown_prints_report_sections() -> None:
 
     text = out.getvalue()
     assert "# PR #42 Ask" in text
+    assert "- Focus: `src/search.py:2`" in text
     assert "- Published: answer comment updated" in text
     assert "## Question" in text
     assert "## Evidence" in text
@@ -711,6 +850,13 @@ def test_render_answer_json_prints_deterministic_summary() -> None:
         "repo": "o/r",
         "number": 42,
         "question": "What changed?",
+        "ask_focus": {
+            "enabled": True,
+            "file": "src/search.py",
+            "line": 2,
+            "changed_line": "    return query",
+            "nearby_diff": ["+2     return query"],
+        },
         "managed_answer": {
             "enabled": True,
             "status": "created",
@@ -727,6 +873,7 @@ def test_render_answer_json_prints_deterministic_summary() -> None:
     text = out.getvalue()
     assert text.endswith("\n")
     assert '"answer": {' in text
+    assert '"ask_focus": {' in text
     assert '"command": "ask"' in text
     assert '"managed_answer": {' in text
     assert '"question": "What changed?"' in text

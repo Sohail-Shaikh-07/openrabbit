@@ -8,6 +8,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added stable JSON contract markers for `describe`, `ask`, and `improve`, and added `openrabbit improve --format json`.
 - Added explicit `managed_summary` metadata to `openrabbit describe` output so `--publish` runs report the managed marker, created/updated status, comment ID, and comment URL.
 - Added opt-in managed answer publishing for `openrabbit ask --publish` with stable `managed_answer` metadata and idempotent marker comment updates.
+- Added line-focused `openrabbit ask --file ... --line ...` context with changed-line validation and `ask_focus` metadata.
 
 ## v1.7.0 - 2026-07-26
 

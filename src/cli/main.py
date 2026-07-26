@@ -437,6 +437,16 @@ def ask(
         "-r",
         help="Repository to ask about, in owner/repo form. Overrides repository.target.",
     ),
+    focus_file: str | None = typer.Option(
+        None,
+        "--file",
+        help="Changed file to focus the question on. Must be used with --line.",
+    ),
+    focus_line: int | None = typer.Option(
+        None,
+        "--line",
+        help="Changed new-side line to focus the question on. Must be used with --file.",
+    ),
     output_format: OutputFormat = typer.Option(
         OutputFormat.TEXT,
         "--format",
@@ -459,6 +469,8 @@ def ask(
             question=question,
             repo=repo,
             publish=publish,
+            focus_file=focus_file,
+            focus_line=focus_line,
         )
     except ValueError as exc:
         _err.print(f"[red]{exc}[/red]")
