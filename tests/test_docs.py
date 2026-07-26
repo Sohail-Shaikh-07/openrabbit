@@ -210,3 +210,23 @@ def test_v1_7_context_precision_plan_documents_release_scope() -> None:
     ):
         assert claim in plan
     assert "release-v1.7-plan.md" in gap
+
+
+def test_v1_8_interactive_workflow_plan_documents_release_scope() -> None:
+    plan = (ROOT / "docs" / "release-v1.8-plan.md").read_text(encoding="ascii").lower()
+    gap = (ROOT / "docs" / "pr-agent-gap-analysis.md").read_text(encoding="ascii")
+
+    for claim in (
+        "interactive pr workflow",
+        "json output contracts",
+        "managed describe publishing",
+        "managed ask publishing",
+        "line-level ask context",
+        "improve quality evaluation",
+        "label proposal output",
+        "security and regression tests",
+        "op-122",
+        "op-131",
+    ):
+        assert claim in plan
+    assert "release-v1.8-plan.md" in gap
