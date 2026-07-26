@@ -4,6 +4,12 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
+## v1.8.0 - 2026-07-27
+
+OpenRabbit v1.8.0 ships Interactive PR Workflows: stable scriptable command outputs, explicitly managed PR summary and answer publishing, focused line-level ask context, improvement suggestion quality metadata, read-only label proposals, and release-blocking regressions for command safety.
+
+### Interactive PR Workflows
+
 - Added the v1.8 Interactive PR Workflow plan for command JSON outputs, managed PR publishing, line-level ask, improve quality evaluation, label proposals, workflow docs, regressions, and release work.
 - Added stable JSON contract markers for `describe`, `ask`, and `improve`, and added `openrabbit improve --format json`.
 - Added explicit `managed_summary` metadata to `openrabbit describe` output so `--publish` runs report the managed marker, created/updated status, comment ID, and comment URL.
@@ -11,8 +17,24 @@ All notable changes to OpenRabbit are documented in this file.
 - Added line-focused `openrabbit ask --file ... --line ...` context with changed-line validation and `ask_focus` metadata.
 - Added `suggestion_quality` metadata to `openrabbit improve` output with raw, grounded, kept, dropped, and drop-reason counts for noisy or unsafe suggestions.
 - Added read-only `openrabbit labels` output for PR label proposals with reasons, confidence, repository-label availability, and stable JSON.
+
+### Documentation And Automation
+
 - Added interactive PR workflow documentation and a manual GitHub Actions example for `describe`, `ask`, `improve`, and `labels`.
+
+### Security And Regression Coverage
+
 - Added v1.8 regression coverage for interactive JSON contracts, managed comment markers, read-only label boundaries, and privacy-safe label proposal summaries.
+
+### Release Notes
+
+- Package version is `1.8.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- Existing `.openrabbit/config.yml` files continue to work.
+- Interactive `describe`, `ask`, and `labels` commands remain read-only unless an explicit supported publish flag is used.
+- Managed PR comments use stable OpenRabbit markers and update in place.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.
 
 ## v1.7.0 - 2026-07-26
 

@@ -37,6 +37,7 @@ OpenRabbit v1.8 focuses on making PR interaction commands more scriptable and mo
 - OP-128 adds read-only `labels` output for PR label proposals with reasons, confidence, repository-label availability, and stable JSON.
 - OP-129 adds the interactive PR workflow guide and a manual GitHub Actions example for describe, ask, improve, and labels usage.
 - OP-130 adds cross-command regressions for JSON contract stability, managed comment markers, read-only label proposal boundaries, and privacy-safe label proposal summaries.
+- OP-131 bumps the package to `1.8.0` and adds v1.8.0 release notes, changelog archive, top-level changelog entry, release artifact checks, and release-readiness validation.
 
 ## Scope Notes
 

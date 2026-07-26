@@ -18,3 +18,4 @@ Files
 - v1.5.0.txt
 - v1.6.0.txt
 - v1.7.0.txt
+- v1.8.0.txt
