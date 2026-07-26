@@ -282,6 +282,14 @@ async def test_run_describe_returns_read_only_summary(scaffold_repo: Path) -> No
     assert summary["binary_files"] == 1
     assert summary["hunks"] == 1
     assert summary["context_loaded"] is False
+    assert summary["publish_status"] == "read_only"
+    assert summary["managed_summary"] == {
+        "enabled": False,
+        "status": "read_only",
+        "marker": SUMMARY_MARKER,
+        "comment_id": None,
+        "comment_url": None,
+    }
     assert summary["description"]["summary"] == "Search now accepts a query."
 
 
@@ -376,6 +384,13 @@ async def test_run_describe_uses_prepared_controls_for_context_model_and_publish
     assert summary["review_control_warnings"] == []
     assert summary["ast_unsupported_path_count"] == 0
     assert published_summaries == [summary]
+    assert summary["managed_summary"] == {
+        "enabled": True,
+        "status": "created",
+        "marker": SUMMARY_MARKER,
+        "comment_id": 90,
+        "comment_url": "https://example/90",
+    }
     assert summary["description"]["changed_files"] == ["src/search.py"]
 
 
@@ -479,6 +494,14 @@ async def test_run_describe_publish_creates_managed_summary(scaffold_repo: Path)
 
     assert summary["publish_status"] == "created"
     assert summary["summary_comment_id"] == 90
+    assert summary["summary_comment_url"] == "https://github.com/o/r/pull/42#issuecomment-90"
+    assert summary["managed_summary"] == {
+        "enabled": True,
+        "status": "created",
+        "marker": SUMMARY_MARKER,
+        "comment_id": 90,
+        "comment_url": "https://github.com/o/r/pull/42#issuecomment-90",
+    }
     assert SUMMARY_MARKER in str(captured["body"])
     assert "### Walkthrough" in str(captured["body"])
     assert "/openrabbit review" in str(captured["body"])
@@ -538,6 +561,15 @@ async def test_run_describe_publish_updates_existing_managed_summary(
     )
 
     assert summary["publish_status"] == "updated"
+    assert summary["summary_comment_id"] == 91
+    assert summary["summary_comment_url"] == "https://github.com/o/r/pull/42#issuecomment-91"
+    assert summary["managed_summary"] == {
+        "enabled": True,
+        "status": "updated",
+        "marker": SUMMARY_MARKER,
+        "comment_id": 91,
+        "comment_url": "https://github.com/o/r/pull/42#issuecomment-91",
+    }
     assert "Updated summary." in str(captured["body"])
 
 
@@ -614,6 +646,13 @@ def test_render_description_json_prints_deterministic_summary() -> None:
         "repo": "o/r",
         "number": 42,
         "title": "Improve search",
+        "managed_summary": {
+            "enabled": True,
+            "status": "created",
+            "marker": SUMMARY_MARKER,
+            "comment_id": 90,
+            "comment_url": "https://github.com/o/r/pull/42#issuecomment-90",
+        },
         "description": {"summary": "Search now accepts a query."},
     }
     out = io.StringIO()
@@ -624,5 +663,7 @@ def test_render_description_json_prints_deterministic_summary() -> None:
     assert text.endswith("\n")
     assert '"command": "describe"' in text
     assert '"description": {' in text
+    assert '"managed_summary": {' in text
+    assert '"status": "created"' in text
     assert '"number": 42' in text
     assert '"schema_version": "1.0"' in text

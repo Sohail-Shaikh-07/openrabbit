@@ -459,7 +459,7 @@ Only explicit `/openrabbit learn ...` commands create learnings. Normal comments
 
 ### `openrabbit describe`
 
-Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, then prints a summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`. By default it is read-only; add `--publish` to create or update one OpenRabbit-managed PR summary comment with walkthrough, risk areas, context sources, review status, and follow-up commands.
+Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, then prints a summary, changed-file walkthrough, risk areas, and testing focus. It uses the same configured model provider as `openrabbit review`. By default it is read-only; add `--publish` to create or update one OpenRabbit-managed PR summary comment with walkthrough, risk areas, context sources, review status, and follow-up commands. JSON output includes a `managed_summary` object with the marker, status, comment ID, and comment URL so automation can distinguish read-only, created, and updated runs.
 
 ```bash
 openrabbit describe --pr 42 --repo owner/repo

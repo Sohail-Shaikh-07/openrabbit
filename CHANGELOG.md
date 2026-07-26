@@ -6,6 +6,7 @@ All notable changes to OpenRabbit are documented in this file.
 
 - Added the v1.8 Interactive PR Workflow plan for command JSON outputs, managed PR publishing, line-level ask, improve quality evaluation, label proposals, workflow docs, regressions, and release work.
 - Added stable JSON contract markers for `describe`, `ask`, and `improve`, and added `openrabbit improve --format json`.
+- Added explicit `managed_summary` metadata to `openrabbit describe` output so `--publish` runs report the managed marker, created/updated status, comment ID, and comment URL.
 
 ## v1.7.0 - 2026-07-26
 
