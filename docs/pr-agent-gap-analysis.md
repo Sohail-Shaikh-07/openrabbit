@@ -190,7 +190,7 @@ Recommended tasks:
 | P2 | Add layered config | Important for teams and repeated use |
 | P3 | Labels, changelog, docs, similar issues | Valuable after the core review loop is reliable |
 
-The v1.7 planning track is captured in [OpenRabbit v1.7 Context Precision Plan](release-v1.7-plan.md). The next v1.8 planning track is captured in [OpenRabbit v1.8 Interactive PR Workflow Plan](release-v1.8-plan.md).
+The v1.7 planning track is captured in [OpenRabbit v1.7 Context Precision Plan](release-v1.7-plan.md). The v1.8 planning track is captured in [OpenRabbit v1.8 Interactive PR Workflow Plan](release-v1.8-plan.md). The next v1.9 planning track is captured in [OpenRabbit v1.9 Repository Maintenance Automation Plan](release-v1.9-plan.md).
 
 ## OpenRabbit Differentiators To Preserve
 

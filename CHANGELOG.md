@@ -4,6 +4,8 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
+- Added the v1.9 Repository Maintenance Automation plan for opt-in label mutation, changelog draft output, documentation update suggestions, similar issue lookup, shared workflow controls, regressions, docs, and release work.
+
 ## v1.8.0 - 2026-07-27
 
 OpenRabbit v1.8.0 ships Interactive PR Workflows: stable scriptable command outputs, explicitly managed PR summary and answer publishing, focused line-level ask context, improvement suggestion quality metadata, read-only label proposals, and release-blocking regressions for command safety.

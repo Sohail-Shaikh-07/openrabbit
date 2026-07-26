@@ -232,6 +232,27 @@ def test_v1_8_interactive_workflow_plan_documents_release_scope() -> None:
     assert "release-v1.8-plan.md" in gap
 
 
+def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
+    plan = (ROOT / "docs" / "release-v1.9-plan.md").read_text(encoding="ascii").lower()
+    gap = (ROOT / "docs" / "pr-agent-gap-analysis.md").read_text(encoding="ascii")
+
+    for claim in (
+        "repository maintenance automation",
+        "opt-in label mutation",
+        "changelog assistant",
+        "documentation suggestions",
+        "similar issue lookup",
+        "maintenance workflow controls",
+        "security and regression tests",
+        "dry-run defaults",
+        "stable json",
+        "op-132",
+        "op-140",
+    ):
+        assert claim in plan
+    assert "release-v1.9-plan.md" in gap
+
+
 def test_interactive_pr_workflow_guide_documents_commands_and_boundaries() -> None:
     guide = (ROOT / "docs" / "interactive-pr-workflows.md").read_text(encoding="ascii").lower()
     readme = (ROOT / "README.md").read_text(encoding="ascii")
