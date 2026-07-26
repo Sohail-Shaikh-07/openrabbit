@@ -43,6 +43,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 concurrency:
   group: openrabbit-interactive-${{ inputs.pr }}
@@ -138,7 +139,11 @@ jobs:
               openrabbit "${args[@]}"
               ;;
             labels)
-              openrabbit labels --pr "$PR_NUMBER" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT"
+              args=(labels --pr "$PR_NUMBER" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT")
+              if [ "$OPENRABBIT_PUBLISH" = "true" ]; then
+                args+=(--apply)
+              fi
+              openrabbit "${args[@]}"
               ;;
             *)
               echo "Unsupported OpenRabbit command: $OPENRABBIT_COMMAND" >&2

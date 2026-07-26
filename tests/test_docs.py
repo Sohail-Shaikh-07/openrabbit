@@ -269,9 +269,10 @@ def test_interactive_pr_workflow_guide_documents_commands_and_boundaries() -> No
         "ask_focus",
         "suggestion_quality",
         "mutates_github",
+        "label_application",
         "line-level ask",
         "read-only by default",
-        "`labels` has no write mode",
+        "labels --apply",
         "examples/github-actions/openrabbit-interactive.yml",
         "/openrabbit review",
         "/openrabbit summary",
@@ -300,9 +301,11 @@ def test_interactive_github_actions_example_documents_manual_commands() -> None:
         "args=(describe",
         "args=(ask",
         "args=(improve",
-        "openrabbit labels",
+        "args=(labels",
+        "labels --pr",
+        "--apply",
     ):
         assert claim in workflow
 
     assert "openrabbit-interactive.yml" in actions_doc
-    assert "labels` is always read-only" in actions_doc
+    assert "labels --apply" in actions_doc

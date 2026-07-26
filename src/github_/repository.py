@@ -72,6 +72,9 @@ class RepositoryHandle:
     async def list_labels(self) -> list[Label]:
         return await self.client.list_labels(self.owner, self.repo)
 
+    async def add_issue_labels(self, number: int, labels: list[str]) -> list[Label]:
+        return await self.client.add_issue_labels(self.owner, self.repo, number, labels)
+
     async def list_pull_requests(
         self, *, state: PullRequestState = "open"
     ) -> list[PullRequestSummary]:

@@ -586,8 +586,13 @@ def labels_command(
         case_sensitive=False,
         help="Output format: text or json.",
     ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Apply proposed labels that already exist in the repository.",
+    ),
 ) -> None:
-    """Suggest pull request labels without mutating GitHub."""
+    """Suggest pull request labels and optionally apply existing proposals."""
     workspace = workspace.resolve()
     settings = _load_settings_or_exit(workspace)
     try:
@@ -596,6 +601,7 @@ def labels_command(
             number=pr,
             repo=repo,
             limit=limit,
+            apply=apply,
         )
     except ValueError as exc:
         _err.print(f"[red]{exc}[/red]")

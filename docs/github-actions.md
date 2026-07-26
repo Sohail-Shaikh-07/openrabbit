@@ -22,6 +22,9 @@ permissions:
   pull-requests: write
 ```
 
+Add `issues: write` only for workflows that intentionally run `openrabbit labels
+--apply`, because GitHub stores pull request labels through issue-label APIs.
+
 OpenRabbit can use `${{ github.token }}` through `OPENRABBIT_GITHUB__TOKEN`. For stricter org policies, create a fine-scoped token secret and pass it as `OPENRABBIT_GITHUB__TOKEN` instead.
 
 ## Self-Hosted Ollama Workflow
@@ -127,7 +130,7 @@ openrabbit improve --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --publish
 
 `improve --publish` only posts grounded suggestions. Suggestions with safe replacement snippets are posted as inline GitHub suggestion blocks; broader actionable suggestions are grouped in the review body.
 
-`describe --publish` and `ask --publish` update one OpenRabbit-managed PR comment each. `labels` is always read-only and reports `mutates_github: false`.
+`describe --publish` and `ask --publish` update one OpenRabbit-managed PR comment each. `labels` is read-only by default and reports `mutates_github: false` unless `--apply` is used. `labels --apply` only adds proposed labels that already exist in the repository and reports applied, skipped, or failed labels in `label_application`.
 
 ## Interactive Workflow Dispatch
 
@@ -137,12 +140,12 @@ The interactive example accepts:
 
 - `pr`: pull request number.
 - `command`: one of `describe`, `ask`, `improve`, or `labels`.
-- `publish`: optional managed publishing for commands that support it.
+- `publish`: optional managed publishing for commands that support it. For `labels`, this maps to `--apply`.
 - `question`: ask-command text.
 - `focus_file` and `focus_line`: optional line-level ask target.
 - `output_format`: `json` or `text`.
 
-Keep `publish` false for first runs. Turn it on only when you want `describe` or `ask` to update their managed comments, or `improve` to post grounded suggestions. The `labels` command ignores publishing because it has no write mode.
+Keep `publish` false for first runs. Turn it on only when you want `describe` or `ask` to update their managed comments, `improve` to post grounded suggestions, or `labels` to apply proposed labels that already exist in the repository.
 
 ## Repository Context
 

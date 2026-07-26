@@ -157,6 +157,14 @@ async def test_run_label_proposals_returns_read_only_suggestions(scaffold_repo: 
     assert summary["memory_enabled"] is True
     assert summary["conversation_count"] == 0
     assert summary["mutates_github"] is False
+    assert summary["label_application"] == {
+        "enabled": False,
+        "status": "dry_run",
+        "requested_labels": ["security", "tests", "cli", "api"],
+        "applied_labels": [],
+        "skipped_labels": [{"name": "enhancement", "reason": "not_in_repository"}],
+        "failed_labels": [],
+    }
     assert "bug" not in names
     assert names[:3] == ["security", "tests", "cli"]
     exists_by_name = {
@@ -188,6 +196,7 @@ async def test_run_label_proposals_fails_open_when_repository_labels_unavailable
     assert summary["repository_labels_count"] == 0
     assert summary["proposal_count"] == 2
     assert all(item["exists_in_repository"] is None for item in summary["label_proposals"])
+    assert summary["label_application"]["status"] == "dry_run"
 
 
 @respx.mock
@@ -240,6 +249,101 @@ async def test_run_label_proposals_does_not_echo_secret_values_from_pr_body(
     assert summary["mutates_github"] is False
 
 
+@respx.mock
+async def test_run_label_proposals_applies_existing_labels_when_requested(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+    _mock_repo_labels()
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json=[
+                {"name": "security"},
+                {"name": "tests"},
+                {"name": "cli"},
+                {"name": "api"},
+            ],
+        )
+
+    respx.post(f"{_BASE}/repos/o/r/issues/42/labels").mock(side_effect=handler)
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_label_proposals(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        apply=True,
+    )
+
+    assert captured["json"] == {"labels": ["security", "tests", "cli", "api"]}
+    assert summary["mutates_github"] is True
+    assert summary["label_application"] == {
+        "enabled": True,
+        "status": "applied",
+        "requested_labels": ["security", "tests", "cli", "api"],
+        "applied_labels": ["api", "cli", "security", "tests"],
+        "skipped_labels": [{"name": "enhancement", "reason": "not_in_repository"}],
+        "failed_labels": [],
+    }
+
+
+@respx.mock
+async def test_run_label_proposals_skips_apply_when_repository_labels_unavailable(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+    respx.get(f"{_BASE}/repos/o/r/labels").mock(return_value=httpx.Response(404, text="missing"))
+    label_route = respx.post(f"{_BASE}/repos/o/r/issues/42/labels").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_label_proposals(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        apply=True,
+        limit=2,
+    )
+
+    assert summary["mutates_github"] is False
+    assert summary["label_application"]["status"] == "skipped_repository_labels_unavailable"
+    assert summary["label_application"]["requested_labels"] == []
+    assert label_route.called is False
+
+
+@respx.mock
+async def test_run_label_proposals_reports_permission_failure(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+    _mock_repo_labels()
+    respx.post(f"{_BASE}/repos/o/r/issues/42/labels").mock(
+        return_value=httpx.Response(403, text="Resource not accessible by integration")
+    )
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_label_proposals(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+        apply=True,
+        limit=2,
+    )
+
+    assert summary["mutates_github"] is False
+    assert summary["label_application"]["status"] == "failed"
+    assert summary["label_application"]["error_status_code"] == 403
+    assert summary["label_application"]["failed_labels"] == ["security", "tests"]
+
+
 def test_render_label_proposals_prints_sections() -> None:
     summary = {
         "repo": "o/r",
@@ -253,6 +357,12 @@ def test_render_label_proposals_prints_sections() -> None:
         "commits": 1,
         "current_labels": ["bug"],
         "proposal_count": 1,
+        "label_application": {
+            "enabled": True,
+            "status": "applied",
+            "applied_labels": ["security"],
+            "skipped_labels": [{"name": "infrastructure", "reason": "not_in_repository"}],
+        },
         "label_proposals": [
             {
                 "name": "security",
@@ -270,9 +380,12 @@ def test_render_label_proposals_prints_sections() -> None:
     text = out.getvalue()
     assert "PR #42 on o/r" in text
     assert "Existing:     bug" in text
-    assert "GitHub write: no" in text
+    assert "GitHub write: applied" in text
     assert "Label proposals:" in text
     assert "security (0.92)" in text
+    assert "Label application:" in text
+    assert "Applied:      security" in text
+    assert "infrastructure (not_in_repository)" in text
 
 
 def test_render_label_proposals_json_prints_deterministic_summary() -> None:
@@ -282,6 +395,14 @@ def test_render_label_proposals_json_prints_deterministic_summary() -> None:
         "repo": "o/r",
         "number": 42,
         "label_proposals": [],
+        "label_application": {
+            "enabled": False,
+            "status": "dry_run",
+            "requested_labels": [],
+            "applied_labels": [],
+            "skipped_labels": [],
+            "failed_labels": [],
+        },
     }
     out = io.StringIO()
 
@@ -308,6 +429,7 @@ def test_cli_labels_accepts_flags(scaffold_repo: Path) -> None:
             "json",
             "--limit",
             "3",
+            "--apply",
         ],
     )
 

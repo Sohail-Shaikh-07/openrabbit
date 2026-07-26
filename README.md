@@ -500,16 +500,19 @@ JSON output from `describe`, `ask`, and `improve` includes a top-level `schema_v
 
 ### `openrabbit labels`
 
-Fetches one PR and proposes useful labels without mutating GitHub. Proposals are based on PR title/body text, commit messages, changed paths, current PR labels, linked GitHub issue labels, repository label names when available, and local OpenRabbit review memory. Existing PR labels are skipped, and proposals that do not already exist in the repository label list are marked with `exists_in_repository: false` instead of being created.
+Fetches one PR and proposes useful labels without mutating GitHub by default. Proposals are based on PR title/body text, commit messages, changed paths, current PR labels, linked GitHub issue labels, repository label names when available, and local OpenRabbit review memory. Existing PR labels are skipped, and proposals that do not already exist in the repository label list are marked with `exists_in_repository: false` instead of being created.
 
 ```bash
 openrabbit labels --pr 42 --repo owner/repo
 openrabbit labels --pr 42 --repo owner/repo --limit 5
 openrabbit labels --pr 42 --repo owner/repo --format json
+openrabbit labels --pr 42 --repo owner/repo --apply
 openrabbit --quiet labels --pr 42 --repo owner/repo
 ```
 
-JSON output includes `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `proposal_count`, `label_proposals`, and `mutates_github: false` so automation can use the proposals while keeping label application manual.
+Use `--apply` only when you want OpenRabbit to add proposed labels that already exist in the repository. The command never creates repository labels, skips unavailable labels, and reports the result in `label_application`.
+
+JSON output includes `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `proposal_count`, `label_proposals`, `label_application`, and `mutates_github` so automation can distinguish dry runs, applied labels, skipped labels, and permission failures.
 
 ### `openrabbit eval`
 
