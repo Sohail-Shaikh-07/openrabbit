@@ -10,6 +10,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added opt-in managed answer publishing for `openrabbit ask --publish` with stable `managed_answer` metadata and idempotent marker comment updates.
 - Added line-focused `openrabbit ask --file ... --line ...` context with changed-line validation and `ask_focus` metadata.
 - Added `suggestion_quality` metadata to `openrabbit improve` output with raw, grounded, kept, dropped, and drop-reason counts for noisy or unsafe suggestions.
+- Added read-only `openrabbit labels` output for PR label proposals with reasons, confidence, repository-label availability, and stable JSON.
 
 ## v1.7.0 - 2026-07-26
 

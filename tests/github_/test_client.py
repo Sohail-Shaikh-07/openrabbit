@@ -228,6 +228,21 @@ async def test_get_issue_returns_compact_issue_metadata() -> None:
     assert [label.name for label in issue.labels] == ["security", "api"]
 
 
+@respx.mock
+async def test_list_labels_returns_typed_labels() -> None:
+    respx.get(f"{_BASE}/repos/o/r/labels").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"name": "security"}, {"name": "tests"}],
+        )
+    )
+
+    async with _client() as client:
+        labels = await client.list_labels("o", "r")
+
+    assert [label.name for label in labels] == ["security", "tests"]
+
+
 async def test_get_file_text_loads_base64_content_at_ref() -> None:
     source = b"def update_task():\n    pass\n"
 

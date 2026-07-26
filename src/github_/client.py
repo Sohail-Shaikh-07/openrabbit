@@ -30,6 +30,7 @@ from github_.models import (
     Branch,
     Issue,
     IssueComment,
+    Label,
     PullRequest,
     PullRequestCommit,
     PullRequestFile,
@@ -80,6 +81,7 @@ _BRANCHES = TypeAdapter(list[Branch])
 _PR_REVIEWS = TypeAdapter(list[PullRequestReview])
 _PR_REVIEW_COMMENTS = TypeAdapter(list[PullRequestReviewComment])
 _ISSUE_COMMENTS = TypeAdapter(list[IssueComment])
+_LABELS = TypeAdapter(list[Label])
 
 
 class GitHubClient:
@@ -210,6 +212,19 @@ class GitHubClient:
             params={"per_page": per_page},
         )
         return _BRANCHES.validate_python(pages)
+
+    async def list_labels(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        per_page: int = 100,
+    ) -> list[Label]:
+        pages = await self._get_paginated(
+            f"/repos/{owner}/{repo}/labels",
+            params={"per_page": per_page},
+        )
+        return _LABELS.validate_python(pages)
 
     async def list_pull_requests(
         self,
