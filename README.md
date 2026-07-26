@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `labels`, `changelog`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `labels`, `changelog`, `docs`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -527,6 +527,18 @@ openrabbit changelog --repo owner/repo --format json
 ```
 
 JSON output includes `schema_version`, `command`, `sections`, `notes`, `merged_pr_count`, `source_pr_count`, `mutates_files: false`, and `mutates_github: false` so release automation can review the draft before any manual changelog edit.
+
+### `openrabbit docs`
+
+Suggests documentation follow-ups for a pull request without editing files or posting comments. The command inspects changed paths and added public symbols, then maps public surfaces such as CLI commands, configuration, examples, connectors, memory, eval, RAG, and release notes to likely README or docs targets.
+
+```bash
+openrabbit docs --pr 42 --repo owner/repo
+openrabbit docs --pr 42 --repo owner/repo --limit 5
+openrabbit docs --pr 42 --repo owner/repo --format json
+```
+
+JSON output includes `schema_version`, `command`, `changed_public_surface_count`, `suggestion_count`, `docs_suggestions`, `mutates_files: false`, and `mutates_github: false`. Each suggestion includes a target path, category, source paths, public symbols, confidence, and reason.
 
 ### `openrabbit eval`
 

@@ -156,12 +156,11 @@ Recommended tasks:
 
 ### 11. Repository-maintenance tools are being added
 
-OpenRabbit now provides `openrabbit labels` for label proposals with opt-in existing-label application, and `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local notes. Docs generation, similar issue search, and help docs remain open gaps.
+OpenRabbit now provides `openrabbit labels` for label proposals with opt-in existing-label application, `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local notes, and `openrabbit docs` for read-only documentation update suggestions from changed public surfaces. Similar issue search and help docs remain open gaps.
 
 Recommended tasks:
 
-- Keep label and changelog mutation paths explicit and auditable.
-- Add docs generation for changed public functions/classes.
+- Keep label, changelog, and documentation mutation paths explicit and auditable.
 - Add similar issue lookup after GitHub issue search is available.
 
 ### 12. Quality evidence now has a local PR test log

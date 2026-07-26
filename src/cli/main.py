@@ -36,6 +36,11 @@ from cli.commands.describe import (
     render_description_markdown,
     run_describe_blocking,
 )
+from cli.commands.docs import (
+    render_docs_suggestions,
+    render_docs_suggestions_json,
+    run_docs_suggestions_blocking,
+)
 from cli.commands.eval import (
     parse_pr_numbers,
     parse_scenario_groups,
@@ -702,6 +707,61 @@ def changelog_command(
         render_changelog_draft_json(summary, sys.stdout)
     else:
         render_changelog_draft(summary, sys.stdout)
+
+
+@app.command("docs")
+def docs_command(
+    pr: int = typer.Option(..., "--pr", help="Pull request number to inspect."),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to inspect, in owner/repo form. Overrides repository.target.",
+    ),
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        min=1,
+        help="Maximum number of documentation suggestions to print.",
+    ),
+    output_format: TextJsonOutputFormat = typer.Option(
+        TextJsonOutputFormat.TEXT,
+        "--format",
+        case_sensitive=False,
+        help="Output format: text or json.",
+    ),
+) -> None:
+    """Suggest documentation updates for a pull request."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        summary = run_docs_suggestions_blocking(
+            settings,  # type: ignore[arg-type]
+            number=pr,
+            repo=repo,
+            limit=limit,
+        )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except (GitHubAuthError, GitHubAPIError) as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    if output_format is TextJsonOutputFormat.JSON:
+        render_docs_suggestions_json(summary, sys.stdout)
+    else:
+        render_docs_suggestions(summary, sys.stdout)
 
 
 @app.command("eval")
