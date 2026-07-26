@@ -174,6 +174,8 @@ async def run_describe(
         hunk_total = sum(len(f.hunks) for f in original_payload.files)
         binary_count = sum(1 for f in original_payload.files if f.is_binary)
         summary: dict[str, object] = {
+            "schema_version": "1.0",
+            "command": "describe",
             "repo": handle.full_name,
             "number": payload.number,
             "title": payload.pull_request.title,

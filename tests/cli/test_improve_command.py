@@ -15,6 +15,7 @@ from agents.prompting import format_prompt_diff
 from cli.commands.improve import (
     ImprovementSuggestion,
     render_improvements,
+    render_improvements_json,
     run_improve,
 )
 from cli.commands.improve import (
@@ -276,6 +277,8 @@ async def test_run_improve_returns_grounded_suggestions(scaffold_repo: Path) -> 
     )
 
     assert captured
+    assert summary["schema_version"] == "1.0"
+    assert summary["command"] == "improve"
     assert summary["repo"] == "o/r"
     assert summary["number"] == 42
     assert summary["suggestions_count"] == 1
@@ -667,9 +670,24 @@ def test_cli_improve_accepts_publish_flags(scaffold_repo: Path) -> None:
             "--publish",
         ],
     )
+    json_output = _RUNNER.invoke(
+        app,
+        [
+            "improve",
+            "--pr",
+            "42",
+            "--workspace",
+            str(scaffold_repo),
+            "--repo",
+            "o/r",
+            "--format",
+            "json",
+        ],
+    )
 
     assert dry.exit_code != 2
     assert publish.exit_code != 2
+    assert json_output.exit_code != 2
 
 
 def test_render_improvements_prints_sections() -> None:
@@ -714,3 +732,33 @@ def test_render_improvements_prints_sections() -> None:
     assert "Improvement suggestions:" in text
     assert "Validate query (src/search.py:1)" in text
     assert "Fix:" in text
+
+
+def test_render_improvements_json_prints_deterministic_summary() -> None:
+    summary = {
+        "schema_version": "1.0",
+        "command": "improve",
+        "repo": "o/r",
+        "number": 42,
+        "suggestions_count": 1,
+        "suggestions": [
+            {
+                "file": "src/search.py",
+                "line": 1,
+                "title": "Validate query",
+                "reason": "The changed search path accepts a new query value.",
+                "suggestion": "Guard against an empty query before returning.",
+                "fix": "",
+            }
+        ],
+    }
+    out = io.StringIO()
+
+    render_improvements_json(summary, out)
+
+    text = out.getvalue()
+    assert text.endswith("\n")
+    assert '"command": "improve"' in text
+    assert '"schema_version": "1.0"' in text
+    assert '"suggestions": [' in text
+    assert '"suggestions_count": 1' in text

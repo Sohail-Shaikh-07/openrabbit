@@ -26,6 +26,11 @@ OpenRabbit v1.8 focuses on making PR interaction commands more scriptable and mo
 | OP-130 | Security and regression tests | Publishing boundaries, schemas, context bounds, and privacy checks |
 | OP-131 | v1.8.0 release | Version bump, changelog, release notes, CI, tag, and release artifacts |
 
+## Progress Notes
+
+- OP-122 creates the v1.8 planning track and repository roadmap link.
+- OP-123 adds top-level `schema_version` and `command` fields to `describe`, `ask`, and `improve` JSON payloads, plus `openrabbit improve --format json` for scripting.
+
 ## Scope Notes
 
 The v1.8 work should make command behavior easier to automate without turning OpenRabbit into an always-mutating bot. Every publishing path should remain explicit, use a recognizable OpenRabbit-managed marker, and be safe to rerun without creating duplicate comments.

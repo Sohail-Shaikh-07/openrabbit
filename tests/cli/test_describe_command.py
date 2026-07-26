@@ -273,6 +273,8 @@ async def test_run_describe_returns_read_only_summary(scaffold_repo: Path) -> No
     )
 
     assert captured
+    assert summary["schema_version"] == "1.0"
+    assert summary["command"] == "describe"
     assert summary["repo"] == "o/r"
     assert summary["number"] == 42
     assert summary["title"] == "Improve search"
@@ -607,6 +609,8 @@ def test_render_description_markdown_prints_report_sections() -> None:
 
 def test_render_description_json_prints_deterministic_summary() -> None:
     summary = {
+        "schema_version": "1.0",
+        "command": "describe",
         "repo": "o/r",
         "number": 42,
         "title": "Improve search",
@@ -618,5 +622,7 @@ def test_render_description_json_prints_deterministic_summary() -> None:
 
     text = out.getvalue()
     assert text.endswith("\n")
+    assert '"command": "describe"' in text
     assert '"description": {' in text
     assert '"number": 42' in text
+    assert '"schema_version": "1.0"' in text

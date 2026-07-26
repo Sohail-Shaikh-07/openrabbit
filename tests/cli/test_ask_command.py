@@ -274,6 +274,8 @@ async def test_run_ask_returns_evidence_based_answer(scaffold_repo: Path) -> Non
     )
 
     assert captured_questions == ["What changed in search?"]
+    assert summary["schema_version"] == "1.0"
+    assert summary["command"] == "ask"
     assert summary["repo"] == "o/r"
     assert summary["number"] == 42
     assert summary["question"] == "What changed in search?"
@@ -513,6 +515,8 @@ def test_render_answer_markdown_prints_report_sections() -> None:
 
 def test_render_answer_json_prints_deterministic_summary() -> None:
     summary = {
+        "schema_version": "1.0",
+        "command": "ask",
         "repo": "o/r",
         "number": 42,
         "question": "What changed?",
@@ -525,4 +529,6 @@ def test_render_answer_json_prints_deterministic_summary() -> None:
     text = out.getvalue()
     assert text.endswith("\n")
     assert '"answer": {' in text
+    assert '"command": "ask"' in text
     assert '"question": "What changed?"' in text
+    assert '"schema_version": "1.0"' in text
