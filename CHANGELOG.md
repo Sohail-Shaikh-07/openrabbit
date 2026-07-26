@@ -4,7 +4,7 @@ All notable changes to OpenRabbit are documented in this file.
 
 ## Unreleased
 
-- No unreleased changes.
+- Added the v1.8 Interactive PR Workflow plan for command JSON outputs, managed PR publishing, line-level ask, improve quality evaluation, label proposals, workflow docs, regressions, and release work.
 
 ## v1.7.0 - 2026-07-26
 
