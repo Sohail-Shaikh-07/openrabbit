@@ -71,13 +71,28 @@ class PullRequestAnswer:
     follow_up_checks: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class AskLineFocus:
+    """Focused ask target and nearby changed-line context."""
+
+    file: str
+    line: int
+    changed_line: str
+    nearby_diff: list[str]
+    prompt_context: str
+
+
 AnswerGenerator = Callable[..., Awaitable[PullRequestAnswer]]
 AnswerPublisher = Callable[..., Awaitable[PRAnswerPublishResult]]
+
+_NO_FOCUS_CONTEXT = "(No focused file or line requested.)"
+_FOCUS_CONTEXT_RADIUS = 3
 
 _PROMPT_TEMPLATE = """You are OpenRabbit's PR question-answering agent. Answer the user's question like a senior maintainer who has inspected the supplied pull request evidence.
 
 Mission:
 - Answer only the user's question, using the PR metadata, changed-line evidence, diff, and project context below.
+- If focused line context is provided, prioritize that file and line before broader PR context.
 - Separate what is directly supported from what is uncertain.
 - Prefer "I cannot determine that from the provided evidence" over guessing.
 - Cite concrete evidence from changed files, changed lines, metadata, or retrieved project context.
@@ -100,6 +115,9 @@ Pull request:
 
 Project context:
 {project_context}
+
+Focused line context:
+{focus_context}
 
 PR history context:
 {history_context}
@@ -139,11 +157,14 @@ async def run_ask(
     context_loader: ContextLoader | None = None,
     publish: bool = False,
     answer_publisher: AnswerPublisher | None = None,
+    focus_file: str | None = None,
+    focus_line: int | None = None,
 ) -> dict[str, object]:
     """Fetch a PR, answer a question, and return a summary dict."""
     cleaned_question = _clean_text(question)
     if not cleaned_question:
         raise ValueError("question must not be empty")
+    _validate_focus_request(file_path=focus_file, line=focus_line)
 
     target = resolve_target_repo(settings, repo)
     client = GitHubClient.from_settings(settings, env=env)
@@ -158,6 +179,7 @@ async def run_ask(
         )
         payload = controls_result.filtered_payload
         pr_history_result = await load_pr_history(settings, handle=handle, payload=payload)
+        focus = _build_ask_focus(payload, file_path=focus_file, line=focus_line)
 
         retrieval_result: Any | None = None
         loader = context_loader or _load_review_context
@@ -177,7 +199,7 @@ async def run_ask(
             repo=handle.full_name,
             env=env,
             retrieval_result=retrieval_result,
-            query_extra=cleaned_question,
+            query_extra=_connector_query_extra(cleaned_question, focus),
         )
         retrieval_result = connector_context.retrieval_result
         model_context = filter_model_review_context(
@@ -195,6 +217,7 @@ async def run_ask(
             retrieval_result=retrieval_result,
             pr_history=model_context.pr_history,
             env=env,
+            focus_context=focus.prompt_context if focus is not None else _NO_FOCUS_CONTEXT,
         )
 
         hunk_total = sum(len(f.hunks) for f in original_payload.files)
@@ -229,6 +252,7 @@ async def run_ask(
             "conversation_count": pr_history_result.conversation_count,
             "learning_count": pr_history_result.learning_count,
             "question": cleaned_question,
+            "ask_focus": _serialize_focus(focus),
             "publish_status": "read_only",
             "managed_answer": _managed_answer_status(enabled=False),
             "answer": _serialize_answer(answer),
@@ -257,10 +281,21 @@ def run_ask_blocking(
     repo: str | None = None,
     env: dict[str, str] | None = None,
     publish: bool = False,
+    focus_file: str | None = None,
+    focus_line: int | None = None,
 ) -> dict[str, object]:
     """Synchronous wrapper used by the Typer command."""
     return asyncio.run(
-        run_ask(settings, number=number, question=question, repo=repo, env=env, publish=publish)
+        run_ask(
+            settings,
+            number=number,
+            question=question,
+            repo=repo,
+            env=env,
+            publish=publish,
+            focus_file=focus_file,
+            focus_line=focus_line,
+        )
     )
 
 
@@ -279,6 +314,7 @@ def render_answer(summary: dict[str, object], out: TextIO) -> None:
     context_loaded = summary.get("context_loaded")
     if isinstance(context_loaded, bool):
         print(f"  Context:      {'loaded' if context_loaded else 'diff only'}", file=out)
+    _print_focus_status(summary, out, markdown=False)
     _print_publish_status(summary, out, markdown=False)
 
     print("", file=out)
@@ -302,6 +338,7 @@ def render_answer_markdown(summary: dict[str, object], out: TextIO) -> None:
     print(f"# PR #{summary['number']} Ask", file=out)
     print("", file=out)
     _print_metadata(summary, out)
+    _print_focus_status(summary, out, markdown=True)
     _print_publish_status(summary, out, markdown=True)
     print("", file=out)
     print("## Question", file=out)
@@ -334,9 +371,16 @@ async def _generate_answer(
     retrieval_result: Any | None,
     pr_history: PullRequestHistory | None = None,
     env: dict[str, str] | None,
+    focus_context: str = _NO_FOCUS_CONTEXT,
 ) -> PullRequestAnswer:
     client = _build_ask_client(settings, env=env)
-    prompt = _build_prompt(pr_payload, question, retrieval_result, pr_history)
+    prompt = _build_prompt(
+        pr_payload,
+        question,
+        retrieval_result,
+        pr_history,
+        focus_context=focus_context,
+    )
     raw = await client.generate(prompt)
     return _parse_answer(raw)
 
@@ -353,6 +397,8 @@ def _build_prompt(
     question: str,
     retrieval_result: Any | None,
     pr_history: PullRequestHistory | None = None,
+    *,
+    focus_context: str = _NO_FOCUS_CONTEXT,
 ) -> str:
     state: ReviewState = {
         "pr_payload": pr_payload,
@@ -380,6 +426,7 @@ def _build_prompt(
         binary_files=binary_count,
         hunks=hunk_total,
         project_context=project_context,
+        focus_context=focus_context,
         history_context=collect_history_context(state),
         changed_line_evidence=format_changed_line_evidence(pr_payload),
         diff=format_prompt_diff(pr_payload),
@@ -415,6 +462,24 @@ def _serialize_answer(answer: PullRequestAnswer) -> dict[str, object]:
     }
 
 
+def _serialize_focus(focus: AskLineFocus | None) -> dict[str, object]:
+    if focus is None:
+        return {
+            "enabled": False,
+            "file": None,
+            "line": None,
+            "changed_line": None,
+            "nearby_diff": [],
+        }
+    return {
+        "enabled": True,
+        "file": focus.file,
+        "line": focus.line,
+        "changed_line": focus.changed_line,
+        "nearby_diff": focus.nearby_diff,
+    }
+
+
 def _serialize_evidence(evidence: AnswerEvidence) -> dict[str, object]:
     return {
         "source": evidence.source,
@@ -422,6 +487,123 @@ def _serialize_evidence(evidence: AnswerEvidence) -> dict[str, object]:
         "line": evidence.line,
         "detail": evidence.detail,
     }
+
+
+def _build_ask_focus(
+    pr_payload: Any,
+    *,
+    file_path: str | None,
+    line: int | None,
+) -> AskLineFocus | None:
+    _validate_focus_request(file_path=file_path, line=line)
+    if file_path is None and line is None:
+        return None
+    assert file_path is not None
+    assert line is not None
+
+    target_path = _normalise_path(file_path)
+
+    files = getattr(pr_payload, "files", None)
+    parsed_files = files if isinstance(files, list) else []
+    target_file = next(
+        (
+            file_
+            for file_ in parsed_files
+            if _normalise_path(str(getattr(file_, "path", "") or "")) == target_path
+        ),
+        None,
+    )
+    if target_file is None:
+        raise ValueError(f"--file must reference a changed PR file: {target_path}")
+
+    match = _focused_added_line(target_file, line)
+    if match is None:
+        raise ValueError(f"--line must reference an added changed line in {target_path}: {line}")
+    changed_line, nearby_diff = match
+    prompt_context = "\n".join(
+        [
+            f"- Target: `{target_path}:{line}`",
+            f"- Selected added line: +{line} {changed_line}",
+            "- Nearby diff:",
+            *[f"  {item}" for item in nearby_diff],
+        ]
+    )
+    return AskLineFocus(
+        file=target_path,
+        line=line,
+        changed_line=changed_line,
+        nearby_diff=nearby_diff,
+        prompt_context=prompt_context,
+    )
+
+
+def _validate_focus_request(*, file_path: str | None, line: int | None) -> None:
+    if file_path is None and line is None:
+        return
+    if file_path is None or line is None:
+        raise ValueError("--file and --line must be provided together")
+    if line <= 0:
+        raise ValueError("--line must be a positive new-side line number")
+    if not _normalise_path(file_path):
+        raise ValueError("--file must not be empty")
+
+
+def _focused_added_line(file_: Any, target_line: int) -> tuple[str, list[str]] | None:
+    hunks = getattr(file_, "hunks", None)
+    if not isinstance(hunks, list):
+        return None
+
+    for hunk in hunks:
+        hunk_lines = getattr(hunk, "lines", None)
+        if not isinstance(hunk_lines, list):
+            continue
+
+        rows: list[tuple[str, int | None, str]] = []
+        matched_index: int | None = None
+        new_line = int(getattr(hunk, "new_start", 0) or 0)
+        old_line = int(getattr(hunk, "old_start", 0) or 0)
+
+        for diff_line in hunk_lines:
+            kind = str(getattr(diff_line, "kind", ""))
+            text = str(getattr(diff_line, "text", ""))
+            if kind == "addition":
+                rows.append(("+", new_line, text))
+                if new_line == target_line:
+                    matched_index = len(rows) - 1
+                new_line += 1
+            elif kind == "context":
+                rows.append((" ", new_line, text))
+                new_line += 1
+                old_line += 1
+            elif kind == "deletion":
+                rows.append(("-", old_line, text))
+                old_line += 1
+            elif kind == "no_newline_marker":
+                rows.append(("\\", None, text))
+
+        if matched_index is None:
+            continue
+        _, _, changed_line = rows[matched_index]
+        start = max(0, matched_index - _FOCUS_CONTEXT_RADIUS)
+        end = min(len(rows), matched_index + _FOCUS_CONTEXT_RADIUS + 1)
+        nearby = [
+            _format_focus_diff_row(prefix, number, text) for prefix, number, text in rows[start:end]
+        ]
+        return changed_line, nearby
+
+    return None
+
+
+def _format_focus_diff_row(prefix: str, line: int | None, text: str) -> str:
+    if line is None:
+        return f"{prefix} {text}"
+    return f"{prefix}{line} {text}"
+
+
+def _connector_query_extra(question: str, focus: AskLineFocus | None) -> str:
+    if focus is None:
+        return question
+    return f"{question}\nFocus: {focus.file}:{focus.line}\nChanged line: {focus.changed_line}"
 
 
 def _managed_answer_status(
@@ -552,6 +734,20 @@ def _print_metadata(summary: dict[str, object], out: TextIO) -> None:
     ]
     for label, value in rows:
         print(f"- {label}: {value}", file=out)
+
+
+def _print_focus_status(summary: dict[str, object], out: TextIO, *, markdown: bool) -> None:
+    focus = summary.get("ask_focus")
+    if not isinstance(focus, dict) or focus.get("enabled") is not True:
+        return
+    file_ = str(focus.get("file") or "").strip()
+    line = focus.get("line")
+    if not file_ or not isinstance(line, int):
+        return
+    if markdown:
+        print(f"- Focus: `{file_}:{line}`", file=out)
+    else:
+        print(f"  Focus:        {file_}:{line}", file=out)
 
 
 def _print_publish_status(summary: dict[str, object], out: TextIO, *, markdown: bool) -> None:
