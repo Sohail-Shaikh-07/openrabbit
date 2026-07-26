@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import httpx
@@ -23,7 +24,7 @@ _BASE = "https://api.github.com"
 _RUNNER = CliRunner()
 
 
-def _pr_json() -> dict[str, object]:
+def _pr_json(*, body: str = "Fixes #12. Adds CLI tests for export auth.") -> dict[str, object]:
     return {
         "number": 42,
         "title": "Fix admin export auth",
@@ -35,13 +36,15 @@ def _pr_json() -> dict[str, object]:
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-02T00:00:00Z",
         "labels": [{"name": "bug"}],
-        "body": "Fixes #12. Adds CLI tests for export auth.",
+        "body": body,
         "merged": False,
     }
 
 
-def _mock_pr() -> None:
-    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
+def _mock_pr(*, body: str = "Fixes #12. Adds CLI tests for export auth.") -> None:
+    respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(
+        return_value=httpx.Response(200, json=_pr_json(body=body))
+    )
     respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
         return_value=httpx.Response(
             200,
@@ -187,6 +190,56 @@ async def test_run_label_proposals_fails_open_when_repository_labels_unavailable
     assert all(item["exists_in_repository"] is None for item in summary["label_proposals"])
 
 
+@respx.mock
+async def test_run_label_proposals_does_not_call_github_write_routes(
+    scaffold_repo: Path,
+) -> None:
+    _mock_pr()
+    _mock_repo_labels()
+    comment_route = respx.post(f"{_BASE}/repos/o/r/issues/42/comments").mock(
+        return_value=httpx.Response(201, json={})
+    )
+    label_route = respx.post(f"{_BASE}/repos/o/r/issues/42/labels").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_label_proposals(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+    )
+
+    assert summary["mutates_github"] is False
+    assert comment_route.called is False
+    assert label_route.called is False
+
+
+@respx.mock
+async def test_run_label_proposals_does_not_echo_secret_values_from_pr_body(
+    scaffold_repo: Path,
+) -> None:
+    secret = "ghp_secret1234567890abcdef"
+    _mock_pr(body=f"Fixes #12. Rotate GITHUB_TOKEN={secret} and add auth tests.")
+    _mock_repo_labels()
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_label_proposals(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+    )
+
+    payload = json.dumps(summary, sort_keys=True)
+    names = [item["name"] for item in summary["label_proposals"]]
+    assert "security" in names
+    assert secret not in payload
+    assert "GITHUB_TOKEN=" not in payload
+    assert summary["mutates_github"] is False
+
+
 def test_render_label_proposals_prints_sections() -> None:
     summary = {
         "repo": "o/r",
@@ -259,3 +312,23 @@ def test_cli_labels_accepts_flags(scaffold_repo: Path) -> None:
     )
 
     assert result.exit_code != 2
+
+
+def test_cli_labels_rejects_publish_flag(scaffold_repo: Path) -> None:
+    result = _RUNNER.invoke(
+        app,
+        [
+            "labels",
+            "--pr",
+            "42",
+            "--workspace",
+            str(scaffold_repo),
+            "--repo",
+            "o/r",
+            "--publish",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert isinstance(result.exception, SystemExit)
+    assert result.exception.code == 2
