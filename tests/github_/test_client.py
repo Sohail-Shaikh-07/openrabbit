@@ -167,6 +167,8 @@ async def test_list_pull_requests_handles_pagination() -> None:
             "base": {"ref": "main", "sha": "b" * 40, "label": "o:main"},
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-01-02T00:00:00Z",
+            "merged_at": "2026-01-02T01:00:00Z",
+            "html_url": "https://github.com/o/r/pull/1",
             "labels": [],
         }
     ]
@@ -203,6 +205,54 @@ async def test_list_pull_requests_handles_pagination() -> None:
         prs = await client.list_pull_requests("o", "r")
 
     assert [pr.number for pr in prs] == [1, 2]
+    assert prs[0].html_url == "https://github.com/o/r/pull/1"
+    assert prs[0].merged_at is not None
+
+
+@respx.mock
+async def test_list_pull_requests_respects_max_items() -> None:
+    page1 = [
+        {
+            "number": 1,
+            "title": "first",
+            "state": "closed",
+            "draft": False,
+            "user": {"login": "alice", "id": 100},
+            "head": {"ref": "feat", "sha": "a" * 40, "label": "alice:feat"},
+            "base": {"ref": "main", "sha": "b" * 40, "label": "o:main"},
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-02T00:00:00Z",
+            "labels": [],
+        },
+        {
+            "number": 2,
+            "title": "second",
+            "state": "closed",
+            "draft": False,
+            "user": {"login": "bob", "id": 200},
+            "head": {"ref": "feat2", "sha": "c" * 40, "label": "bob:feat2"},
+            "base": {"ref": "main", "sha": "d" * 40, "label": "o:main"},
+            "created_at": "2026-01-03T00:00:00Z",
+            "updated_at": "2026-01-04T00:00:00Z",
+            "labels": [],
+        },
+    ]
+    next_route = respx.get(f"{_BASE}/repos/o/r/pulls", params={"page": "2"}).mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(
+        return_value=httpx.Response(
+            200,
+            json=page1,
+            headers={"Link": f'<{_BASE}/repos/o/r/pulls?page=2>; rel="next"'},
+        )
+    )
+
+    async with _client() as client:
+        prs = await client.list_pull_requests("o", "r", state="closed", max_items=1)
+
+    assert [pr.number for pr in prs] == [1]
+    assert next_route.called is False
 
 
 @respx.mock

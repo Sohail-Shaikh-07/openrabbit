@@ -76,9 +76,17 @@ class RepositoryHandle:
         return await self.client.add_issue_labels(self.owner, self.repo, number, labels)
 
     async def list_pull_requests(
-        self, *, state: PullRequestState = "open"
+        self,
+        *,
+        state: PullRequestState = "open",
+        max_items: int | None = None,
     ) -> list[PullRequestSummary]:
-        return await self.client.list_pull_requests(self.owner, self.repo, state=state)
+        return await self.client.list_pull_requests(
+            self.owner,
+            self.repo,
+            state=state,
+            max_items=max_items,
+        )
 
     async def get_pull_request(self, number: int) -> PullRequest:
         return await self.client.get_pull_request(self.owner, self.repo, number)

@@ -247,10 +247,12 @@ class GitHubClient:
         *,
         state: PullRequestState = "open",
         per_page: int = 100,
+        max_items: int | None = None,
     ) -> list[PullRequestSummary]:
         pages = await self._get_paginated(
             f"/repos/{owner}/{repo}/pulls",
             params={"state": state, "per_page": per_page},
+            max_items=max_items,
         )
         return _PR_SUMMARIES.validate_python(pages)
 
@@ -393,6 +395,7 @@ class GitHubClient:
         path: str,
         *,
         params: Mapping[str, Any] | None = None,
+        max_items: int | None = None,
     ) -> list[Any]:
         results: list[Any] = []
         next_path: str | None = path
@@ -403,6 +406,8 @@ class GitHubClient:
             if not isinstance(page, list):
                 raise GitHubAPIError(response.status_code, "expected a JSON array")
             results.extend(page)
+            if max_items is not None and len(results) >= max_items:
+                return results[:max_items]
             next_url = _next_link(response.headers.get("Link", ""))
             if next_url is None:
                 next_path = None

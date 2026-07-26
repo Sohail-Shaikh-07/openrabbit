@@ -104,6 +104,8 @@ class PullRequestSummary(_APIObject):
     base: PullRequestRef
     created_at: datetime
     updated_at: datetime
+    merged_at: datetime | None = None
+    html_url: str | None = None
     labels: list[Label] = Field(default_factory=list)
 
 

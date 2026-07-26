@@ -246,11 +246,26 @@ def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
         "security and regression tests",
         "dry-run defaults",
         "stable json",
+        "openrabbit changelog",
         "op-132",
         "op-140",
     ):
         assert claim in plan
     assert "release-v1.9-plan.md" in gap
+    assert "openrabbit changelog" in gap
+
+
+def test_readme_documents_changelog_command() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "openrabbit changelog",
+        "merged pull requests",
+        "mutates_files: false",
+        "mutates_github: false",
+        "--notes docs/release-v1.9-plan.md",
+    ):
+        assert claim in readme
 
 
 def test_interactive_pr_workflow_guide_documents_commands_and_boundaries() -> None:
