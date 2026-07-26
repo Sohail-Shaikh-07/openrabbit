@@ -37,7 +37,11 @@ from cli.commands.eval import (
     render_eval_summary,
     run_eval_blocking,
 )
-from cli.commands.improve import render_improvements, run_improve_blocking
+from cli.commands.improve import (
+    render_improvements,
+    render_improvements_json,
+    run_improve_blocking,
+)
 from cli.commands.index import run_index_blocking, run_qdrant_health_check_blocking
 from cli.commands.init import InitConflict, run_init
 from cli.commands.install_model import InstallResult, run_install_model
@@ -54,7 +58,7 @@ from cli.commands.memory import (
     run_memory_prune,
 )
 from cli.commands.model_health import run_model_health_check_blocking
-from cli.commands.output import OutputFormat
+from cli.commands.output import OutputFormat, TextJsonOutputFormat
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
@@ -494,6 +498,12 @@ def improve(
         "--publish",
         help="Publish grounded, actionable improvement suggestions to GitHub.",
     ),
+    output_format: TextJsonOutputFormat = typer.Option(
+        TextJsonOutputFormat.TEXT,
+        "--format",
+        case_sensitive=False,
+        help="Output format: text or json.",
+    ),
 ) -> None:
     """Generate improvement suggestions for changed pull request lines."""
     if dry_run and publish:
@@ -520,7 +530,10 @@ def improve(
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
     import sys
 
-    render_improvements(summary, sys.stdout)
+    if output_format is TextJsonOutputFormat.JSON:
+        render_improvements_json(summary, sys.stdout)
+    else:
+        render_improvements(summary, sys.stdout)
 
 
 @app.command("eval")

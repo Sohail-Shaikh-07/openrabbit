@@ -490,8 +490,11 @@ By default, `improve` is read-only. Add `--publish` only when you want OpenRabbi
 openrabbit improve --pr 42 --repo owner/repo
 openrabbit improve --pr 42 --repo owner/repo --dry-run
 openrabbit improve --pr 42 --repo owner/repo --publish
+openrabbit improve --pr 42 --repo owner/repo --format json
 openrabbit --quiet improve --pr 42 --repo owner/repo
 ```
+
+JSON output from `describe`, `ask`, and `improve` includes a top-level `schema_version` and `command` field so scripts can validate the payload before reading command-specific fields such as `description`, `answer`, or `suggestions`.
 
 ### `openrabbit eval`
 

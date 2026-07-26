@@ -15,6 +15,13 @@ class OutputFormat(StrEnum):
     JSON = "json"
 
 
+class TextJsonOutputFormat(StrEnum):
+    """Output formats for commands that do not have a Markdown renderer."""
+
+    TEXT = "text"
+    JSON = "json"
+
+
 def render_json(data: object, out: TextIO) -> None:
     """Write deterministic JSON for script consumers."""
     json.dump(data, out, indent=2, sort_keys=True)

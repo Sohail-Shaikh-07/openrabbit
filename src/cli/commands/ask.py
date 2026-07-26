@@ -193,6 +193,8 @@ async def run_ask(
     hunk_total = sum(len(f.hunks) for f in original_payload.files)
     binary_count = sum(1 for f in original_payload.files if f.is_binary)
     return {
+        "schema_version": "1.0",
+        "command": "ask",
         "repo": handle.full_name,
         "number": payload.number,
         "title": payload.pull_request.title,

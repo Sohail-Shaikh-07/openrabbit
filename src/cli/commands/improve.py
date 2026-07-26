@@ -26,6 +26,7 @@ from agents.prompting import (
     format_prompt_diff,
 )
 from cli.commands.history import load_pr_history
+from cli.commands.output import render_json
 from cli.commands.review import (
     ContextLoader,
     _context_provenance,
@@ -231,6 +232,8 @@ async def run_improve(
     hunk_total = sum(len(f.hunks) for f in original_payload.files)
     binary_count = sum(1 for f in original_payload.files if f.is_binary)
     return {
+        "schema_version": "1.0",
+        "command": "improve",
         "repo": handle.full_name,
         "number": payload.number,
         "title": payload.pull_request.title,
@@ -343,6 +346,11 @@ def render_improvements(summary: dict[str, object], out: TextIO) -> None:
         if isinstance(fix, str) and fix:
             print("    Fix:", file=out)
             print(_indent_block(fix), file=out)
+
+
+def render_improvements_json(summary: dict[str, object], out: TextIO) -> None:
+    """Render improvement suggestions as deterministic JSON."""
+    render_json(summary, out)
 
 
 async def _generate_improvements(
