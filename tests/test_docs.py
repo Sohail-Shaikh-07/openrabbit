@@ -230,3 +230,58 @@ def test_v1_8_interactive_workflow_plan_documents_release_scope() -> None:
     ):
         assert claim in plan
     assert "release-v1.8-plan.md" in gap
+
+
+def test_interactive_pr_workflow_guide_documents_commands_and_boundaries() -> None:
+    guide = (ROOT / "docs" / "interactive-pr-workflows.md").read_text(encoding="ascii").lower()
+    readme = (ROOT / "README.md").read_text(encoding="ascii")
+
+    for claim in (
+        "interactive pr workflows",
+        "openrabbit describe",
+        "openrabbit ask",
+        "openrabbit improve",
+        "openrabbit labels",
+        "schema_version",
+        "managed_summary",
+        "managed_answer",
+        "ask_focus",
+        "suggestion_quality",
+        "mutates_github",
+        "line-level ask",
+        "read-only by default",
+        "`labels` has no write mode",
+        "examples/github-actions/openrabbit-interactive.yml",
+        "/openrabbit review",
+        "/openrabbit summary",
+    ):
+        assert claim in guide
+
+    assert "[docs/interactive-pr-workflows.md](docs/interactive-pr-workflows.md)" in readme
+
+
+def test_interactive_github_actions_example_documents_manual_commands() -> None:
+    workflow = (ROOT / "examples" / "github-actions" / "openrabbit-interactive.yml").read_text(
+        encoding="ascii"
+    )
+    actions_doc = (ROOT / "docs" / "github-actions.md").read_text(encoding="ascii")
+
+    for claim in (
+        "workflow_dispatch",
+        "command:",
+        "- describe",
+        "- ask",
+        "- improve",
+        "- labels",
+        "publish:",
+        "focus_file:",
+        "focus_line:",
+        "args=(describe",
+        "args=(ask",
+        "args=(improve",
+        "openrabbit labels",
+    ):
+        assert claim in workflow
+
+    assert "openrabbit-interactive.yml" in actions_doc
+    assert "labels` is always read-only" in actions_doc

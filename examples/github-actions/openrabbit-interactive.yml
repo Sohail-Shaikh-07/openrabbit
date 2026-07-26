@@ -1,0 +1,147 @@
+name: OpenRabbit interactive PR workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to inspect
+        required: true
+      command:
+        description: Interactive command to run
+        required: true
+        default: describe
+        type: choice
+        options:
+          - describe
+          - ask
+          - improve
+          - labels
+      publish:
+        description: Publish managed output when the command supports it
+        required: false
+        default: false
+        type: boolean
+      question:
+        description: Question for the ask command
+        required: false
+        default: What should reviewers inspect first?
+      focus_file:
+        description: Changed file for line-level ask
+        required: false
+      focus_line:
+        description: Changed new-side line for line-level ask
+        required: false
+      output_format:
+        description: Output format
+        required: false
+        default: json
+        type: choice
+        options:
+          - json
+          - text
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: openrabbit-interactive-${{ inputs.pr }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  OPENRABBIT_REF: "main"
+  OPENRABBIT_GITHUB__TOKEN: ${{ github.token }}
+
+jobs:
+  interactive:
+    name: Run OpenRabbit interactive command
+    runs-on: [self-hosted, linux, openrabbit]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install OpenRabbit
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "openrabbit @ git+https://github.com/Sohail-Shaikh-07/openrabbit.git@${OPENRABBIT_REF}"
+
+      - name: Prepare OpenRabbit config
+        shell: bash
+        run: |
+          if [ ! -f ".openrabbit/config.yml" ]; then
+            mkdir -p .openrabbit
+            cat > .openrabbit/config.yml <<'YAML'
+          review:
+            security: true
+            performance: true
+            architecture: true
+            bug: true
+            test_coverage: true
+            style: false
+
+          model:
+            provider: ollama
+            model_name: qwen2.5-coder:7b
+            base_model: qwen2.5-coder:7b
+
+          github:
+            token_env: GITHUB_TOKEN
+
+          repository:
+            target:
+          YAML
+          fi
+
+      - name: Run selected command
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+          OPENRABBIT_COMMAND: ${{ inputs.command }}
+          OPENRABBIT_PUBLISH: ${{ inputs.publish }}
+          OPENRABBIT_QUESTION: ${{ inputs.question }}
+          OPENRABBIT_FOCUS_FILE: ${{ inputs.focus_file }}
+          OPENRABBIT_FOCUS_LINE: ${{ inputs.focus_line }}
+          OPENRABBIT_OUTPUT_FORMAT: ${{ inputs.output_format }}
+        run: |
+          case "$OPENRABBIT_COMMAND" in
+            describe)
+              args=(describe --pr "$PR_NUMBER" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT")
+              if [ "$OPENRABBIT_PUBLISH" = "true" ]; then
+                args+=(--publish)
+              fi
+              openrabbit "${args[@]}"
+              ;;
+            ask)
+              args=(ask --pr "$PR_NUMBER" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT")
+              if [ -n "$OPENRABBIT_FOCUS_FILE" ] && [ -n "$OPENRABBIT_FOCUS_LINE" ]; then
+                args+=(--file "$OPENRABBIT_FOCUS_FILE" --line "$OPENRABBIT_FOCUS_LINE")
+              fi
+              if [ "$OPENRABBIT_PUBLISH" = "true" ]; then
+                args+=(--publish)
+              fi
+              args+=("$OPENRABBIT_QUESTION")
+              openrabbit "${args[@]}"
+              ;;
+            improve)
+              args=(improve --pr "$PR_NUMBER" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT")
+              if [ "$OPENRABBIT_PUBLISH" = "true" ]; then
+                args+=(--publish)
+              fi
+              openrabbit "${args[@]}"
+              ;;
+            labels)
+              openrabbit labels --pr "$PR_NUMBER" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT"
+              ;;
+            *)
+              echo "Unsupported OpenRabbit command: $OPENRABBIT_COMMAND" >&2
+              exit 2
+              ;;
+          esac

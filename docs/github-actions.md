@@ -105,7 +105,18 @@ The default read-only commands are also useful in Actions logs:
 
 ```bash
 openrabbit describe --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+openrabbit ask --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" "What should reviewers inspect first?"
 openrabbit improve --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+openrabbit labels --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+```
+
+For automation wrappers, prefer JSON output:
+
+```bash
+openrabbit describe --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --format json
+openrabbit ask --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --format json "What changed?"
+openrabbit improve --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --format json
+openrabbit labels --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --format json
 ```
 
 To publish improvement suggestions, use the explicit publish flag:
@@ -115,6 +126,23 @@ openrabbit improve --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --publish
 ```
 
 `improve --publish` only posts grounded suggestions. Suggestions with safe replacement snippets are posted as inline GitHub suggestion blocks; broader actionable suggestions are grouped in the review body.
+
+`describe --publish` and `ask --publish` update one OpenRabbit-managed PR comment each. `labels` is always read-only and reports `mutates_github: false`.
+
+## Interactive Workflow Dispatch
+
+Use [examples/github-actions/openrabbit-interactive.yml](../examples/github-actions/openrabbit-interactive.yml) when maintainers want a manual Actions button for PR summaries, questions, improvement suggestions, or label proposals.
+
+The interactive example accepts:
+
+- `pr`: pull request number.
+- `command`: one of `describe`, `ask`, `improve`, or `labels`.
+- `publish`: optional managed publishing for commands that support it.
+- `question`: ask-command text.
+- `focus_file` and `focus_line`: optional line-level ask target.
+- `output_format`: `json` or `text`.
+
+Keep `publish` false for first runs. Turn it on only when you want `describe` or `ask` to update their managed comments, or `improve` to post grounded suggestions. The `labels` command ignores publishing because it has no write mode.
 
 ## Repository Context
 
