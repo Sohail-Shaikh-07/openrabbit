@@ -496,7 +496,7 @@ openrabbit improve --pr 42 --repo owner/repo --format json
 openrabbit --quiet improve --pr 42 --repo owner/repo
 ```
 
-JSON output from `describe`, `ask`, and `improve` includes a top-level `schema_version` and `command` field so scripts can validate the payload before reading command-specific fields such as `description`, `answer`, `suggestions`, or `suggestion_quality`.
+JSON output from `describe`, `ask`, and `improve` includes a top-level `schema_version` and `command` field so scripts can validate the payload before reading command-specific fields such as `description`, `answer`, `suggestions`, or `suggestion_quality`. See [docs/interactive-pr-workflows.md](docs/interactive-pr-workflows.md) for the full interactive workflow guide, stable JSON fields, publishing controls, line-level ask examples, improve quality output, and label proposal guidance.
 
 ### `openrabbit labels`
 
@@ -621,7 +621,7 @@ Copy `.env.example` to `.env` if you want compose to pass a GitHub token or a cu
 
 ## GitHub Actions
 
-Use [docs/github-actions.md](docs/github-actions.md) for a self-hosted or configured-runner workflow recipe. A copyable example lives at [examples/github-actions/openrabbit-review.yml](examples/github-actions/openrabbit-review.yml).
+Use [docs/github-actions.md](docs/github-actions.md) for self-hosted or configured-runner workflow recipes. Copyable examples live at [examples/github-actions/openrabbit-review.yml](examples/github-actions/openrabbit-review.yml) for automatic review and [examples/github-actions/openrabbit-interactive.yml](examples/github-actions/openrabbit-interactive.yml) for manual describe, ask, improve, and labels runs.
 
 ## Repository Layout
 
