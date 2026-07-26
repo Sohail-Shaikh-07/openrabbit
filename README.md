@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `labels`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -497,6 +497,19 @@ openrabbit --quiet improve --pr 42 --repo owner/repo
 ```
 
 JSON output from `describe`, `ask`, and `improve` includes a top-level `schema_version` and `command` field so scripts can validate the payload before reading command-specific fields such as `description`, `answer`, `suggestions`, or `suggestion_quality`.
+
+### `openrabbit labels`
+
+Fetches one PR and proposes useful labels without mutating GitHub. Proposals are based on PR title/body text, commit messages, changed paths, current PR labels, linked GitHub issue labels, repository label names when available, and local OpenRabbit review memory. Existing PR labels are skipped, and proposals that do not already exist in the repository label list are marked with `exists_in_repository: false` instead of being created.
+
+```bash
+openrabbit labels --pr 42 --repo owner/repo
+openrabbit labels --pr 42 --repo owner/repo --limit 5
+openrabbit labels --pr 42 --repo owner/repo --format json
+openrabbit --quiet labels --pr 42 --repo owner/repo
+```
+
+JSON output includes `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `proposal_count`, `label_proposals`, and `mutates_github: false` so automation can use the proposals while keeping label application manual.
 
 ### `openrabbit eval`
 

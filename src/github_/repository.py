@@ -15,6 +15,7 @@ from github_.models import (
     Branch,
     Issue,
     IssueComment,
+    Label,
     PullRequest,
     PullRequestCommit,
     PullRequestFile,
@@ -67,6 +68,9 @@ class RepositoryHandle:
 
     async def list_branches(self) -> list[Branch]:
         return await self.client.list_branches(self.owner, self.repo)
+
+    async def list_labels(self) -> list[Label]:
+        return await self.client.list_labels(self.owner, self.repo)
 
     async def list_pull_requests(
         self, *, state: PullRequestState = "open"

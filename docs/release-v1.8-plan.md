@@ -34,6 +34,7 @@ OpenRabbit v1.8 focuses on making PR interaction commands more scriptable and mo
 - OP-125 adds `ask --publish` for one managed PR answer comment plus `managed_answer` metadata for read-only and published runs.
 - OP-126 adds `ask --file ... --line ...` for focused changed-line questions with nearby diff context and `ask_focus` metadata.
 - OP-127 adds `suggestion_quality` metadata to `improve` output and regression coverage for ungrounded, vague, comment-only, and unsafe dependency suggestions.
+- OP-128 adds read-only `labels` output for PR label proposals with reasons, confidence, repository-label availability, and stable JSON.
 
 ## Scope Notes
 
