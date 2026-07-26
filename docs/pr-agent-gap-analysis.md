@@ -154,14 +154,13 @@ Recommended tasks:
 - Add webhook server mode for users who want push-based review.
 - Keep local Ollama/Qdrant dependencies explicit.
 
-### 11. Missing repo-maintenance tools
+### 11. Repository-maintenance tools are being added
 
-OpenRabbit does not yet provide equivalents for labels, changelogs, docs generation, similar issue search, or help docs.
+OpenRabbit now provides `openrabbit labels` for label proposals with opt-in existing-label application, and `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local notes. Docs generation, similar issue search, and help docs remain open gaps.
 
 Recommended tasks:
 
-- Add labels only after PR summary quality is stable.
-- Add changelog updates for release PRs.
+- Keep label and changelog mutation paths explicit and auditable.
 - Add docs generation for changed public functions/classes.
 - Add similar issue lookup after GitHub issue search is available.
 

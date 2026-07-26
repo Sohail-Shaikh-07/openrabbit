@@ -23,6 +23,11 @@ from cli.commands.ask import (
     render_answer_markdown,
     run_ask_blocking,
 )
+from cli.commands.changelog import (
+    render_changelog_draft,
+    render_changelog_draft_json,
+    run_changelog_draft_blocking,
+)
 from cli.commands.connector_health import run_connector_health_check
 from cli.commands.daemon import run_stop
 from cli.commands.describe import (
@@ -618,6 +623,85 @@ def labels_command(
         render_label_proposals_json(summary, sys.stdout)
     else:
         render_label_proposals(summary, sys.stdout)
+
+
+@app.command("changelog")
+def changelog_command(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to inspect, in owner/repo form. Overrides repository.target.",
+    ),
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help="Only include PRs merged on or after this date or ISO datetime.",
+    ),
+    until: str | None = typer.Option(
+        None,
+        "--until",
+        help="Only include PRs merged on or before this date or ISO datetime.",
+    ),
+    limit: int = typer.Option(
+        30,
+        "--limit",
+        min=1,
+        help="Maximum number of merged PRs to include in the draft.",
+    ),
+    scan_limit: int = typer.Option(
+        100,
+        "--scan-limit",
+        min=1,
+        help="Maximum number of closed PRs to scan from GitHub.",
+    ),
+    notes: list[Path] | None = typer.Option(
+        None,
+        "--notes",
+        help="Optional local release notes file to include as bounded context. Repeatable.",
+    ),
+    output_format: TextJsonOutputFormat = typer.Option(
+        TextJsonOutputFormat.TEXT,
+        "--format",
+        case_sensitive=False,
+        help="Output format: text or json.",
+    ),
+) -> None:
+    """Draft release changelog notes from merged pull requests."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        summary = run_changelog_draft_blocking(
+            settings,  # type: ignore[arg-type]
+            repo=repo,
+            workspace=workspace,
+            since=since,
+            until=until,
+            limit=limit,
+            scan_limit=scan_limit,
+            notes=notes,
+        )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except (GitHubAuthError, GitHubAPIError) as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    if output_format is TextJsonOutputFormat.JSON:
+        render_changelog_draft_json(summary, sys.stdout)
+    else:
+        render_changelog_draft(summary, sys.stdout)
 
 
 @app.command("eval")

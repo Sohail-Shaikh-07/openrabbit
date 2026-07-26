@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `labels`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `labels`, `changelog`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -513,6 +513,20 @@ openrabbit --quiet labels --pr 42 --repo owner/repo
 Use `--apply` only when you want OpenRabbit to add proposed labels that already exist in the repository. The command never creates repository labels, skips unavailable labels, and reports the result in `label_application`.
 
 JSON output includes `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `proposal_count`, `label_proposals`, `label_application`, and `mutates_github` so automation can distinguish dry runs, applied labels, skipped labels, and permission failures.
+
+### `openrabbit changelog`
+
+Drafts release changelog notes from merged pull requests without mutating files or GitHub. Entries are grouped into stable sections from PR labels such as `feature`, `bug`, `docs`, `tests`, `refactor`, and `release`. Optional local release-note files can be included as bounded, redacted context.
+
+```bash
+openrabbit changelog --repo owner/repo
+openrabbit changelog --repo owner/repo --since 2026-07-01 --until 2026-07-31
+openrabbit changelog --repo owner/repo --limit 20 --scan-limit 100
+openrabbit changelog --repo owner/repo --notes docs/release-v1.9-plan.md
+openrabbit changelog --repo owner/repo --format json
+```
+
+JSON output includes `schema_version`, `command`, `sections`, `notes`, `merged_pr_count`, `source_pr_count`, `mutates_files: false`, and `mutates_github: false` so release automation can review the draft before any manual changelog edit.
 
 ### `openrabbit eval`
 
