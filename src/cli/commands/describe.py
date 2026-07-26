@@ -1,8 +1,9 @@
 """Implementation of ``openrabbit describe --pr N``.
 
-The describe command is read-only: it fetches a pull request, optionally loads
-repository context, asks the configured model provider for a concise summary,
-and prints the result locally.
+The describe command is read-only by default: it fetches a pull request,
+optionally loads repository context, asks the configured model provider for a
+concise summary, and prints the result locally. Publishing is explicit and
+updates one OpenRabbit-managed summary comment.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from agents.prompting import (
 from cli.commands.history import load_pr_history
 from cli.commands.output import render_json
 from cli.commands.pr_summary import (
+    SUMMARY_MARKER,
     PRSummaryPublishResult,
     publish_or_update_pr_summary,
 )
@@ -204,14 +206,20 @@ async def run_describe(
             "learning_count": pr_history_result.learning_count,
             "review_status": "summary generated",
             "publish_status": "read_only",
+            "managed_summary": _managed_summary_status(enabled=False),
             "description": _serialize_description(description),
         }
         if publish:
             publisher = summary_publisher or publish_or_update_pr_summary
+            summary["managed_summary"] = _managed_summary_status(enabled=True)
             result = await publisher(handle, pr_number=payload.number, summary=summary)
             summary["publish_status"] = result.action
             summary["summary_comment_id"] = result.comment_id
             summary["summary_comment_url"] = result.html_url
+            summary["managed_summary"] = _managed_summary_status(
+                enabled=True,
+                result=result,
+            )
         return summary
     finally:
         await client.aclose()
@@ -365,6 +373,21 @@ def _serialize_description(description: PullRequestDescription) -> dict[str, obj
         "risk_areas": description.risk_areas,
         "testing_focus": description.testing_focus,
         "walkthrough": description.walkthrough,
+    }
+
+
+def _managed_summary_status(
+    *,
+    enabled: bool,
+    result: PRSummaryPublishResult | None = None,
+) -> dict[str, object]:
+    status = result.action if result is not None else "read_only"
+    return {
+        "enabled": enabled,
+        "status": status,
+        "marker": SUMMARY_MARKER,
+        "comment_id": result.comment_id if result is not None else None,
+        "comment_url": result.html_url if result is not None else None,
     }
 
 
