@@ -486,7 +486,7 @@ openrabbit --quiet ask --pr 42 --repo owner/repo "What files should I inspect fi
 
 Fetches one PR, loads indexed repository context, local PR memory, and sanitized GitHub PR conversation when available, and prints improvement suggestions for changed lines. Suggestions are grounded to changed files and changed new-side lines before they are shown. The command uses the same configured model provider as `openrabbit review`, but it never applies patches or pushes commits.
 
-By default, `improve` is read-only. Add `--publish` only when you want OpenRabbit to post grounded, actionable suggestions to the pull request. Suggestions with concrete replacement snippets become GitHub suggestion blocks on changed lines. Broader actionable suggestions are grouped into the review body, and non-actionable TODO/comment-only advice is dropped.
+By default, `improve` is read-only. Add `--publish` only when you want OpenRabbit to post grounded, actionable suggestions to the pull request. Suggestions with concrete replacement snippets become GitHub suggestion blocks on changed lines. Broader actionable suggestions are grouped into the review body, and non-actionable TODO/comment-only advice is dropped. Command summaries include `suggestion_quality` counts for raw, grounded, kept, and dropped suggestions, with drop reasons for ungrounded, vague, comment-only, TODO/FIXME, broad refactor, placeholder, and unavailable security dependency suggestions.
 
 ```bash
 openrabbit improve --pr 42 --repo owner/repo
@@ -496,7 +496,7 @@ openrabbit improve --pr 42 --repo owner/repo --format json
 openrabbit --quiet improve --pr 42 --repo owner/repo
 ```
 
-JSON output from `describe`, `ask`, and `improve` includes a top-level `schema_version` and `command` field so scripts can validate the payload before reading command-specific fields such as `description`, `answer`, or `suggestions`.
+JSON output from `describe`, `ask`, and `improve` includes a top-level `schema_version` and `command` field so scripts can validate the payload before reading command-specific fields such as `description`, `answer`, `suggestions`, or `suggestion_quality`.
 
 ### `openrabbit eval`
 
