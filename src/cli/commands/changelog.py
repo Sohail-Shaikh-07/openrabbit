@@ -9,6 +9,10 @@ from datetime import UTC, datetime, time
 from pathlib import Path
 from typing import TextIO
 
+from cli.commands.maintenance_controls import (
+    read_only_workflow_controls,
+    render_workflow_control_lines,
+)
 from cli.commands.output import render_json
 from cli.commands.start import resolve_target_repo
 from configs.settings import Settings
@@ -97,6 +101,9 @@ async def run_changelog_draft(
         "notes_loaded": len(note_sources),
         "notes": note_sources,
         "sections": sections,
+        "workflow_controls": read_only_workflow_controls(
+            required_permissions=("pull_requests:read",),
+        ),
         "mutates_files": False,
         "mutates_github": False,
     }
@@ -139,8 +146,9 @@ def render_changelog_draft(summary: dict[str, object], out: TextIO) -> None:
             file=out,
         )
     print(f"Merged PRs: {summary['merged_pr_count']}", file=out)
-    print("GitHub write: no", file=out)
-    print("File write:   no", file=out)
+    if not render_workflow_control_lines(summary, out):
+        print("GitHub write: no", file=out)
+        print("File write:   no", file=out)
 
     notes = summary.get("notes")
     if isinstance(notes, list) and notes:

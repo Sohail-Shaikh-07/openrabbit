@@ -8,6 +8,10 @@ import re
 from dataclasses import dataclass
 from typing import Any, TextIO
 
+from cli.commands.maintenance_controls import (
+    read_only_workflow_controls,
+    render_workflow_control_lines,
+)
 from cli.commands.output import render_json
 from cli.commands.start import resolve_target_repo
 from configs.settings import Settings
@@ -141,6 +145,9 @@ async def run_docs_suggestions(
         "changed_public_surface_count": _public_surface_count(payload.files),
         "suggestion_count": len(suggestions),
         "docs_suggestions": [_serialize_suggestion(suggestion) for suggestion in suggestions],
+        "workflow_controls": read_only_workflow_controls(
+            required_permissions=("pull_requests:read",),
+        ),
         "mutates_files": False,
         "mutates_github": False,
     }
@@ -172,8 +179,9 @@ def render_docs_suggestions(summary: dict[str, object], out: TextIO) -> None:
     print(f"Title:        {summary['title']}", file=out)
     print(f"Files:        {summary['files_changed']}", file=out)
     print(f"Suggestions:  {summary['suggestion_count']}", file=out)
-    print("GitHub write: no", file=out)
-    print("File write:   no", file=out)
+    if not render_workflow_control_lines(summary, out):
+        print("GitHub write: no", file=out)
+        print("File write:   no", file=out)
 
     raw_suggestions = summary.get("docs_suggestions")
     suggestions = raw_suggestions if isinstance(raw_suggestions, list) else []

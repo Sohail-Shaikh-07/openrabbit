@@ -162,6 +162,13 @@ async def test_run_similar_issues_combines_linked_search_and_memory(
     assert "#12" not in captured["q"]
     assert summary["mutates_files"] is False
     assert summary["mutates_github"] is False
+    assert summary["workflow_controls"]["mode"] == "read_only"
+    assert summary["workflow_controls"]["required_permissions"] == [
+        "pull_requests:read",
+        "issues:read",
+    ]
+    assert summary["workflow_controls"]["github"]["requested"] is False
+    assert summary["workflow_controls"]["managed_comment"]["status"] == "not_supported"
 
     results = summary["issue_results"]
     assert [item["number"] for item in results] == [12, 22]

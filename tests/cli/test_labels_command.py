@@ -157,6 +157,29 @@ async def test_run_label_proposals_returns_read_only_suggestions(scaffold_repo: 
     assert summary["memory_enabled"] is True
     assert summary["conversation_count"] == 0
     assert summary["mutates_github"] is False
+    assert summary["workflow_controls"] == {
+        "mode": "dry_run",
+        "dry_run": True,
+        "required_permissions": ["pull_requests:read", "issues:read"],
+        "github": {
+            "requested": False,
+            "mutates": False,
+            "operation": "label_application",
+            "status": "dry_run",
+        },
+        "files": {
+            "requested": False,
+            "mutates": False,
+            "operation": "none",
+            "status": "not_supported",
+        },
+        "managed_comment": {
+            "requested": False,
+            "enabled": False,
+            "operation": "none",
+            "status": "not_supported",
+        },
+    }
     assert summary["label_application"] == {
         "enabled": False,
         "status": "dry_run",
@@ -282,6 +305,19 @@ async def test_run_label_proposals_applies_existing_labels_when_requested(
 
     assert captured["json"] == {"labels": ["security", "tests", "cli", "api"]}
     assert summary["mutates_github"] is True
+    assert summary["workflow_controls"]["mode"] == "apply"
+    assert summary["workflow_controls"]["dry_run"] is False
+    assert summary["workflow_controls"]["required_permissions"] == [
+        "pull_requests:read",
+        "issues:read",
+        "issues:write",
+    ]
+    assert summary["workflow_controls"]["github"] == {
+        "requested": True,
+        "mutates": True,
+        "operation": "label_application",
+        "status": "applied",
+    }
     assert summary["label_application"] == {
         "enabled": True,
         "status": "applied",
@@ -342,6 +378,12 @@ async def test_run_label_proposals_reports_permission_failure(
     assert summary["label_application"]["status"] == "failed"
     assert summary["label_application"]["error_status_code"] == 403
     assert summary["label_application"]["failed_labels"] == ["security", "tests"]
+    assert summary["workflow_controls"]["github"] == {
+        "requested": True,
+        "mutates": False,
+        "operation": "label_application",
+        "status": "failed",
+    }
 
 
 def test_render_label_proposals_prints_sections() -> None:

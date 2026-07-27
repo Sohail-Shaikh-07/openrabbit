@@ -512,7 +512,7 @@ openrabbit --quiet labels --pr 42 --repo owner/repo
 
 Use `--apply` only when you want OpenRabbit to add proposed labels that already exist in the repository. The command never creates repository labels, skips unavailable labels, and reports the result in `label_application`.
 
-JSON output includes `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `proposal_count`, `label_proposals`, `label_application`, and `mutates_github` so automation can distinguish dry runs, applied labels, skipped labels, and permission failures.
+JSON output includes `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `proposal_count`, `label_proposals`, `label_application`, `workflow_controls`, and `mutates_github` so automation can distinguish dry runs, applied labels, skipped labels, requested permissions, and permission failures.
 
 ### `openrabbit changelog`
 
@@ -526,7 +526,7 @@ openrabbit changelog --repo owner/repo --notes docs/release-v1.9-plan.md
 openrabbit changelog --repo owner/repo --format json
 ```
 
-JSON output includes `schema_version`, `command`, `sections`, `notes`, `merged_pr_count`, `source_pr_count`, `mutates_files: false`, and `mutates_github: false` so release automation can review the draft before any manual changelog edit.
+JSON output includes `schema_version`, `command`, `sections`, `notes`, `merged_pr_count`, `source_pr_count`, `workflow_controls`, `mutates_files: false`, and `mutates_github: false` so release automation can review the draft before any manual changelog edit.
 
 ### `openrabbit docs`
 
@@ -538,7 +538,7 @@ openrabbit docs --pr 42 --repo owner/repo --limit 5
 openrabbit docs --pr 42 --repo owner/repo --format json
 ```
 
-JSON output includes `schema_version`, `command`, `changed_public_surface_count`, `suggestion_count`, `docs_suggestions`, `mutates_files: false`, and `mutates_github: false`. Each suggestion includes a target path, category, source paths, public symbols, confidence, and reason.
+JSON output includes `schema_version`, `command`, `changed_public_surface_count`, `suggestion_count`, `docs_suggestions`, `workflow_controls`, `mutates_files: false`, and `mutates_github: false`. Each suggestion includes a target path, category, source paths, public symbols, confidence, and reason.
 
 ### `openrabbit similar-issues`
 
@@ -551,7 +551,7 @@ openrabbit similar-issues --pr 42 --repo owner/repo --search-limit 20
 openrabbit similar-issues --pr 42 --repo owner/repo --format json
 ```
 
-Search is best effort. If GitHub issue search is unavailable, OpenRabbit still returns explicitly linked issues when they were loaded from the PR. JSON output includes `schema_version`, `command`, `search_query`, `search_results_loaded`, `result_count`, `issue_results`, `source_signals`, `mutates_files: false`, and `mutates_github: false`.
+Search is best effort. If GitHub issue search is unavailable, OpenRabbit still returns explicitly linked issues when they were loaded from the PR. JSON output includes `schema_version`, `command`, `search_query`, `search_results_loaded`, `result_count`, `issue_results`, `source_signals`, `workflow_controls`, `mutates_files: false`, and `mutates_github: false`.
 
 ### `openrabbit eval`
 

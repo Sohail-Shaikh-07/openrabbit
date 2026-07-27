@@ -109,6 +109,12 @@ async def test_run_changelog_draft_groups_merged_prs_and_notes(
     assert summary["merged_pr_count"] == 3
     assert summary["mutates_files"] is False
     assert summary["mutates_github"] is False
+    assert summary["workflow_controls"]["mode"] == "read_only"
+    assert summary["workflow_controls"]["dry_run"] is True
+    assert summary["workflow_controls"]["required_permissions"] == ["pull_requests:read"]
+    assert summary["workflow_controls"]["github"]["mutates"] is False
+    assert summary["workflow_controls"]["files"]["mutates"] is False
+    assert summary["workflow_controls"]["managed_comment"]["status"] == "not_supported"
     assert summary["notes_loaded"] == 1
     assert "super-secret-value" not in str(summary["notes"])
     assert "token=[REDACTED]" in summary["notes"][0]["excerpt"]

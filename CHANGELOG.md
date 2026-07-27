@@ -9,6 +9,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local release-note context.
 - Added `openrabbit docs` for read-only documentation update suggestions from changed public surfaces, source paths, and added symbols.
 - Added `openrabbit similar-issues` for read-only related issue lookup from linked issues, GitHub issue search, PR metadata, changed paths, labels, and local review memory signals.
+- Added shared `workflow_controls` metadata for repository maintenance commands so dry-run, write intent, required permissions, file writes, and managed-comment support are auditable.
 
 ## v1.8.0 - 2026-07-27
 
