@@ -8,6 +8,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added `openrabbit labels --apply` for opt-in PR label application. The default remains read-only, repository labels are never created, and JSON output reports applied, skipped, and failed labels.
 - Added `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local release-note context.
 - Added `openrabbit docs` for read-only documentation update suggestions from changed public surfaces, source paths, and added symbols.
+- Added `openrabbit similar-issues` for read-only related issue lookup from linked issues, GitHub issue search, PR metadata, changed paths, labels, and local review memory signals.
 
 ## v1.8.0 - 2026-07-27
 

@@ -82,6 +82,7 @@ _PR_REVIEWS = TypeAdapter(list[PullRequestReview])
 _PR_REVIEW_COMMENTS = TypeAdapter(list[PullRequestReviewComment])
 _ISSUE_COMMENTS = TypeAdapter(list[IssueComment])
 _LABELS = TypeAdapter(list[Label])
+_ISSUES = TypeAdapter(list[Issue])
 
 
 class GitHubClient:
@@ -263,6 +264,27 @@ class GitHubClient:
     async def get_issue(self, owner: str, repo: str, number: int) -> Issue:
         data = await self._get(f"/repos/{owner}/{repo}/issues/{number}")
         return Issue.model_validate(data)
+
+    async def search_issues(
+        self,
+        owner: str,
+        repo: str,
+        query: str,
+        *,
+        per_page: int = 20,
+    ) -> list[Issue]:
+        q = f"repo:{owner}/{repo} is:issue {query}".strip()
+        try:
+            data = await self._get(
+                "/search/issues",
+                params={"q": q, "per_page": per_page},
+            )
+        except _RetryableStatus as exc:
+            raise GitHubAPIError(exc.status_code, "issue search unavailable") from exc
+        items = data.get("items", []) if isinstance(data, dict) else []
+        if not isinstance(items, list):
+            raise GitHubAPIError(422, "expected issue search items array")
+        return _ISSUES.validate_python(items)
 
     async def list_pull_files(
         self,

@@ -94,6 +94,14 @@ class RepositoryHandle:
     async def get_issue(self, number: int) -> Issue:
         return await self.client.get_issue(self.owner, self.repo, number)
 
+    async def search_issues(self, query: str, *, per_page: int = 20) -> list[Issue]:
+        return await self.client.search_issues(
+            self.owner,
+            self.repo,
+            query,
+            per_page=per_page,
+        )
+
     async def list_pull_files(self, number: int) -> list[PullRequestFile]:
         return await self.client.list_pull_files(self.owner, self.repo, number)
 
