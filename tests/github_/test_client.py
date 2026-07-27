@@ -280,6 +280,40 @@ async def test_get_issue_returns_compact_issue_metadata() -> None:
 
 
 @respx.mock
+async def test_search_issues_wraps_repo_query_and_returns_items() -> None:
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["q"] = request.url.params["q"]
+        captured["per_page"] = request.url.params["per_page"]
+        return httpx.Response(
+            200,
+            json={
+                "total_count": 1,
+                "items": [
+                    {
+                        "number": 44,
+                        "title": "Admin export needs auth",
+                        "state": "open",
+                        "body": "Reject unauthorized exports.",
+                        "labels": [{"name": "security"}],
+                        "html_url": "https://github.com/o/r/issues/44",
+                    }
+                ],
+            },
+        )
+
+    respx.get(f"{_BASE}/search/issues").mock(side_effect=handler)
+
+    async with _client() as client:
+        issues = await client.search_issues("o", "r", "admin export in:title,body", per_page=7)
+
+    assert captured == {"q": "repo:o/r is:issue admin export in:title,body", "per_page": "7"}
+    assert [issue.number for issue in issues] == [44]
+    assert issues[0].labels[0].name == "security"
+
+
+@respx.mock
 async def test_list_labels_returns_typed_labels() -> None:
     respx.get(f"{_BASE}/repos/o/r/labels").mock(
         return_value=httpx.Response(

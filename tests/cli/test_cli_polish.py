@@ -141,6 +141,18 @@ def test_docs_command_accepts_format_option() -> None:
     assert "--format" in _plain_help(result.output)
 
 
+def test_similar_issues_command_is_listed() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "similar-issues" in result.output
+
+
+def test_similar_issues_command_accepts_format_option() -> None:
+    result = runner.invoke(app, ["similar-issues", "--help"])
+    assert result.exit_code == 0
+    assert "--format" in _plain_help(result.output)
+
+
 def test_start_command_accepts_once_option() -> None:
     result = runner.invoke(app, ["start", "--help"])
     assert result.exit_code == 0

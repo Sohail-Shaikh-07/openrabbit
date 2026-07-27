@@ -75,6 +75,11 @@ from cli.commands.memory import (
 from cli.commands.model_health import run_model_health_check_blocking
 from cli.commands.output import OutputFormat, TextJsonOutputFormat
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
+from cli.commands.similar_issues import (
+    render_similar_issues,
+    render_similar_issues_json,
+    run_similar_issues_blocking,
+)
 from cli.commands.start import StartError, run_start_blocking
 from configs import ConfigNotFoundError, load_settings
 from github_ import GitHubAPIError, GitHubAuthError
@@ -762,6 +767,68 @@ def docs_command(
         render_docs_suggestions_json(summary, sys.stdout)
     else:
         render_docs_suggestions(summary, sys.stdout)
+
+
+@app.command("similar-issues")
+def similar_issues_command(
+    pr: int = typer.Option(..., "--pr", help="Pull request number to inspect."),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Repository to inspect, in owner/repo form. Overrides repository.target.",
+    ),
+    limit: int = typer.Option(
+        8,
+        "--limit",
+        min=1,
+        help="Maximum number of similar issues to print.",
+    ),
+    search_limit: int = typer.Option(
+        20,
+        "--search-limit",
+        min=1,
+        help="Maximum number of GitHub issue search results to inspect.",
+    ),
+    output_format: TextJsonOutputFormat = typer.Option(
+        TextJsonOutputFormat.TEXT,
+        "--format",
+        case_sensitive=False,
+        help="Output format: text or json.",
+    ),
+) -> None:
+    """Find similar GitHub issues for a pull request without writing to GitHub."""
+    workspace = workspace.resolve()
+    settings = _load_settings_or_exit(workspace)
+    try:
+        summary = run_similar_issues_blocking(
+            settings,  # type: ignore[arg-type]
+            number=pr,
+            repo=repo,
+            limit=limit,
+            search_limit=search_limit,
+        )
+    except ValueError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except StartError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    except (GitHubAuthError, GitHubAPIError) as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+    import sys
+
+    if output_format is TextJsonOutputFormat.JSON:
+        render_similar_issues_json(summary, sys.stdout)
+    else:
+        render_similar_issues(summary, sys.stdout)
 
 
 @app.command("eval")

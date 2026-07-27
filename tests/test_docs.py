@@ -248,6 +248,7 @@ def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
         "stable json",
         "openrabbit changelog",
         "openrabbit docs",
+        "openrabbit similar-issues",
         "op-132",
         "op-140",
     ):
@@ -255,6 +256,7 @@ def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
     assert "release-v1.9-plan.md" in gap
     assert "openrabbit changelog" in gap
     assert "openrabbit docs" in gap
+    assert "openrabbit similar-issues" in gap
 
 
 def test_readme_documents_changelog_command() -> None:
@@ -278,6 +280,21 @@ def test_readme_documents_docs_command() -> None:
         "documentation follow-ups",
         "changed_public_surface_count",
         "docs_suggestions",
+        "mutates_files: false",
+        "mutates_github: false",
+    ):
+        assert claim in readme
+
+
+def test_readme_documents_similar_issues_command() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "openrabbit similar-issues",
+        "github issue search",
+        "search_results_loaded",
+        "issue_results",
+        "source_signals",
         "mutates_files: false",
         "mutates_github: false",
     ):

@@ -31,6 +31,7 @@ OpenRabbit v1.9 focuses on repository maintenance automation after the v1.8 inte
 - OP-133 adds an explicit `openrabbit labels --apply` path that applies only existing repository labels, keeps dry-run as the default, and reports applied, skipped, and failed labels in JSON.
 - OP-134 adds a read-only `openrabbit changelog` assistant that drafts release notes from merged PRs, labels, and bounded local notes with stable JSON output.
 - OP-135 adds a read-only `openrabbit docs` assistant that suggests README, docs, and example updates from changed public surfaces with stable JSON output.
+- OP-136 adds a read-only `openrabbit similar-issues` command that combines linked GitHub issues, issue search, PR metadata, changed paths, labels, and local memory categories into source-labeled results.
 
 ## Scope Notes
 

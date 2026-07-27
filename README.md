@@ -8,7 +8,7 @@ The core trade-off is privacy and ownership: source code is reviewed on your lap
 
 | Area | Current capability |
 | --- | --- |
-| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `labels`, `changelog`, `docs`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
+| CLI | `init`, `index`, `model-health`, `connector-health`, `review`, `describe`, `ask`, `improve`, `labels`, `changelog`, `docs`, `similar-issues`, `eval`, `start`, `install-model`, `--quiet`, `--verbose`, `--version` |
 | Configuration | Built-in defaults, `~/.openrabbit/config.yml`, repo `.openrabbit/config.yml`, `OPENRABBIT_...` environment overrides, Windows persistent env fallback for GitHub tokens |
 | GitHub | PAT auth, repository handles, PR metadata, linked issue context, commits, changed files, hunks, binary-file handling |
 | Model layer | Shared provider contract for Ollama, official OpenAI, and OpenAI-compatible chat completions endpoints |
@@ -539,6 +539,19 @@ openrabbit docs --pr 42 --repo owner/repo --format json
 ```
 
 JSON output includes `schema_version`, `command`, `changed_public_surface_count`, `suggestion_count`, `docs_suggestions`, `mutates_files: false`, and `mutates_github: false`. Each suggestion includes a target path, category, source paths, public symbols, confidence, and reason.
+
+### `openrabbit similar-issues`
+
+Finds related GitHub issues for a pull request without posting comments, editing files, or mutating GitHub. The command combines linked issue context, bounded PR metadata, changed paths, labels, GitHub issue search results, and local review memory categories into source-labeled results.
+
+```bash
+openrabbit similar-issues --pr 42 --repo owner/repo
+openrabbit similar-issues --pr 42 --repo owner/repo --limit 5
+openrabbit similar-issues --pr 42 --repo owner/repo --search-limit 20
+openrabbit similar-issues --pr 42 --repo owner/repo --format json
+```
+
+Search is best effort. If GitHub issue search is unavailable, OpenRabbit still returns explicitly linked issues when they were loaded from the PR. JSON output includes `schema_version`, `command`, `search_query`, `search_results_loaded`, `result_count`, `issue_results`, `source_signals`, `mutates_files: false`, and `mutates_github: false`.
 
 ### `openrabbit eval`
 
