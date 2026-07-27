@@ -106,6 +106,10 @@ async def test_run_docs_suggestions_returns_read_only_suggestions(
     assert summary["changed_public_surface_count"] == 2
     assert summary["mutates_files"] is False
     assert summary["mutates_github"] is False
+    assert summary["workflow_controls"]["mode"] == "read_only"
+    assert summary["workflow_controls"]["required_permissions"] == ["pull_requests:read"]
+    assert summary["workflow_controls"]["files"]["status"] == "not_supported"
+    assert summary["workflow_controls"]["managed_comment"]["status"] == "not_supported"
 
     suggestions = summary["docs_suggestions"]
     target_paths = [item["target_path"] for item in suggestions]

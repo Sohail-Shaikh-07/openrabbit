@@ -249,6 +249,7 @@ def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
         "openrabbit changelog",
         "openrabbit docs",
         "openrabbit similar-issues",
+        "workflow_controls",
         "op-132",
         "op-140",
     ):
@@ -265,6 +266,7 @@ def test_readme_documents_changelog_command() -> None:
     for claim in (
         "openrabbit changelog",
         "merged pull requests",
+        "workflow_controls",
         "mutates_files: false",
         "mutates_github: false",
         "--notes docs/release-v1.9-plan.md",
@@ -280,6 +282,7 @@ def test_readme_documents_docs_command() -> None:
         "documentation follow-ups",
         "changed_public_surface_count",
         "docs_suggestions",
+        "workflow_controls",
         "mutates_files: false",
         "mutates_github: false",
     ):
@@ -295,6 +298,7 @@ def test_readme_documents_similar_issues_command() -> None:
         "search_results_loaded",
         "issue_results",
         "source_signals",
+        "workflow_controls",
         "mutates_files: false",
         "mutates_github: false",
     ):
@@ -316,6 +320,7 @@ def test_interactive_pr_workflow_guide_documents_commands_and_boundaries() -> No
         "managed_answer",
         "ask_focus",
         "suggestion_quality",
+        "workflow_controls",
         "mutates_github",
         "label_application",
         "line-level ask",

@@ -8,6 +8,10 @@ from dataclasses import dataclass, field
 from typing import Any, TextIO
 
 from cli.commands.history import load_pr_history
+from cli.commands.maintenance_controls import (
+    build_workflow_controls,
+    render_workflow_control_lines,
+)
 from cli.commands.output import render_json
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -150,6 +154,14 @@ async def run_label_proposals(
             "proposal_count": len(proposals),
             "label_proposals": [_serialize_proposal(proposal) for proposal in proposals],
             "label_application": application,
+            "workflow_controls": build_workflow_controls(
+                mode="apply" if apply else "dry_run",
+                required_permissions=_label_permissions(apply=apply),
+                github_write_requested=apply,
+                github_write_operation="label_application",
+                github_write_status=str(application["status"]),
+                mutates_github=application["status"] == "applied",
+            ),
             "mutates_github": application["status"] == "applied",
         }
     finally:
@@ -193,10 +205,11 @@ def render_label_proposals(summary: dict[str, object], out: TextIO) -> None:
     print(f"  Existing:     {_format_labels(summary.get('current_labels'))}", file=out)
     print(f"  Proposals:    {summary['proposal_count']}", file=out)
     application = _label_application(summary)
-    if application.get("enabled") is True:
-        print(f"  GitHub write: {application.get('status', 'requested')}", file=out)
-    else:
-        print("  GitHub write: no", file=out)
+    if not render_workflow_control_lines(summary, out):
+        if application.get("enabled") is True:
+            print(f"  GitHub write: {application.get('status', 'requested')}", file=out)
+        else:
+            print("  GitHub write: no", file=out)
 
     raw_proposals = summary.get("label_proposals")
     proposals = raw_proposals if isinstance(raw_proposals, list) else []
@@ -490,6 +503,13 @@ def _serialize_proposal(proposal: LabelProposal) -> dict[str, object]:
         "signals": proposal.signals,
         "exists_in_repository": proposal.exists_in_repository,
     }
+
+
+def _label_permissions(*, apply: bool) -> tuple[str, ...]:
+    permissions = ["pull_requests:read", "issues:read"]
+    if apply:
+        permissions.append("issues:write")
+    return tuple(permissions)
 
 
 def _format_labels(value: object) -> str:

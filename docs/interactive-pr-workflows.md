@@ -12,7 +12,7 @@ polling comment command that maps to a managed OpenRabbit comment.
 | `openrabbit describe` | Read-only PR summary and walkthrough | `--publish` creates or updates one managed summary comment | `schema_version`, `command`, `description`, `managed_summary`, `publish_status`, `context_diagnostics` |
 | `openrabbit ask` | Read-only answer to one PR question | `--publish` creates or updates one managed answer comment | `schema_version`, `command`, `answer`, `ask_focus`, `managed_answer`, `publish_status`, `context_diagnostics` |
 | `openrabbit improve` | Read-only changed-line improvement suggestions | `--publish` posts grounded suggestions to a PR review | `schema_version`, `command`, `suggestions`, `suggestion_quality`, `publish_status`, `context_diagnostics` |
-| `openrabbit labels` | Read-only label proposals | `--apply` adds proposed labels that already exist in the repository | `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `label_proposals`, `label_application`, `mutates_github` |
+| `openrabbit labels` | Read-only label proposals | `--apply` adds proposed labels that already exist in the repository | `schema_version`, `command`, `current_labels`, `repository_labels_loaded`, `label_proposals`, `label_application`, `workflow_controls`, `mutates_github` |
 
 `review` remains the main review command. This guide focuses on the interactive
 commands that help maintainers inspect, ask, improve, and triage a pull request.
@@ -120,6 +120,12 @@ JSON output includes `label_application` with the dry-run, applied, skipped, or
 failed status. Permission failures are reported there instead of hiding which
 labels were requested.
 
+Maintenance command JSON also includes `workflow_controls`. This shared object
+reports the mode, dry-run state, required permissions, GitHub write request and
+status, file-write status, and managed-comment status. Changelog, docs, and
+similar-issues use read-only controls. `labels --apply` is the only maintenance
+command in this group that requests a GitHub write.
+
 ## PR Comment Commands
 
 When `openrabbit start` is running, maintainers can trigger workflows from PR
@@ -166,6 +172,9 @@ selected command. It keeps publishing opt-in through the workflow input.
 - `describe`, `ask`, `improve`, and `labels` are read-only by default.
 - `labels --apply` is the only label write mode and only applies labels that
   already exist in the repository.
+- Maintenance commands expose `workflow_controls` so automation can inspect
+  mode, requested permissions, write status, and managed-comment support before
+  trusting any mutation.
 - `improve --publish` only posts grounded, actionable suggestions.
 - `describe --publish` and `ask --publish` update one managed comment each.
 - Connector snippets remain optional, bounded, source-labeled, and untrusted.

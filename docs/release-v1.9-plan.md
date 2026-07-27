@@ -32,6 +32,7 @@ OpenRabbit v1.9 focuses on repository maintenance automation after the v1.8 inte
 - OP-134 adds a read-only `openrabbit changelog` assistant that drafts release notes from merged PRs, labels, and bounded local notes with stable JSON output.
 - OP-135 adds a read-only `openrabbit docs` assistant that suggests README, docs, and example updates from changed public surfaces with stable JSON output.
 - OP-136 adds a read-only `openrabbit similar-issues` command that combines linked GitHub issues, issue search, PR metadata, changed paths, labels, and local memory categories into source-labeled results.
+- OP-137 adds shared `workflow_controls` metadata for repository maintenance commands so dry-run, write intent, required permissions, file writes, and managed-comment support are explicit.
 
 ## Scope Notes
 

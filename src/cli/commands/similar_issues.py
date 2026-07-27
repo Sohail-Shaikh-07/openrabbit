@@ -8,6 +8,10 @@ from dataclasses import dataclass, field
 from typing import Any, TextIO
 
 from cli.commands.history import load_pr_history
+from cli.commands.maintenance_controls import (
+    read_only_workflow_controls,
+    render_workflow_control_lines,
+)
 from cli.commands.output import render_json
 from cli.commands.start import resolve_target_repo
 from cli.logging import get_logger
@@ -143,6 +147,9 @@ async def run_similar_issues(
             "search_error": search_error,
             "result_count": len(results),
             "issue_results": [_serialize_candidate(candidate) for candidate in results],
+            "workflow_controls": read_only_workflow_controls(
+                required_permissions=("pull_requests:read", "issues:read"),
+            ),
             "mutates_files": False,
             "mutates_github": False,
         }
@@ -178,7 +185,8 @@ def render_similar_issues(summary: dict[str, object], out: TextIO) -> None:
     print(f"Title:        {summary['title']}", file=out)
     print(f"Linked:       {summary['linked_issue_count']}", file=out)
     print(f"Results:      {summary['result_count']}", file=out)
-    print("GitHub write: no", file=out)
+    if not render_workflow_control_lines(summary, out):
+        print("GitHub write: no", file=out)
     if summary.get("search_results_loaded") is False:
         print(f"Search:       failed ({summary.get('search_error', '')})", file=out)
     else:
