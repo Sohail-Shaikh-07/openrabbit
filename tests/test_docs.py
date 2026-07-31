@@ -430,3 +430,25 @@ def test_maintenance_github_actions_example_documents_manual_commands() -> None:
 
     assert "openrabbit-maintenance.yml" in actions_doc
     assert "workflow_controls" in actions_doc
+
+
+def test_v1_9_release_notes_document_release_scope() -> None:
+    notes = (ROOT / "docs" / "release-v1.9.0.md").read_text(encoding="ascii").lower()
+    archive = (ROOT / "changelog" / "v1.9.0.txt").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "openrabbit v1.9.0",
+        "repository maintenance automation",
+        "openrabbit labels --apply",
+        "openrabbit changelog",
+        "openrabbit docs",
+        "openrabbit similar-issues",
+        "workflow_controls",
+        "maintenance commands do not call a model",
+        "package version is `1.9.0`",
+        "`v1.9.0` tag matches the package version",
+    ):
+        assert claim in notes
+
+    assert "repository maintenance automation" in archive
+    assert "package version is `1.9.0`" in archive
