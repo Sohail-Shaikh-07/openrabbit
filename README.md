@@ -663,7 +663,9 @@ Copy `.env.example` to `.env` if you want compose to pass a GitHub token or a cu
 
 ## GitHub Actions
 
-Use [docs/github-actions.md](docs/github-actions.md) for self-hosted or configured-runner workflow recipes. Copyable examples live at [examples/github-actions/openrabbit-review.yml](examples/github-actions/openrabbit-review.yml) for automatic review and [examples/github-actions/openrabbit-interactive.yml](examples/github-actions/openrabbit-interactive.yml) for manual describe, ask, improve, and labels runs.
+Use [docs/github-actions.md](docs/github-actions.md) for self-hosted or configured-runner workflow recipes. Copyable examples live at [examples/github-actions/openrabbit-review.yml](examples/github-actions/openrabbit-review.yml) for automatic review, [examples/github-actions/openrabbit-interactive.yml](examples/github-actions/openrabbit-interactive.yml) for manual describe, ask, improve, and labels runs, and [examples/github-actions/openrabbit-maintenance.yml](examples/github-actions/openrabbit-maintenance.yml) for manual labels, changelog, docs, and similar issue maintenance runs.
+
+For command recipes, permissions, dry-run behavior, privacy boundaries, and troubleshooting, see [docs/maintenance-automation.md](docs/maintenance-automation.md).
 
 ## Repository Layout
 

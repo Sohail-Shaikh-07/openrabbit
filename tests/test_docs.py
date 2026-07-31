@@ -308,6 +308,39 @@ def test_readme_documents_similar_issues_command() -> None:
         assert claim in readme
 
 
+def test_readme_links_to_maintenance_automation_guide() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="ascii")
+
+    assert "[docs/maintenance-automation.md](docs/maintenance-automation.md)" in readme
+    assert "openrabbit-maintenance.yml" in readme
+
+
+def test_maintenance_automation_guide_documents_boundaries() -> None:
+    guide = (ROOT / "docs" / "maintenance-automation.md").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "repository maintenance automation",
+        "openrabbit labels",
+        "openrabbit changelog",
+        "openrabbit docs",
+        "openrabbit similar-issues",
+        "labels --apply",
+        "do not call a model",
+        "workflow_controls",
+        "mutates_github",
+        "mutates_files",
+        "pull_requests:read",
+        "issues:write",
+        "permission_failed",
+        "not_in_repository",
+        "github actions",
+        "openrabbit-maintenance.yml",
+        "privacy boundaries",
+        "troubleshooting",
+    ):
+        assert claim in guide
+
+
 def test_interactive_pr_workflow_guide_documents_commands_and_boundaries() -> None:
     guide = (ROOT / "docs" / "interactive-pr-workflows.md").read_text(encoding="ascii").lower()
     readme = (ROOT / "README.md").read_text(encoding="ascii")
@@ -330,6 +363,7 @@ def test_interactive_pr_workflow_guide_documents_commands_and_boundaries() -> No
         "read-only by default",
         "labels --apply",
         "examples/github-actions/openrabbit-interactive.yml",
+        "examples/github-actions/openrabbit-maintenance.yml",
         "/openrabbit review",
         "/openrabbit summary",
     ):
@@ -365,3 +399,34 @@ def test_interactive_github_actions_example_documents_manual_commands() -> None:
 
     assert "openrabbit-interactive.yml" in actions_doc
     assert "labels --apply" in actions_doc
+
+
+def test_maintenance_github_actions_example_documents_manual_commands() -> None:
+    workflow = (ROOT / "examples" / "github-actions" / "openrabbit-maintenance.yml").read_text(
+        encoding="ascii"
+    )
+    actions_doc = (ROOT / "docs" / "github-actions.md").read_text(encoding="ascii")
+
+    for claim in (
+        "workflow_dispatch",
+        "command:",
+        "- labels",
+        "- changelog",
+        "- docs",
+        "- similar-issues",
+        "apply_labels:",
+        "issues: write",
+        "pull-requests: read",
+        "args=(labels",
+        "args=(changelog",
+        "openrabbit docs",
+        "openrabbit similar-issues",
+        "--apply",
+        "--notes",
+        "--scan-limit",
+        "require_pr",
+    ):
+        assert claim in workflow
+
+    assert "openrabbit-maintenance.yml" in actions_doc
+    assert "workflow_controls" in actions_doc

@@ -1,0 +1,167 @@
+name: OpenRabbit maintenance commands
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Maintenance command to run
+        required: true
+        default: labels
+        type: choice
+        options:
+          - labels
+          - changelog
+          - docs
+          - similar-issues
+      pr:
+        description: Pull request number for labels, docs, and similar-issues
+        required: false
+      apply_labels:
+        description: Apply proposed labels that already exist in the repository
+        required: false
+        default: false
+        type: boolean
+      since:
+        description: Start date for changelog, YYYY-MM-DD
+        required: false
+      until:
+        description: End date for changelog, YYYY-MM-DD
+        required: false
+      notes:
+        description: Optional local release-note file for changelog context
+        required: false
+      limit:
+        description: Maximum result count for the selected command
+        required: false
+        default: "10"
+      scan_limit:
+        description: Maximum merged pull requests to scan for changelog
+        required: false
+        default: "100"
+      output_format:
+        description: Output format
+        required: false
+        default: json
+        type: choice
+        options:
+          - json
+          - text
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: openrabbit-maintenance-${{ github.repository }}-${{ inputs.command }}-${{ inputs.pr || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  OPENRABBIT_REF: "main"
+  OPENRABBIT_GITHUB__TOKEN: ${{ github.token }}
+
+jobs:
+  maintenance:
+    name: Run OpenRabbit maintenance command
+    runs-on: [self-hosted, linux, openrabbit]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install OpenRabbit
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "openrabbit @ git+https://github.com/Sohail-Shaikh-07/openrabbit.git@${OPENRABBIT_REF}"
+
+      - name: Prepare OpenRabbit config
+        shell: bash
+        run: |
+          if [ ! -f ".openrabbit/config.yml" ]; then
+            mkdir -p .openrabbit
+            cat > .openrabbit/config.yml <<'YAML'
+          review:
+            security: true
+            performance: true
+            architecture: true
+            bug: true
+            test_coverage: true
+            style: false
+
+          model:
+            provider: ollama
+            model_name: qwen2.5-coder:7b
+            base_model: qwen2.5-coder:7b
+
+          github:
+            token_env: GITHUB_TOKEN
+
+          repository:
+            target:
+          YAML
+          fi
+
+      - name: Run selected maintenance command
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENRABBIT_COMMAND: ${{ inputs.command }}
+          OPENRABBIT_PR: ${{ inputs.pr }}
+          OPENRABBIT_APPLY_LABELS: ${{ inputs.apply_labels }}
+          OPENRABBIT_SINCE: ${{ inputs.since }}
+          OPENRABBIT_UNTIL: ${{ inputs.until }}
+          OPENRABBIT_NOTES: ${{ inputs.notes }}
+          OPENRABBIT_LIMIT: ${{ inputs.limit }}
+          OPENRABBIT_SCAN_LIMIT: ${{ inputs.scan_limit }}
+          OPENRABBIT_OUTPUT_FORMAT: ${{ inputs.output_format }}
+        run: |
+          set -euo pipefail
+
+          require_pr() {
+            if [ -z "$OPENRABBIT_PR" ]; then
+              echo "Input 'pr' is required for $OPENRABBIT_COMMAND." >&2
+              exit 2
+            fi
+          }
+
+          case "$OPENRABBIT_COMMAND" in
+            labels)
+              require_pr
+              args=(labels --pr "$OPENRABBIT_PR" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT" --limit "$OPENRABBIT_LIMIT")
+              if [ "$OPENRABBIT_APPLY_LABELS" = "true" ]; then
+                args+=(--apply)
+              fi
+              openrabbit "${args[@]}"
+              ;;
+            changelog)
+              args=(changelog --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT" --limit "$OPENRABBIT_LIMIT" --scan-limit "$OPENRABBIT_SCAN_LIMIT")
+              if [ -n "$OPENRABBIT_SINCE" ]; then
+                args+=(--since "$OPENRABBIT_SINCE")
+              fi
+              if [ -n "$OPENRABBIT_UNTIL" ]; then
+                args+=(--until "$OPENRABBIT_UNTIL")
+              fi
+              if [ -n "$OPENRABBIT_NOTES" ]; then
+                args+=(--notes "$OPENRABBIT_NOTES")
+              fi
+              openrabbit "${args[@]}"
+              ;;
+            docs)
+              require_pr
+              openrabbit docs --pr "$OPENRABBIT_PR" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT" --limit "$OPENRABBIT_LIMIT"
+              ;;
+            similar-issues)
+              require_pr
+              openrabbit similar-issues --pr "$OPENRABBIT_PR" --repo "${{ github.repository }}" --format "$OPENRABBIT_OUTPUT_FORMAT" --limit "$OPENRABBIT_LIMIT"
+              ;;
+            *)
+              echo "Unsupported OpenRabbit maintenance command: $OPENRABBIT_COMMAND" >&2
+              exit 2
+              ;;
+          esac
