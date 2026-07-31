@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import httpx
@@ -38,7 +39,16 @@ def _pr_json() -> dict[str, object]:
     }
 
 
-def _mock_pr() -> None:
+def _mock_pr(
+    *,
+    cli_patch: str = (
+        "@@ -0,0 +1,5 @@\n"
+        "+def run_changelog_draft():\n"
+        "+    pass\n"
+        "+class ChangelogEntry:\n"
+        "+    pass\n"
+    ),
+) -> None:
     respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(return_value=httpx.Response(200, json=_pr_json()))
     respx.get(f"{_BASE}/repos/o/r/pulls/42/files").mock(
         return_value=httpx.Response(
@@ -50,13 +60,7 @@ def _mock_pr() -> None:
                     "additions": 30,
                     "deletions": 0,
                     "changes": 30,
-                    "patch": (
-                        "@@ -0,0 +1,5 @@\n"
-                        "+def run_changelog_draft():\n"
-                        "+    pass\n"
-                        "+class ChangelogEntry:\n"
-                        "+    pass\n"
-                    ),
+                    "patch": cli_patch,
                 },
                 {
                     "filename": "examples/github-actions/openrabbit-interactive.yml",
@@ -136,6 +140,33 @@ async def test_run_docs_suggestions_respects_limit(scaffold_repo: Path) -> None:
 
     assert summary["suggestion_count"] == 1
     assert len(summary["docs_suggestions"]) == 1
+
+
+@respx.mock
+async def test_run_docs_suggestions_does_not_echo_patch_secrets(scaffold_repo: Path) -> None:
+    secret = "sk-abcdefghijklmnopqrstuvwxyz123456"
+    _mock_pr(
+        cli_patch=(
+            "@@ -0,0 +1,5 @@\n"
+            "+def run_docs_command():\n"
+            "+    token = 'sk-abcdefghijklmnopqrstuvwxyz123456'\n"
+            "+    return token\n"
+        )
+    )
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_docs_suggestions(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+    )
+
+    payload = json.dumps(summary, sort_keys=True)
+    assert secret not in payload
+    assert "run_docs_command" in payload
+    assert summary["mutates_files"] is False
+    assert summary["workflow_controls"]["files"]["mutates"] is False
 
 
 def test_render_docs_suggestions_prints_sections() -> None:

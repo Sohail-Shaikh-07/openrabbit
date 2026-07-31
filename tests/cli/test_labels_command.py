@@ -279,6 +279,9 @@ async def test_run_label_proposals_applies_existing_labels_when_requested(
     _mock_pr()
     _mock_repo_labels()
     captured: dict[str, object] = {}
+    create_label_route = respx.post(f"{_BASE}/repos/o/r/labels").mock(
+        return_value=httpx.Response(201, json={"name": "enhancement"})
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["json"] = json.loads(request.content.decode())
@@ -304,6 +307,7 @@ async def test_run_label_proposals_applies_existing_labels_when_requested(
     )
 
     assert captured["json"] == {"labels": ["security", "tests", "cli", "api"]}
+    assert create_label_route.called is False
     assert summary["mutates_github"] is True
     assert summary["workflow_controls"]["mode"] == "apply"
     assert summary["workflow_controls"]["dry_run"] is False

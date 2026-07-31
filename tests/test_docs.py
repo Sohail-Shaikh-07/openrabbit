@@ -251,7 +251,10 @@ def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
         "openrabbit similar-issues",
         "workflow_controls",
         "op-132",
+        "op-138",
         "op-140",
+        "privacy redaction",
+        "permission failures",
     ):
         assert claim in plan
     assert "release-v1.9-plan.md" in gap
