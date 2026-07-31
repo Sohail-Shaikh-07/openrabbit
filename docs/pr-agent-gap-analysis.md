@@ -149,6 +149,8 @@ Recommended tasks:
 
 OpenRabbit is local-first, and it now includes a self-hosted GitHub Actions recipe. PR-Agent still has a more mature hosted app and webhook/server story.
 
+The v1.10 planning track now targets an optional self-hosted webhook/server mode. The plan keeps polling and GitHub Actions intact while adding signature-verified GitHub webhook delivery, shared command dispatch, local delivery state, and deployment docs.
+
 Recommended tasks:
 
 - Add webhook server mode for users who want push-based review.
@@ -188,7 +190,7 @@ Recommended tasks:
 | P2 | Add layered config | Important for teams and repeated use |
 | P3 | Labels, changelog, docs, similar issues | Valuable after the core review loop is reliable |
 
-The v1.7 planning track is captured in [OpenRabbit v1.7 Context Precision Plan](release-v1.7-plan.md). The v1.8 planning track is captured in [OpenRabbit v1.8 Interactive PR Workflow Plan](release-v1.8-plan.md). The next v1.9 planning track is captured in [OpenRabbit v1.9 Repository Maintenance Automation Plan](release-v1.9-plan.md), with user-facing recipes in [Repository Maintenance Automation](maintenance-automation.md).
+The v1.7 planning track is captured in [OpenRabbit v1.7 Context Precision Plan](release-v1.7-plan.md). The v1.8 planning track is captured in [OpenRabbit v1.8 Interactive PR Workflow Plan](release-v1.8-plan.md). The v1.9 planning track is captured in [OpenRabbit v1.9 Repository Maintenance Automation Plan](release-v1.9-plan.md), with user-facing recipes in [Repository Maintenance Automation](maintenance-automation.md). The next v1.10 planning track is captured in [OpenRabbit v1.10 Webhook And Server Mode Plan](release-v1.10-plan.md).
 
 ## OpenRabbit Differentiators To Preserve
 

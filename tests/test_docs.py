@@ -263,6 +263,30 @@ def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
     assert "openrabbit similar-issues" in gap
 
 
+def test_v1_10_webhook_server_plan_documents_release_scope() -> None:
+    plan = (ROOT / "docs" / "release-v1.10-plan.md").read_text(encoding="ascii").lower()
+    gap = (ROOT / "docs" / "pr-agent-gap-analysis.md").read_text(encoding="ascii").lower()
+
+    for claim in (
+        "webhook and server mode",
+        "optional self-hosted github webhook",
+        "signature verification",
+        "fastapi server entrypoint",
+        "shared command dispatch",
+        "delivery state and idempotency",
+        "openrabbit server",
+        "payload bounds",
+        "polling compatibility",
+        "op-141",
+        "op-148",
+    ):
+        assert claim in plan
+
+    assert "release-v1.10-plan.md" in gap
+    assert "webhook/server mode" in gap
+    assert "signature-verified github webhook delivery" in gap
+
+
 def test_readme_documents_changelog_command() -> None:
     readme = (ROOT / "README.md").read_text(encoding="ascii").lower()
 
