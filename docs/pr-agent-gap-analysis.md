@@ -156,12 +156,12 @@ Recommended tasks:
 
 ### 11. Repository-maintenance tools are being added
 
-OpenRabbit now provides `openrabbit labels` for label proposals with opt-in existing-label application, `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local notes, `openrabbit docs` for read-only documentation update suggestions from changed public surfaces, and `openrabbit similar-issues` for read-only related issue lookup with source-labeled results. Help docs remain an open gap.
+OpenRabbit now provides `openrabbit labels` for label proposals with opt-in existing-label application, `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local notes, `openrabbit docs` for read-only documentation update suggestions from changed public surfaces, and `openrabbit similar-issues` for read-only related issue lookup with source-labeled results. The maintenance automation guide adds command recipes, permission boundaries, GitHub Actions usage, and troubleshooting.
 
 Recommended tasks:
 
 - Keep label, changelog, documentation, and similar issue mutation paths explicit and auditable.
-- Add help docs for maintenance command recipes.
+- Expand maintenance help docs as new apply or publish modes are added.
 
 ### 12. Quality evidence now has a local PR test log
 
@@ -188,7 +188,7 @@ Recommended tasks:
 | P2 | Add layered config | Important for teams and repeated use |
 | P3 | Labels, changelog, docs, similar issues | Valuable after the core review loop is reliable |
 
-The v1.7 planning track is captured in [OpenRabbit v1.7 Context Precision Plan](release-v1.7-plan.md). The v1.8 planning track is captured in [OpenRabbit v1.8 Interactive PR Workflow Plan](release-v1.8-plan.md). The next v1.9 planning track is captured in [OpenRabbit v1.9 Repository Maintenance Automation Plan](release-v1.9-plan.md).
+The v1.7 planning track is captured in [OpenRabbit v1.7 Context Precision Plan](release-v1.7-plan.md). The v1.8 planning track is captured in [OpenRabbit v1.8 Interactive PR Workflow Plan](release-v1.8-plan.md). The next v1.9 planning track is captured in [OpenRabbit v1.9 Repository Maintenance Automation Plan](release-v1.9-plan.md), with user-facing recipes in [Repository Maintenance Automation](maintenance-automation.md).
 
 ## OpenRabbit Differentiators To Preserve
 

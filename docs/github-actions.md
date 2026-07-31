@@ -147,6 +147,20 @@ The interactive example accepts:
 
 Keep `publish` false for first runs. Turn it on only when you want `describe` or `ask` to update their managed comments, `improve` to post grounded suggestions, or `labels` to apply proposed labels that already exist in the repository.
 
+## Maintenance Workflow Dispatch
+
+Use [examples/github-actions/openrabbit-maintenance.yml](../examples/github-actions/openrabbit-maintenance.yml) when maintainers want a manual Actions button for repository maintenance commands.
+
+The maintenance example accepts:
+
+- `command`: one of `labels`, `changelog`, `docs`, or `similar-issues`.
+- `pr`: required for `labels`, `docs`, and `similar-issues`.
+- `apply_labels`: maps to `labels --apply` and only applies labels that already exist in the repository.
+- `since`, `until`, `notes`, and `scan_limit`: changelog inputs.
+- `limit` and `output_format`: shared output controls.
+
+The workflow declares `issues: write` because it can run `labels --apply`. Remove that permission if you only keep read-only maintenance commands. See [docs/maintenance-automation.md](maintenance-automation.md) for command recipes, `workflow_controls`, permissions, privacy boundaries, and troubleshooting.
+
 ## Repository Context
 
 If Qdrant is available on the runner, index before review:

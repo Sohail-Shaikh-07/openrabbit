@@ -34,6 +34,7 @@ OpenRabbit v1.9 focuses on repository maintenance automation after the v1.8 inte
 - OP-136 adds a read-only `openrabbit similar-issues` command that combines linked GitHub issues, issue search, PR metadata, changed paths, labels, and local memory categories into source-labeled results.
 - OP-137 adds shared `workflow_controls` metadata for repository maintenance commands so dry-run, write intent, required permissions, file writes, and managed-comment support are explicit.
 - OP-138 adds security and regression coverage for maintenance automation mutation boundaries, privacy redaction, bounded outputs, permission failures, and workflow-control metadata.
+- OP-139 adds a maintenance automation guide and manual GitHub Actions example for labels, changelog, docs, and similar issue workflows.
 
 ## Scope Notes
 

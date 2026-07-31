@@ -163,6 +163,13 @@ summaries, questions, improvement suggestions, or labels:
 examples/github-actions/openrabbit-interactive.yml
 ```
 
+Use the maintenance workflow when you want a manual Actions button for labels,
+changelog drafts, documentation suggestions, or similar issue lookup:
+
+```text
+examples/github-actions/openrabbit-maintenance.yml
+```
+
 The interactive example uses `workflow_dispatch`, resolves the requested PR
 number, installs OpenRabbit, prepares a minimal config when needed, and runs one
 selected command. It keeps publishing opt-in through the workflow input.
