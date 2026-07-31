@@ -41,7 +41,11 @@ def _pr_json(*, body: str = "Fixes #12. Harden admin export auth.") -> dict[str,
     }
 
 
-def _mock_pr(*, body: str = "Fixes #12. Harden admin export auth.") -> None:
+def _mock_pr(
+    *,
+    body: str = "Fixes #12. Harden admin export auth.",
+    issue_body: str = "The export endpoint needs admin security coverage.",
+) -> None:
     respx.get(f"{_BASE}/repos/o/r/pulls/42").mock(
         return_value=httpx.Response(200, json=_pr_json(body=body))
     )
@@ -73,7 +77,7 @@ def _mock_pr(*, body: str = "Fixes #12. Harden admin export auth.") -> None:
                 "number": 12,
                 "title": "Admin exports need authorization",
                 "state": "open",
-                "body": "The export endpoint needs admin security coverage.",
+                "body": issue_body,
                 "labels": [{"name": "security"}, {"name": "api"}],
                 "html_url": "https://github.com/o/r/issues/12",
             },
@@ -81,7 +85,11 @@ def _mock_pr(*, body: str = "Fixes #12. Harden admin export auth.") -> None:
     )
 
 
-def _mock_issue_search(status_code: int = 200) -> dict[str, str]:
+def _mock_issue_search(
+    status_code: int = 200,
+    *,
+    result_body: str = "Admin export access must reject invalid user tokens.",
+) -> dict[str, str]:
     captured: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -105,7 +113,7 @@ def _mock_issue_search(status_code: int = 200) -> dict[str, str]:
                         "number": 22,
                         "title": "Export auth should reject non-admin users",
                         "state": "closed",
-                        "body": "Admin export access must reject invalid user tokens.",
+                        "body": result_body,
                         "labels": [{"name": "security"}],
                         "html_url": "https://github.com/o/r/issues/22",
                     },
@@ -197,6 +205,37 @@ async def test_run_similar_issues_fails_open_when_search_unavailable(
     assert "GitHub API error 503" in summary["search_error"]
     assert [item["number"] for item in summary["issue_results"]] == [12]
     assert summary["issue_results"][0]["source_signals"] == ["linked_issue"]
+
+
+@respx.mock
+async def test_run_similar_issues_redacts_secrets_from_query_and_results(
+    scaffold_repo: Path,
+) -> None:
+    secret = "ghp_secret1234567890abcdef"
+    _mock_pr(
+        body=f"Fixes #12. Rotate GITHUB_TOKEN={secret} before export auth.",
+        issue_body=f"Linked issue includes token={secret} in pasted logs.",
+    )
+    captured = _mock_issue_search(
+        result_body=f"Search result body includes authorization={secret} in logs."
+    )
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_similar_issues(
+        settings,
+        number=42,
+        repo="o/r",
+        env={"GITHUB_TOKEN": "tkn"},
+    )
+
+    payload = json.dumps(summary, sort_keys=True)
+    assert secret not in captured["q"]
+    assert "GITHUB_TOKEN=" not in captured["q"]
+    assert "token=[REDACTED]" not in captured["q"]
+    assert secret not in payload
+    assert "GITHUB_TOKEN=" not in payload
+    assert "authorization=[REDACTED]" in payload
+    assert summary["mutates_github"] is False
 
 
 def test_render_similar_issues_prints_sections() -> None:

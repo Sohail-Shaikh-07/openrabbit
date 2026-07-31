@@ -41,6 +41,7 @@ _STOPWORDS = {
     "into",
     "issue",
     "pull",
+    "redacted",
     "request",
     "should",
     "that",
@@ -331,7 +332,8 @@ def _payload_text(payload: PullRequestPayload) -> str:
     parts.extend(commit.commit.message for commit in payload.commits)
     parts.extend(issue.title for issue in payload.linked_issues)
     parts.extend(issue.body_preview for issue in payload.linked_issues)
-    return _ISSUE_REF_RE.sub(" ", " ".join(parts))
+    safe_text = sanitize_knowledge_text(" ".join(parts), max_chars=2400)
+    return _ISSUE_REF_RE.sub(" ", safe_text)
 
 
 def _issue_tokens(candidate: _IssueCandidate) -> set[str]:

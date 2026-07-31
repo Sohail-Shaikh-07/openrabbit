@@ -156,6 +156,33 @@ async def test_run_changelog_draft_respects_limit(scaffold_repo: Path) -> None:
     assert summary["merged_pr_count"] == 2
 
 
+@respx.mock
+async def test_run_changelog_draft_bounds_note_excerpts(scaffold_repo: Path) -> None:
+    note = scaffold_repo / "huge-release-notes.md"
+    hidden_tail = "SECRET_TAIL_SHOULD_NOT_APPEAR"
+    note.write_text(
+        "token=super-secret-value " + ("release-note " * 300) + hidden_tail,
+        encoding="utf-8",
+    )
+    respx.get(f"{_BASE}/repos/o/r/pulls").mock(return_value=httpx.Response(200, json=[]))
+    settings = load_settings(scaffold_repo, env={})
+
+    summary = await run_changelog_draft(
+        settings,
+        repo="o/r",
+        workspace=scaffold_repo,
+        notes=[Path("huge-release-notes.md")],
+        env={"GITHUB_TOKEN": "tkn"},
+    )
+
+    note_summary = summary["notes"][0]
+    assert note_summary["truncated"] is True
+    assert len(note_summary["excerpt"]) <= 1200
+    assert "token=[REDACTED]" in note_summary["excerpt"]
+    assert "super-secret-value" not in note_summary["excerpt"]
+    assert hidden_tail not in note_summary["excerpt"]
+
+
 async def test_run_changelog_draft_rejects_invalid_range(scaffold_repo: Path) -> None:
     settings = load_settings(scaffold_repo, env={})
 
