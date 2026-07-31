@@ -1,0 +1,36 @@
+OpenRabbit v1.9.0 - 2026-08-01
+===============================
+
+OpenRabbit v1.9.0 ships Repository Maintenance Automation: opt-in label application, deterministic changelog drafts, documentation update suggestions, similar issue lookup, shared workflow controls, release-blocking safety regressions, and user-facing maintenance docs.
+
+Repository Maintenance Automation
+---------------------------------
+
+- Added the v1.9 Repository Maintenance Automation plan for opt-in label mutation, changelog draft output, documentation update suggestions, similar issue lookup, shared workflow controls, regressions, docs, and release work.
+- Added `openrabbit labels --apply` for opt-in PR label application. The default remains read-only, repository labels are never created, and JSON output reports applied, skipped, and failed labels.
+- Added `openrabbit changelog` for read-only release changelog drafts from merged PRs, labels, and bounded local release-note context.
+- Added `openrabbit docs` for read-only documentation update suggestions from changed public surfaces, source paths, and added symbols.
+- Added `openrabbit similar-issues` for read-only related issue lookup from linked issues, GitHub issue search, PR metadata, changed paths, labels, and local review memory signals.
+- Added shared `workflow_controls` metadata for repository maintenance commands so dry-run, write intent, required permissions, file writes, and managed-comment support are auditable.
+
+Documentation And Automation
+----------------------------
+
+- Added repository maintenance automation documentation and a manual GitHub Actions workflow for labels, changelog, docs, and similar issue commands.
+
+Security And Regression Coverage
+--------------------------------
+
+- Added maintenance automation security and regression coverage for label mutation safety, changelog and documentation bounds, similar issue privacy, permission failures, and shared workflow controls.
+
+Release Notes
+-------------
+
+- Package version is `1.9.0`.
+- Python support remains `>=3.12,<3.14`.
+- The default model provider remains Ollama.
+- Existing `.openrabbit/config.yml` files continue to work.
+- Maintenance commands remain read-only unless `openrabbit labels --apply` is explicitly used.
+- `openrabbit labels --apply` only applies labels that already exist in the repository and never creates repository labels.
+- Changelog, docs, and similar issue commands do not mutate files or GitHub in this release.
+- PyPI publishing requires a `PYPI_TOKEN` repository secret.

@@ -35,6 +35,7 @@ OpenRabbit v1.9 focuses on repository maintenance automation after the v1.8 inte
 - OP-137 adds shared `workflow_controls` metadata for repository maintenance commands so dry-run, write intent, required permissions, file writes, and managed-comment support are explicit.
 - OP-138 adds security and regression coverage for maintenance automation mutation boundaries, privacy redaction, bounded outputs, permission failures, and workflow-control metadata.
 - OP-139 adds a maintenance automation guide and manual GitHub Actions example for labels, changelog, docs, and similar issue workflows.
+- OP-140 bumps the package to `1.9.0` and adds v1.9.0 release notes, changelog archive, top-level changelog entry, release artifact checks, and release-readiness validation.
 
 ## Scope Notes
 
