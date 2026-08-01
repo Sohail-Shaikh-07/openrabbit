@@ -122,6 +122,7 @@ def _map_pull_request(
     raw_pull_request = payload.get("pull_request")
     if not isinstance(raw_pull_request, dict):
         raise WebhookPayloadError("Pull request webhook payload is missing pull_request data.")
+    _validate_pull_request_base_repository(raw_pull_request, repository=repository)
     try:
         pull_request = PullRequestSummary.model_validate(raw_pull_request)
     except ValidationError as exc:
@@ -203,3 +204,23 @@ def _required_string(payload: dict[str, object], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise WebhookPayloadError(f"GitHub webhook payload is missing {key}.")
     return value.strip().lower()
+
+
+def _validate_pull_request_base_repository(
+    pull_request: dict[str, object],
+    *,
+    repository: str,
+) -> None:
+    base = pull_request.get("base")
+    if not isinstance(base, dict):
+        return
+    base_repository = base.get("repo")
+    if base_repository is None:
+        return
+    if not isinstance(base_repository, dict):
+        raise WebhookPayloadError("Pull request base repository metadata is malformed.")
+    full_name = base_repository.get("full_name")
+    if not isinstance(full_name, str) or not full_name.strip():
+        raise WebhookPayloadError("Pull request base repository metadata is malformed.")
+    if full_name.strip().casefold() != repository.casefold():
+        raise WebhookPayloadError("Pull request base repository does not match repository.target.")

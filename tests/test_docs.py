@@ -297,6 +297,8 @@ def test_v1_10_webhook_server_plan_documents_release_scope() -> None:
         ".openrabbit/webhook-deliveries.sqlite3",
         "atomically claimed",
         "failed or stale delivery",
+        "configured base repository",
+        "fork heads are allowed",
         "never stores webhook bodies",
         "openrabbit start",
     ):

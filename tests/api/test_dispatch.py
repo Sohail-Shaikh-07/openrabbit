@@ -74,6 +74,54 @@ def test_non_actionable_pull_request_action_is_ignored() -> None:
     assert plan.reason == "pull_request_action_closed_ignored"
 
 
+def test_fork_head_is_allowed_when_base_repository_matches_target() -> None:
+    pull_request = _pull_request()
+    pull_request["head"] = {
+        **pull_request["head"],  # type: ignore[dict-item]
+        "repo": {"full_name": "contributor/private-fork", "private": True},
+    }
+    pull_request["base"] = {
+        **pull_request["base"],  # type: ignore[dict-item]
+        "repo": {"full_name": "o/r", "private": True},
+    }
+
+    plan = map_webhook_event(
+        "pull_request",
+        _payload(action="opened", pull_request=pull_request),
+        expected_repository="o/r",
+    )
+
+    assert plan.request is not None
+    assert plan.request.pull_request is not None
+    assert "repo" not in plan.request.pull_request.head.model_dump()
+    assert "repo" not in plan.request.pull_request.base.model_dump()
+
+
+@pytest.mark.parametrize(
+    "base_repository",
+    [
+        {"full_name": "other/repo"},
+        {"full_name": ""},
+        "o/r",
+    ],
+)
+def test_pull_request_base_repository_must_match_target(
+    base_repository: object,
+) -> None:
+    pull_request = _pull_request()
+    pull_request["base"] = {
+        **pull_request["base"],  # type: ignore[dict-item]
+        "repo": base_repository,
+    }
+
+    with pytest.raises(WebhookPayloadError, match="base repository"):
+        map_webhook_event(
+            "pull_request",
+            _payload(action="opened", pull_request=pull_request),
+            expected_repository="o/r",
+        )
+
+
 def test_ping_is_ignored_after_repository_validation() -> None:
     plan = map_webhook_event(
         "ping",
@@ -196,8 +244,14 @@ async def test_dispatcher_fetches_canonical_pr_for_comment_command() -> None:
         "issue_comment",
         _payload(
             action="created",
-            issue={"number": 42, "pull_request": {}},
-            comment=_comment(),
+            issue={
+                "number": 42,
+                "pull_request": {"url": "https://attacker.invalid/pulls/999"},
+            },
+            comment={
+                **_comment(),
+                "url": "https://attacker.invalid/comments/100",
+            },
         ),
     )
     assert plan.request is not None
