@@ -6,6 +6,7 @@ All notable changes to OpenRabbit are documented in this file.
 
 - Added the v1.10 Webhook and Server Mode plan for optional self-hosted GitHub webhook delivery, signature verification, FastAPI server entrypoint work, shared command dispatch, delivery idempotency, security regressions, deployment docs, and release work.
 - Added disabled-by-default webhook security configuration with environment-only secrets, event allowlists, payload bounds, and fail-closed GitHub HMAC-SHA256 signature verification.
+- Added an optional localhost-default FastAPI webhook server with health checks, bounded signature-protected GitHub intake, and an `openrabbit server` command while preserving polling mode.
 - Fixed Windows daemon liveness detection so `openrabbit stop` terminates a live foreground process instead of removing its metadata as stale.
 - Fixed PR comment cursor advancement so failed commands retry without replaying newer successful commands, with a three-attempt bound for unrecoverable failures.
 

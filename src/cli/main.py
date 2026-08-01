@@ -11,6 +11,7 @@ import logging
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import cast
 
 import typer
 from rich.console import Console
@@ -75,13 +76,14 @@ from cli.commands.memory import (
 from cli.commands.model_health import run_model_health_check_blocking
 from cli.commands.output import OutputFormat, TextJsonOutputFormat
 from cli.commands.review import ReviewMode, render_summary, run_review_blocking
+from cli.commands.server import ServerError, run_server
 from cli.commands.similar_issues import (
     render_similar_issues,
     render_similar_issues_json,
     run_similar_issues_blocking,
 )
 from cli.commands.start import StartError, run_start_blocking
-from configs import ConfigNotFoundError, load_settings
+from configs import ConfigNotFoundError, Settings, load_settings
 from github_ import GitHubAPIError, GitHubAuthError
 
 try:
@@ -213,6 +215,36 @@ def start(
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
     except GitHubAuthError as exc:
+        _err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=exit_codes.USER_ERROR) from None
+
+
+@app.command()
+def server(
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Path to the repo that contains .openrabbit/.",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Interface to bind. Use 0.0.0.0 only for intentional network exposure.",
+    ),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        min=1,
+        max=65_535,
+        help="TCP port for the webhook server.",
+    ),
+) -> None:
+    """Run the optional GitHub webhook server in the foreground."""
+    settings = cast(Settings, _load_settings_or_exit(workspace.resolve()))
+    try:
+        run_server(settings, host=host, port=port)
+    except ServerError as exc:
         _err.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=exit_codes.USER_ERROR) from None
 

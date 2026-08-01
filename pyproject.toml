@@ -54,6 +54,8 @@ fastembed = ">=0.4"
 numpy = ">=1.26"
 qdrant-client = ">=1.9"
 langgraph = ">=0.2"
+fastapi = ">=0.115,<1"
+uvicorn = ">=0.31,<1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2"
@@ -164,12 +166,13 @@ follow_imports = "skip"
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q --strict-markers --cov=cli --cov=configs --cov=github_ --cov=knowledge --cov=memory --cov=quality --cov=rag --cov=finetuning --cov=benchmarks --cov-fail-under=70"
+addopts = "-ra -q --strict-markers --cov=api --cov=cli --cov=configs --cov=github_ --cov=knowledge --cov=memory --cov=quality --cov=rag --cov=finetuning --cov=benchmarks --cov-fail-under=70"
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning:google.*",
     "ignore::DeprecationWarning:grpc.*",
     "ignore::DeprecationWarning:qdrant_client.*",
+    "ignore:Using .*httpx.* with .*starlette.testclient.* is deprecated:starlette.exceptions.StarletteDeprecationWarning",
     "ignore:.*uses PyType_Spec.*:DeprecationWarning",
     "error::DeprecationWarning",
 ]

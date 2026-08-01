@@ -1,5 +1,19 @@
-"""FastAPI HTTP surface for the OpenRabbit local daemon (Phase 2+)."""
+"""FastAPI HTTP surface for optional OpenRabbit server mode."""
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from api.server import (
+    GITHUB_WEBHOOK_PATH,
+    HEALTH_PATH,
+    HealthResponse,
+    WebhookAcceptedResponse,
+    create_app,
+)
+
+__all__ = [
+    "GITHUB_WEBHOOK_PATH",
+    "HEALTH_PATH",
+    "HealthResponse",
+    "WebhookAcceptedResponse",
+    "create_app",
+]

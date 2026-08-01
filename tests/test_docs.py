@@ -266,6 +266,7 @@ def test_v1_9_repository_maintenance_plan_documents_release_scope() -> None:
 def test_v1_10_webhook_server_plan_documents_release_scope() -> None:
     plan = (ROOT / "docs" / "release-v1.10-plan.md").read_text(encoding="ascii").lower()
     gap = (ROOT / "docs" / "pr-agent-gap-analysis.md").read_text(encoding="ascii").lower()
+    readme = (ROOT / "README.md").read_text(encoding="ascii").lower()
 
     for claim in (
         "webhook and server mode",
@@ -285,6 +286,15 @@ def test_v1_10_webhook_server_plan_documents_release_scope() -> None:
     assert "release-v1.10-plan.md" in gap
     assert "webhook/server mode" in gap
     assert "signature-verified github webhook delivery" in gap
+    for claim in (
+        "openrabbit server --workspace .",
+        "get /health",
+        "post /webhooks/github",
+        "x-hub-signature-256",
+        "dispatched: false",
+        "openrabbit start",
+    ):
+        assert claim in readme
 
 
 def test_readme_documents_changelog_command() -> None:
