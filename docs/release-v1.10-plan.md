@@ -27,7 +27,7 @@ OpenRabbit v1.10 focuses on optional self-hosted GitHub webhook and server mode 
 ## Progress Notes
 
 - OP-141 creates the v1.10 planning track, seeds the task sequence, and links the repository roadmap to this plan.
-- OP-142 should add configuration for webhook secrets without enabling webhook mode by default. Signature verification should be deterministic, independently testable, and fail closed.
+- OP-142 adds disabled-by-default webhook configuration, environment-only secret resolution, validated GitHub event allowlists, bounded payload settings, and deterministic fail-closed HMAC-SHA256 signature verification helpers.
 - OP-143 should introduce `openrabbit server` as an optional FastAPI entrypoint with a basic health route and a GitHub webhook route. Existing `openrabbit start` polling behavior should remain unchanged.
 - OP-144 should translate supported GitHub webhook events into existing review and PR command requests instead of duplicating review, ask, improve, learn, summary, pause, resume, or ignore logic.
 - OP-145 should persist delivery state under the workspace so repeated GitHub deliveries can be skipped, retried, or inspected without duplicate publishing.

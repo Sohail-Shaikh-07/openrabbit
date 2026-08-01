@@ -9,6 +9,7 @@ from configs.schema import (
     PollingSettings,
     RepositorySettings,
     ReviewSettings,
+    WebhookSettings,
 )
 from configs.settings import (
     CONFIG_FILENAME,
@@ -33,6 +34,7 @@ __all__ = [
     "RepositorySettings",
     "ReviewSettings",
     "Settings",
+    "WebhookSettings",
     "find_config_file",
     "find_user_config_file",
     "load_settings",

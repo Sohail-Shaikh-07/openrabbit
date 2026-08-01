@@ -67,6 +67,14 @@ github:
   # this machine.
   token_env: GITHUB_TOKEN
 
+webhook:
+  # Optional webhook mode is disabled by default. Store the GitHub webhook
+  # secret in this environment variable instead of writing it to this file.
+  enabled: false
+  secret_env: GITHUB_WEBHOOK_SECRET
+  allowed_events: [ping, pull_request, issue_comment]
+  max_payload_bytes: 1048576
+
 repository:
   # Default repository OpenRabbit watches when --repo is not passed.
   # target: owner/repo

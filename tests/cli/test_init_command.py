@@ -29,6 +29,8 @@ def test_run_init_creates_all_templates(tmp_path: Path) -> None:
     assert "  ast_instructions: []" in config_text
     assert "docs/knowledge-connectors.md" in config_text
     assert "allowed_tools: [search_docs]" in config_text
+    assert "secret_env: GITHUB_WEBHOOK_SECRET" in config_text
+    assert "allowed_events: [ping, pull_request, issue_comment]" in config_text
     assert "OpenRabbit does not auto-clone" in config_text
     assert "write_enabled: false" in config_text
     assert (scaffold / ".gitignore").read_text(

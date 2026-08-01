@@ -50,6 +50,138 @@ def test_quality_gate_settings_are_safe_by_default(scaffold_repo: Path) -> None:
     assert settings.quality.max_diagnostics == 100
 
 
+def test_webhook_settings_are_safe_by_default(scaffold_repo: Path) -> None:
+    settings = load_settings(scaffold_repo, env={})
+
+    assert settings.webhook.enabled is False
+    assert settings.webhook.secret_env == "GITHUB_WEBHOOK_SECRET"
+    assert settings.webhook.allowed_events == ["ping", "pull_request", "issue_comment"]
+    assert settings.webhook.max_payload_bytes == 1_048_576
+
+
+def test_webhook_settings_load_explicit_config_and_secret(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        """
+webhook:
+  enabled: true
+  secret_env: TEAM_WEBHOOK_SECRET
+  allowed_events: [PULL_REQUEST, issue_comment, pull_request]
+  max_payload_bytes: 2097152
+""",
+    )
+
+    settings = load_settings(tmp_path, env={"TEAM_WEBHOOK_SECRET": "test-secret"})
+
+    assert settings.webhook.enabled is True
+    assert settings.webhook.secret_env == "TEAM_WEBHOOK_SECRET"
+    assert settings.webhook.allowed_events == ["pull_request", "issue_comment"]
+    assert settings.webhook.max_payload_bytes == 2_097_152
+    assert settings.resolved_webhook_secret({"TEAM_WEBHOOK_SECRET": "test-secret"}) == (
+        "test-secret"
+    )
+
+
+def test_webhook_env_override_enables_mode(tmp_path: Path) -> None:
+    _write_config(tmp_path, "review:\n  security: true\n")
+
+    settings = load_settings(
+        tmp_path,
+        env={
+            "OPENRABBIT_WEBHOOK__ENABLED": "true",
+            "OPENRABBIT_WEBHOOK__SECRET_ENV": "TEAM_WEBHOOK_SECRET",
+            "TEAM_WEBHOOK_SECRET": "test-secret",
+        },
+    )
+
+    assert settings.webhook.enabled is True
+    assert settings.webhook.secret_env == "TEAM_WEBHOOK_SECRET"
+    assert settings.resolved_webhook_secret({"TEAM_WEBHOOK_SECRET": "test-secret"}) == "test-secret"
+
+
+def test_webhook_secret_resolution_uses_windows_user_env_when_process_env_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    monkeypatch.setattr(
+        "configs.settings._persistent_windows_env",
+        lambda name: "persistent-secret",
+    )
+    settings = load_settings(tmp_path, env={})
+
+    assert settings.resolved_webhook_secret(env={}) == "persistent-secret"
+
+
+def test_webhook_secret_resolution_prefers_process_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+    monkeypatch.setattr(
+        "configs.settings._persistent_windows_env",
+        lambda name: "persistent-secret",
+    )
+    env = {"GITHUB_WEBHOOK_SECRET": "process-secret"}
+    settings = load_settings(tmp_path, env=env)
+
+    assert settings.resolved_webhook_secret(env=env) == "process-secret"
+
+
+def test_webhook_settings_reject_inline_secret_without_leaking_value(tmp_path: Path) -> None:
+    _write_config(
+        tmp_path,
+        """
+webhook:
+  enabled: true
+  secret: super-secret-value
+""",
+    )
+
+    with pytest.raises(ValueError) as exc:
+        load_settings(tmp_path, env={})
+
+    message = str(exc.value)
+    assert "webhook.secret" in message
+    assert "webhook.secret_env" in message
+    assert "super-secret-value" not in message
+
+
+def test_webhook_inline_secret_env_override_is_rejected_without_leaking_value(
+    tmp_path: Path,
+) -> None:
+    _write_config(tmp_path, CONFIG_YML)
+
+    with pytest.raises(ValueError) as exc:
+        load_settings(tmp_path, env={"OPENRABBIT_WEBHOOK__SECRET": "env-secret-value"})
+
+    message = str(exc.value)
+    assert "webhook.secret" in message
+    assert "webhook.secret_env" in message
+    assert "env-secret-value" not in message
+
+
+@pytest.mark.parametrize(
+    "webhook_config",
+    [
+        "enabled: true\n  allowed_events: []",
+        "enabled: true\n  allowed_events: [push]",
+        "enabled: true\n  secret_env: 'not valid'",
+        "enabled: true\n  secret_env: OPENRABBIT_WEBHOOK_SECRET",
+        "enabled: true\n  max_payload_bytes: 1023",
+        "enabled: true\n  max_payload_bytes: 10485761",
+    ],
+)
+def test_webhook_settings_reject_unsafe_configuration(
+    tmp_path: Path,
+    webhook_config: str,
+) -> None:
+    _write_config(tmp_path, f"webhook:\n  {webhook_config}\n")
+
+    with pytest.raises(ValidationError):
+        load_settings(tmp_path, env={})
+
+
 def test_connector_settings_are_disabled_by_default(scaffold_repo: Path) -> None:
     settings = load_settings(scaffold_repo, env={})
 
