@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 STATE_SUBDIR = ".openrabbit"
 DAEMON_STATE_FILENAME = "daemon.json"
@@ -160,7 +160,8 @@ def _windows_pid_exists(pid: int) -> bool:
     error_access_denied = 5
     wait_object_0 = 0x00000000
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    windows_ctypes = cast(Any, ctypes)
+    kernel32 = windows_ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
@@ -170,7 +171,7 @@ def _windows_pid_exists(pid: int) -> bool:
 
     handle = kernel32.OpenProcess(synchronize, False, pid)
     if not handle:
-        return ctypes.get_last_error() == error_access_denied
+        return bool(windows_ctypes.get_last_error() == error_access_denied)
 
     try:
         wait_result = int(kernel32.WaitForSingleObject(handle, 0))
