@@ -12,6 +12,7 @@ import httpx
 import pytest
 import respx
 
+from api import delivery_state_path
 from cli.commands.init import run_init
 from cli.commands.start import StartError, resolve_target_repo, run_start
 from configs import PollingSettings, RepositorySettings, Settings, load_settings
@@ -160,6 +161,7 @@ async def test_run_start_once_runs_one_poll_without_daemon_state(scaffold_repo: 
 
     assert (scaffold_repo / ".openrabbit" / "state.json").is_file()
     assert not _daemon_state_path(scaffold_repo).exists()
+    assert not delivery_state_path(scaffold_repo).exists()
 
 
 @respx.mock

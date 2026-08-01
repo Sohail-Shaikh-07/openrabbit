@@ -9,6 +9,7 @@ All notable changes to OpenRabbit are documented in this file.
 - Added an optional localhost-default FastAPI webhook server with health checks, bounded signature-protected GitHub intake, and an `openrabbit server` command while preserving polling mode.
 - Routed actionable pull request and `/openrabbit` comment webhooks through the existing polling review handler, persistent command state, review controls, and bounded command retries.
 - Added a bounded workspace-local webhook delivery ledger with atomic idempotency claims, duplicate suppression, failed and stale delivery retries, conflict detection, and secret-free processing metadata.
+- Added release-blocking webhook security regressions for fail-closed request ordering, configured base-repository validation, fork-head privacy, canonical comment dispatch, replay safety, and polling isolation.
 - Fixed Windows daemon liveness detection so `openrabbit stop` terminates a live foreground process instead of removing its metadata as stale.
 - Fixed PR comment cursor advancement so failed commands retry without replaying newer successful commands, with a three-attempt bound for unrecoverable failures.
 
