@@ -5,6 +5,7 @@ All notable changes to OpenRabbit are documented in this file.
 ## Unreleased
 
 - Added the v1.10 Webhook and Server Mode plan for optional self-hosted GitHub webhook delivery, signature verification, FastAPI server entrypoint work, shared command dispatch, delivery idempotency, security regressions, deployment docs, and release work.
+- Fixed Windows daemon liveness detection so `openrabbit stop` terminates a live foreground process instead of removing its metadata as stale.
 
 ## v1.9.0 - 2026-08-01
 

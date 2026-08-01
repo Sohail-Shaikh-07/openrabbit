@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -655,3 +658,20 @@ def test_run_stop_terminates_running_daemon_process(
     assert result.pid == 12345
     assert terminated == [12345]
     assert not _daemon_state_path(scaffold_repo).exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows process liveness regression")
+def test_windows_pid_probe_detects_live_and_exited_python_process() -> None:
+    from cli.commands.daemon import _pid_exists
+
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    try:
+        assert _pid_exists(process.pid)
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    assert not _pid_exists(process.pid)

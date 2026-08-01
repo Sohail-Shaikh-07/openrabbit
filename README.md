@@ -610,7 +610,7 @@ Stop a foreground daemon from another terminal:
 openrabbit stop --workspace .
 ```
 
-`openrabbit stop` is safe to run when no daemon is active. It also removes stale daemon metadata left behind by a crashed process.
+`openrabbit stop` is safe to run when no daemon is active. It also removes stale daemon metadata left behind by a crashed process. On Windows, daemon liveness is checked through the native process API so a live foreground daemon is not mistaken for stale metadata.
 
 The first poll seeds state without reviewing every already-open PR. After that, new PRs and changed head SHAs trigger the same review-and-publish path as `openrabbit review`. Same-SHA updates, such as label or description changes, are logged and skipped.
 

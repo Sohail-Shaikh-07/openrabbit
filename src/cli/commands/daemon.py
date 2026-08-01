@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 STATE_SUBDIR = ".openrabbit"
 DAEMON_STATE_FILENAME = "daemon.json"
@@ -138,6 +138,8 @@ def run_stop(workspace: Path, *, timeout_seconds: float = 10.0) -> StopResult:
 def _pid_exists(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        return _windows_pid_exists(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -147,6 +149,35 @@ def _pid_exists(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _windows_pid_exists(pid: int) -> bool:
+    """Check a Windows PID without sending a console control signal."""
+    import ctypes
+    from ctypes import wintypes
+
+    synchronize = 0x00100000
+    error_access_denied = 5
+    wait_object_0 = 0x00000000
+
+    windows_ctypes = cast(Any, ctypes)
+    kernel32 = windows_ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(synchronize, False, pid)
+    if not handle:
+        return bool(windows_ctypes.get_last_error() == error_access_denied)
+
+    try:
+        wait_result = int(kernel32.WaitForSingleObject(handle, 0))
+        return wait_result != wait_object_0
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _terminate_pid(pid: int) -> Literal["ok", "missing", "permission"]:
