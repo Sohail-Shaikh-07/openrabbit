@@ -7,9 +7,14 @@ import logging
 from importlib.metadata import PackageNotFoundError, version
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 
+from api.dispatch import (
+    WebhookDispatchRequest,
+    WebhookEventDispatcher,
+    WebhookPayloadError,
+)
 from configs import Settings
 from github_ import (
     is_webhook_event_allowed,
@@ -34,18 +39,20 @@ class HealthResponse(BaseModel):
 
 
 class WebhookAcceptedResponse(BaseModel):
-    """Receipt returned before shared dispatch is added in OP-144."""
+    """Receipt returned after webhook work is validated and scheduled."""
 
     status: Literal["accepted"] = "accepted"
     event: str
     delivery_id: str | None
-    dispatched: Literal[False] = False
+    dispatched: bool = False
+    reason: str | None = None
 
 
 def create_app(
     settings: Settings,
     *,
     webhook_secret: str | bytes | None = None,
+    dispatcher: WebhookEventDispatcher | None = None,
 ) -> FastAPI:
     """Create an application bound to validated OpenRabbit settings."""
     app = FastAPI(
@@ -66,9 +73,13 @@ def create_app(
     @app.post(
         GITHUB_WEBHOOK_PATH,
         response_model=WebhookAcceptedResponse,
+        response_model_exclude_none=True,
         status_code=status.HTTP_202_ACCEPTED,
     )
-    async def github_webhook(request: Request) -> WebhookAcceptedResponse:
+    async def github_webhook(
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ) -> WebhookAcceptedResponse:
         if not settings.webhook.enabled:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -107,15 +118,45 @@ def create_app(
             )
 
         delivery_id = _validated_delivery_id(request.headers.get("x-github-delivery"))
-        _parse_payload_object(payload)
+        parsed_payload = _parse_payload_object(payload)
+        if dispatcher is None:
+            dispatch_plan = None
+        else:
+            try:
+                dispatch_plan = dispatcher.prepare(event_name, parsed_payload)
+            except WebhookPayloadError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
         _LOGGER.info(
             "Accepted GitHub webhook delivery event=%s delivery_id=%s",
             event_name,
             delivery_id or "missing",
         )
+        if dispatch_plan is None:
+            return WebhookAcceptedResponse(
+                event=event_name,
+                delivery_id=delivery_id,
+            )
+        if dispatch_plan.request is None:
+            return WebhookAcceptedResponse(
+                event=event_name,
+                delivery_id=delivery_id,
+                reason=dispatch_plan.reason,
+            )
+        assert dispatcher is not None
+        background_tasks.add_task(
+            _dispatch_safely,
+            dispatcher,
+            dispatch_plan.request,
+            delivery_id,
+        )
         return WebhookAcceptedResponse(
             event=event_name,
             delivery_id=delivery_id,
+            dispatched=True,
+            reason=dispatch_plan.reason,
         )
 
     return app
@@ -199,3 +240,20 @@ def _parse_payload_object(payload: bytes) -> dict[str, object]:
             detail="GitHub webhook payload must be a JSON object.",
         )
     return parsed
+
+
+async def _dispatch_safely(
+    dispatcher: WebhookEventDispatcher,
+    request: WebhookDispatchRequest,
+    delivery_id: str | None,
+) -> None:
+    try:
+        await dispatcher.dispatch(request)
+    except Exception as exc:
+        _LOGGER.error(
+            "GitHub webhook dispatch failed event_repo=%s pr=%s delivery_id=%s error_type=%s",
+            request.repository,
+            request.pr_number,
+            delivery_id or "missing",
+            type(exc).__name__,
+        )

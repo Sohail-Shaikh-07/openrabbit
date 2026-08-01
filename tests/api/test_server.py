@@ -4,14 +4,41 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import logging
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from api import GITHUB_WEBHOOK_PATH, HEALTH_PATH, create_app
+from api import GITHUB_WEBHOOK_PATH, HEALTH_PATH, WebhookEventDispatcher, create_app
 from configs import Settings, WebhookSettings
+from github_ import RepositoryHandle
 
 _SECRET = "test-webhook-secret"
+
+
+def _pull_request_payload() -> dict[str, object]:
+    return {
+        "number": 42,
+        "title": "Add webhook dispatch",
+        "state": "open",
+        "draft": False,
+        "user": {"login": "alice", "id": 1},
+        "head": {"ref": "feature", "sha": "a" * 40, "label": "alice:feature"},
+        "base": {"ref": "main", "sha": "b" * 40, "label": "o:main"},
+        "created_at": "2026-08-01T00:00:00Z",
+        "updated_at": "2026-08-01T01:00:00Z",
+        "labels": [],
+    }
+
+
+def _actionable_payload() -> dict[str, object]:
+    return {
+        "repository": {"full_name": "o/r"},
+        "action": "opened",
+        "pull_request": _pull_request_payload(),
+    }
 
 
 def _settings(*, enabled: bool = True, max_payload_bytes: int = 1_024) -> Settings:
@@ -76,6 +103,69 @@ def test_github_webhook_accepts_valid_delivery_without_dispatching() -> None:
         "delivery_id": "67a0b0f4-0b89-4c4f-8f75-d668c2574531",
         "dispatched": False,
     }
+
+
+def test_github_webhook_schedules_actionable_shared_dispatch() -> None:
+    payload = json.dumps(
+        _actionable_payload(),
+        separators=(",", ":"),
+    ).encode()
+    handler = AsyncMock()
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=handler,
+    )
+    client = TestClient(create_app(_settings(), webhook_secret=_SECRET, dispatcher=dispatcher))
+
+    response = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=_headers(payload))
+
+    assert response.status_code == 202
+    assert response.json()["dispatched"] is True
+    assert response.json()["reason"] == "scheduled"
+    handler.assert_awaited_once()
+
+
+def test_github_webhook_rejects_repository_mismatch_before_dispatch() -> None:
+    payload = json.dumps(
+        _actionable_payload(),
+        separators=(",", ":"),
+    ).encode()
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="other/repo",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=AsyncMock(),
+    )
+    client = TestClient(create_app(_settings(), webhook_secret=_SECRET, dispatcher=dispatcher))
+
+    response = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=_headers(payload))
+
+    assert response.status_code == 400
+    assert "repository.target" in response.json()["detail"]
+
+
+def test_background_dispatch_failure_does_not_log_exception_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    payload = json.dumps(_actionable_payload(), separators=(",", ":")).encode()
+    handler = AsyncMock(side_effect=RuntimeError("sensitive-payload-content"))
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=handler,
+    )
+    client = TestClient(create_app(_settings(), webhook_secret=_SECRET, dispatcher=dispatcher))
+
+    with caplog.at_level(logging.ERROR, logger="api.server"):
+        response = client.post(
+            GITHUB_WEBHOOK_PATH,
+            content=payload,
+            headers=_headers(payload),
+        )
+
+    assert response.status_code == 202
+    assert "RuntimeError" in caplog.text
+    assert "sensitive-payload-content" not in caplog.text
 
 
 def test_github_webhook_rejects_disabled_mode() -> None:

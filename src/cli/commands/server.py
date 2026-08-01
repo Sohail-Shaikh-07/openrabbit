@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import uvicorn
 
-from api import create_app
+from api import WebhookEventDispatcher, create_app
+from cli.commands.start import build_workspace_review_handler
 from configs import Settings
+from github_ import GitHubAuthError, GitHubClient, RepositoryHandle
 
 
 class ServerError(RuntimeError):
@@ -29,8 +33,32 @@ def run_server(settings: Settings, *, host: str, port: int) -> None:
             f"webhook secret is unavailable; set {settings.webhook.secret_env} in the environment"
         )
 
-    uvicorn.run(
-        create_app(settings, webhook_secret=webhook_secret),
-        host=normalized_host,
-        port=port,
+    target_repository = settings.repository.target
+    if not target_repository:
+        raise ServerError("repository.target is required before webhook dispatch can be enabled")
+    try:
+        client = GitHubClient.from_settings(settings)
+    except GitHubAuthError as exc:
+        raise ServerError(str(exc)) from exc
+    handle = RepositoryHandle.from_full_name(target_repository, client)
+    handler = build_workspace_review_handler(
+        settings,
+        workspace=settings.resolved_workspace_root(),
     )
+    dispatcher = WebhookEventDispatcher(
+        expected_repository=target_repository,
+        handle=handle,
+        handler=handler,
+    )
+    try:
+        uvicorn.run(
+            create_app(
+                settings,
+                webhook_secret=webhook_secret,
+                dispatcher=dispatcher,
+            ),
+            host=normalized_host,
+            port=port,
+        )
+    finally:
+        asyncio.run(client.aclose())

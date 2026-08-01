@@ -234,6 +234,31 @@ def build_review_handler(
     return _handler
 
 
+def build_workspace_review_handler(
+    settings: Settings,
+    *,
+    workspace: Path,
+    env: dict[str, str] | None = None,
+    review_runner: ReviewRunner | None = None,
+    improve_runner: ImproveRunner | None = None,
+    ask_runner: AskRunner | None = None,
+    describe_runner: DescribeRunner | None = None,
+    issue_comment_publisher: IssueCommentPublisher | None = None,
+) -> Callable[[PollEvent, RepositoryHandle], Awaitable[None]]:
+    """Build the shared review handler with workspace-persistent command state."""
+    command_state_path = workspace / STATE_SUBDIR / COMMAND_STATE_FILENAME
+    return build_review_handler(
+        settings,
+        env=env,
+        review_runner=review_runner,
+        improve_runner=improve_runner,
+        ask_runner=ask_runner,
+        describe_runner=describe_runner,
+        command_store=FileCommandStateStore(command_state_path),
+        issue_comment_publisher=issue_comment_publisher,
+    )
+
+
 def _cooldown_remaining(
     pr_number: int,
     *,
@@ -600,13 +625,11 @@ async def run_start(
     state_path = workspace / STATE_SUBDIR / STATE_FILENAME
     store = FileStateStore(state_path)
     command_state_path = workspace / STATE_SUBDIR / COMMAND_STATE_FILENAME
-    command_store = FileCommandStateStore(command_state_path)
-
-    handler = build_review_handler(
+    handler = build_workspace_review_handler(
         settings,
+        workspace=workspace,
         env=env,
         review_runner=review_runner,
-        command_store=command_store,
     )
 
     service = PollingService(

@@ -29,7 +29,7 @@ OpenRabbit v1.10 focuses on optional self-hosted GitHub webhook and server mode 
 - OP-141 creates the v1.10 planning track, seeds the task sequence, and links the repository roadmap to this plan.
 - OP-142 adds disabled-by-default webhook configuration, environment-only secret resolution, validated GitHub event allowlists, bounded payload settings, and deterministic fail-closed HMAC-SHA256 signature verification helpers.
 - OP-143 adds explicit FastAPI and Uvicorn runtime dependencies, a localhost-default `openrabbit server` entrypoint, a public health route, and a fail-closed GitHub webhook intake route. Accepted deliveries remain undispatched until OP-144, and existing `openrabbit start` polling behavior remains unchanged.
-- OP-144 should translate supported GitHub webhook events into existing review and PR command requests instead of duplicating review, ask, improve, learn, summary, pause, resume, or ignore logic.
+- OP-144 maps actionable pull request and issue comment webhook payloads into the same workspace-persistent review handler used by polling. Repository identity is validated before scheduling background work, while ping, unrelated comments, and non-actionable actions are safely ignored.
 - OP-145 should persist delivery state under the workspace so repeated GitHub deliveries can be skipped, retried, or inspected without duplicate publishing.
 - OP-146 should add focused security and regression coverage for invalid signatures, missing secrets, unsupported events, payload bounds, fork/privacy cases, replay handling, and compatibility with daemon polling.
 - OP-147 should document local and self-hosted webhook setup, GitHub secret configuration, expected permissions, operational troubleshooting, and when polling remains the better fit.
