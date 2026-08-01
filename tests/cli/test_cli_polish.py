@@ -159,6 +159,18 @@ def test_start_command_accepts_once_option() -> None:
     assert "--once" in _plain_help(result.output)
 
 
+def test_server_command_uses_safe_network_defaults() -> None:
+    result = runner.invoke(app, ["server", "--help"])
+    output = _plain_help(result.output)
+
+    assert result.exit_code == 0
+    assert "--workspace" in output
+    assert "--host" in output
+    assert "127.0.0.1" in output
+    assert "--port" in output
+    assert "8000" in output
+
+
 def test_stop_command_accepts_workspace_option() -> None:
     result = runner.invoke(app, ["stop", "--help"])
     assert result.exit_code == 0
