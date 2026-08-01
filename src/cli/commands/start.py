@@ -42,6 +42,7 @@ _log = get_logger(__name__)
 STATE_SUBDIR = ".openrabbit"
 STATE_FILENAME = "state.json"
 COMMAND_STATE_FILENAME = "commands.json"
+MAX_PR_COMMAND_ATTEMPTS = 3
 ReviewRunner = Callable[..., Awaitable[dict[str, object]]]
 ImproveRunner = Callable[..., Awaitable[dict[str, object]]]
 AskRunner = Callable[..., Awaitable[dict[str, object]]]
@@ -296,31 +297,30 @@ async def _handle_pr_commands(
     issue_comment_publisher: IssueCommentPublisher | None,
 ) -> bool:
     state = command_store.load()
-    last_seen = state.last_seen_comment_id(event.number)
     comments = sorted(await handle.list_issue_comments(event.number), key=lambda item: item.id)
     handled = False
 
     for comment in comments:
-        if comment.id <= last_seen:
+        if state.is_comment_completed(event.number, comment.id):
             continue
         command = parse_openrabbit_command(comment.body)
-        state = state.mark_comment_seen(event.number, comment.id)
-        command_store.save(state)
         if command is None:
+            state = state.mark_comment_completed(event.number, comment.id)
+            command_store.save(state)
             continue
         handled = True
         if command.kind == "pause":
-            state = state.pause(event.number)
+            state = state.pause(event.number).mark_comment_completed(event.number, comment.id)
             command_store.save(state)
             _log.info("start.command_pause", repo=handle.full_name, pr=event.number)
             continue
         if command.kind == "resume":
-            state = state.resume(event.number)
+            state = state.resume(event.number).mark_comment_completed(event.number, comment.id)
             command_store.save(state)
             _log.info("start.command_resume", repo=handle.full_name, pr=event.number)
             continue
         if command.kind == "ignore":
-            state = state.ignore(event.number)
+            state = state.ignore(event.number).mark_comment_completed(event.number, comment.id)
             command_store.save(state)
             _log.info("start.command_ignore", repo=handle.full_name, pr=event.number)
             continue
@@ -333,76 +333,112 @@ async def _handle_pr_commands(
                 command=command.kind,
                 reason=reason,
             )
+            state = state.mark_comment_completed(event.number, comment.id)
+            command_store.save(state)
             continue
-        if command.kind == "review":
-            await review_runner(
-                settings,
-                number=event.number,
-                repo=handle.full_name,
-                env=env,
-                dry_run=False,
-                mode="incremental",
-            )
-        elif command.kind == "full_review":
-            await review_runner(
-                settings,
-                number=event.number,
-                repo=handle.full_name,
-                env=env,
-                dry_run=False,
-                mode="full",
-            )
-        elif command.kind == "improve":
-            await improve_runner(
-                settings,
-                number=event.number,
-                repo=handle.full_name,
-                env=env,
-                publish=True,
-            )
-        elif command.kind == "ask":
-            summary = await ask_runner(
-                settings,
-                number=event.number,
-                question=command.question,
-                repo=handle.full_name,
-                env=env,
-            )
-            await _publish_ask_reply(
-                handle,
-                pr_number=event.number,
-                summary=summary,
-                publisher=issue_comment_publisher,
-            )
-        elif command.kind == "summary":
-            summary = await describe_runner(
-                settings,
-                number=event.number,
-                repo=handle.full_name,
-                env=env,
-            )
-            await _publish_summary_reply(
-                handle,
-                pr_number=event.number,
-                summary=summary,
-                publisher=issue_comment_publisher,
-            )
-        elif command.kind == "configuration":
-            await _publish_configuration_reply(
-                settings,
-                handle,
-                pr_number=event.number,
-                publisher=issue_comment_publisher,
-            )
-        elif command.kind == "learn":
-            _record_learning(
-                settings,
-                repo=handle.full_name,
-                pr_number=event.number,
-                instruction=command.instruction,
-                comment=comment,
-            )
+        try:
+            if command.kind == "review":
+                await review_runner(
+                    settings,
+                    number=event.number,
+                    repo=handle.full_name,
+                    env=env,
+                    dry_run=False,
+                    mode="incremental",
+                )
+            elif command.kind == "full_review":
+                await review_runner(
+                    settings,
+                    number=event.number,
+                    repo=handle.full_name,
+                    env=env,
+                    dry_run=False,
+                    mode="full",
+                )
+            elif command.kind == "improve":
+                await improve_runner(
+                    settings,
+                    number=event.number,
+                    repo=handle.full_name,
+                    env=env,
+                    publish=True,
+                )
+            elif command.kind == "ask":
+                summary = await ask_runner(
+                    settings,
+                    number=event.number,
+                    question=command.question,
+                    repo=handle.full_name,
+                    env=env,
+                )
+                await _publish_ask_reply(
+                    handle,
+                    pr_number=event.number,
+                    summary=summary,
+                    publisher=issue_comment_publisher,
+                )
+            elif command.kind == "summary":
+                summary = await describe_runner(
+                    settings,
+                    number=event.number,
+                    repo=handle.full_name,
+                    env=env,
+                )
+                await _publish_summary_reply(
+                    handle,
+                    pr_number=event.number,
+                    summary=summary,
+                    publisher=issue_comment_publisher,
+                )
+            elif command.kind == "configuration":
+                await _publish_configuration_reply(
+                    settings,
+                    handle,
+                    pr_number=event.number,
+                    publisher=issue_comment_publisher,
+                )
+            elif command.kind == "learn":
+                _record_learning(
+                    settings,
+                    repo=handle.full_name,
+                    pr_number=event.number,
+                    instruction=command.instruction,
+                    comment=comment,
+                )
+        except Exception as exc:
+            state = state.record_comment_failure(event.number, comment.id)
+            attempts = state.failure_attempts(event.number, comment.id)
+            if attempts >= MAX_PR_COMMAND_ATTEMPTS:
+                state = state.mark_comment_completed(event.number, comment.id)
+                _log.error(
+                    "start.command_abandoned",
+                    repo=handle.full_name,
+                    pr=event.number,
+                    comment_id=comment.id,
+                    command=command.kind,
+                    attempts=attempts,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+            else:
+                _log.warning(
+                    "start.command_retry_scheduled",
+                    repo=handle.full_name,
+                    pr=event.number,
+                    comment_id=comment.id,
+                    command=command.kind,
+                    attempts=attempts,
+                    max_attempts=MAX_PR_COMMAND_ATTEMPTS,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+            command_store.save(state)
+            continue
 
+        state = state.mark_comment_completed(event.number, comment.id)
+        command_store.save(state)
+
+    state = state.advance_comment_cursor(event.number, [comment.id for comment in comments])
     command_store.save(state)
     return handled
 

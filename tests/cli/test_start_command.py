@@ -15,7 +15,15 @@ import respx
 from cli.commands.init import run_init
 from cli.commands.start import StartError, resolve_target_repo, run_start
 from configs import PollingSettings, RepositorySettings, Settings, load_settings
-from github_ import FileStateStore, GitHubClient, PollEvent, PollState, SeenPullRequest
+from github_ import (
+    FileStateStore,
+    GitHubAPIError,
+    GitHubAuthError,
+    GitHubClient,
+    PollEvent,
+    PollState,
+    SeenPullRequest,
+)
 from github_.models import PullRequestSummary
 from github_.pr_commands import InMemoryCommandStateStore
 from github_.repository import RepositoryHandle
@@ -396,6 +404,115 @@ async def test_start_command_listener_runs_pr_comment_commands(scaffold_repo: Pa
     assert command_store.load().last_seen_comment_id(1) == 16
     store = SQLitePullRequestMemory(settings.resolved_memory_path())
     assert store.list_learnings("o/r")[0].instruction == "Prefer bind parameters for SQL."
+
+
+@respx.mock
+async def test_start_command_listener_retries_failed_auth_command(scaffold_repo: Path) -> None:
+    from cli.commands.start import build_review_handler
+
+    comments = [
+        _issue_comment(40, "/openrabbit ask what changed?"),
+        _issue_comment(41, "/openrabbit improve"),
+    ]
+    respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+        return_value=httpx.Response(200, json=comments)
+    )
+    ask_attempts = 0
+    improve_attempts = 0
+
+    async def fake_ask_runner(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal ask_attempts
+        ask_attempts += 1
+        if ask_attempts == 1:
+            raise GitHubAuthError("GitHub rejected the configured token")
+        return {"answer": {"answer": "It updates command retries."}}
+
+    async def fake_improve_runner(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal improve_attempts
+        improve_attempts += 1
+        return {"suggestions_count": 1, "publish_status": "posted"}
+
+    async def fake_reply_publisher(**_kwargs: object) -> None:
+        return None
+
+    settings = load_settings(scaffold_repo, env={})
+    command_store = InMemoryCommandStateStore()
+    handler = build_review_handler(
+        settings,
+        env={"GITHUB_TOKEN": "tkn"},
+        ask_runner=fake_ask_runner,
+        improve_runner=fake_improve_runner,
+        command_store=command_store,
+        issue_comment_publisher=fake_reply_publisher,
+    )
+    client = GitHubClient(token="tkn")
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+
+    try:
+        await handler(_event("pull_request_updated"), handle)
+        failed_state = command_store.load()
+        assert failed_state.failure_attempts(1, 40) == 1
+        assert failed_state.last_seen_comment_id(1) == 0
+        assert failed_state.is_comment_completed(1, 41)
+
+        await handler(_event("pull_request_updated"), handle)
+    finally:
+        await client.aclose()
+
+    assert ask_attempts == 2
+    assert improve_attempts == 1
+    assert command_store.load().last_seen_comment_id(1) == 41
+    assert command_store.load().comment_failure_attempts == {}
+
+
+@respx.mock
+async def test_start_command_listener_abandons_after_bounded_failures(
+    scaffold_repo: Path,
+) -> None:
+    from cli.commands.start import MAX_PR_COMMAND_ATTEMPTS, build_review_handler
+
+    comments = [
+        _issue_comment(50, "/openrabbit ask what changed?"),
+        _issue_comment(51, "/openrabbit review"),
+    ]
+    respx.get(f"{_BASE}/repos/o/r/issues/1/comments").mock(
+        return_value=httpx.Response(200, json=comments)
+    )
+    ask_attempts = 0
+    review_attempts = 0
+
+    async def fake_ask_runner(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal ask_attempts
+        ask_attempts += 1
+        raise GitHubAPIError(503, "temporarily unavailable")
+
+    async def fake_review_runner(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal review_attempts
+        review_attempts += 1
+        return {"findings_count": 0, "comments_posted": False}
+
+    settings = load_settings(scaffold_repo, env={})
+    command_store = InMemoryCommandStateStore()
+    handler = build_review_handler(
+        settings,
+        env={"GITHUB_TOKEN": "tkn"},
+        ask_runner=fake_ask_runner,
+        review_runner=fake_review_runner,
+        command_store=command_store,
+    )
+    client = GitHubClient(token="tkn")
+    handle = RepositoryHandle(owner="o", repo="r", client=client)
+
+    try:
+        for _ in range(MAX_PR_COMMAND_ATTEMPTS):
+            await handler(_event("pull_request_updated"), handle)
+    finally:
+        await client.aclose()
+
+    assert ask_attempts == MAX_PR_COMMAND_ATTEMPTS
+    assert review_attempts == 1
+    assert command_store.load().last_seen_comment_id(1) == 51
+    assert command_store.load().comment_failure_attempts == {}
 
 
 @respx.mock
