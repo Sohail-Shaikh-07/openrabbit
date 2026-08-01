@@ -272,6 +272,8 @@ Webhook configuration is disabled by default. It provides the fail-closed securi
 
 After setting `webhook.enabled: true`, configuring `repository.target`, and exporting the configured webhook secret and GitHub token, start the optional localhost server with `openrabbit server --workspace . --host 127.0.0.1 --port 8000`. `GET /health` reports readiness and `POST /webhooks/github` validates payload size, the `X-Hub-Signature-256` HMAC, the `X-GitHub-Event` allowlist, delivery metadata, JSON shape, and repository identity. Actionable pull request events and `/openrabbit` pull request comments return `202` with `dispatched: true` and run through the same background review handler and persistent command state used by polling. Ping, unrelated comments, and non-actionable actions return `dispatched: false` with a reason. Existing `openrabbit start` polling remains available and unchanged.
 
+Server mode stores a bounded delivery ledger at `.openrabbit/webhook-deliveries.sqlite3`. The first actionable delivery is atomically claimed, concurrent or completed duplicates return `202` with `dispatched: false`, and a failed or stale delivery can be redelivered with an incremented attempt count. Actionable events require `X-GitHub-Delivery`; reusing an ID with conflicting event metadata is rejected. The ledger keeps statuses, timestamps, repository and PR identifiers, operation names, attempt counts, and safe error types only. It never stores webhook bodies, secrets, prompts, tokens, or exception messages.
+
 For the official OpenAI API, use `provider: openai` and put the API model in `model_name`. You do not need `base_model` for API providers:
 
 ```yaml

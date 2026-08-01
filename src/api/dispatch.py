@@ -36,6 +36,7 @@ class WebhookDispatchRequest:
 class WebhookDispatchPlan:
     """Mapping outcome for an accepted GitHub event."""
 
+    repository: str
     request: WebhookDispatchRequest | None
     reason: str
 
@@ -90,7 +91,7 @@ def map_webhook_event(
         raise WebhookPayloadError("Webhook repository does not match repository.target.")
 
     if event_name == "ping":
-        return WebhookDispatchPlan(request=None, reason="ping")
+        return WebhookDispatchPlan(repository=repository, request=None, reason="ping")
     if event_name == "pull_request":
         return _map_pull_request(payload, repository=repository)
     if event_name == "issue_comment":
@@ -113,6 +114,7 @@ def _map_pull_request(
     event_kind = event_kinds.get(action)
     if event_kind is None:
         return WebhookDispatchPlan(
+            repository=repository,
             request=None,
             reason=f"pull_request_action_{action}_ignored",
         )
@@ -125,6 +127,7 @@ def _map_pull_request(
     except ValidationError as exc:
         raise WebhookPayloadError("Pull request webhook payload is malformed.") from exc
     return WebhookDispatchPlan(
+        repository=repository,
         request=WebhookDispatchRequest(
             repository=repository,
             pr_number=pull_request.number,
@@ -143,6 +146,7 @@ def _map_issue_comment(
     action = _required_string(payload, "action")
     if action != "created":
         return WebhookDispatchPlan(
+            repository=repository,
             request=None,
             reason=f"issue_comment_action_{action}_ignored",
         )
@@ -151,7 +155,11 @@ def _map_issue_comment(
     if not isinstance(issue, dict):
         raise WebhookPayloadError("Issue comment webhook payload is missing issue data.")
     if not isinstance(issue.get("pull_request"), dict):
-        return WebhookDispatchPlan(request=None, reason="issue_comment_not_on_pull_request")
+        return WebhookDispatchPlan(
+            repository=repository,
+            request=None,
+            reason="issue_comment_not_on_pull_request",
+        )
     pr_number = issue.get("number")
     if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number <= 0:
         raise WebhookPayloadError("Issue comment webhook payload has an invalid issue number.")
@@ -164,8 +172,13 @@ def _map_issue_comment(
     except ValidationError as exc:
         raise WebhookPayloadError("Issue comment webhook payload is malformed.") from exc
     if parse_openrabbit_command(comment.body) is None:
-        return WebhookDispatchPlan(request=None, reason="issue_comment_without_command")
+        return WebhookDispatchPlan(
+            repository=repository,
+            request=None,
+            reason="issue_comment_without_command",
+        )
     return WebhookDispatchPlan(
+        repository=repository,
         request=WebhookDispatchRequest(
             repository=repository,
             pr_number=pr_number,

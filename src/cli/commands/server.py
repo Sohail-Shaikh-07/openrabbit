@@ -6,7 +6,13 @@ import asyncio
 
 import uvicorn
 
-from api import WebhookEventDispatcher, create_app
+from api import (
+    DeliveryStateError,
+    SQLiteDeliveryStateStore,
+    WebhookEventDispatcher,
+    create_app,
+    delivery_state_path,
+)
 from cli.commands.start import build_workspace_review_handler
 from configs import Settings
 from github_ import GitHubAuthError, GitHubClient, RepositoryHandle
@@ -40,22 +46,29 @@ def run_server(settings: Settings, *, host: str, port: int) -> None:
         client = GitHubClient.from_settings(settings)
     except GitHubAuthError as exc:
         raise ServerError(str(exc)) from exc
-    handle = RepositoryHandle.from_full_name(target_repository, client)
-    handler = build_workspace_review_handler(
-        settings,
-        workspace=settings.resolved_workspace_root(),
-    )
-    dispatcher = WebhookEventDispatcher(
-        expected_repository=target_repository,
-        handle=handle,
-        handler=handler,
-    )
     try:
+        handle = RepositoryHandle.from_full_name(target_repository, client)
+        handler = build_workspace_review_handler(
+            settings,
+            workspace=settings.resolved_workspace_root(),
+        )
+        dispatcher = WebhookEventDispatcher(
+            expected_repository=target_repository,
+            handle=handle,
+            handler=handler,
+        )
+        try:
+            delivery_store = SQLiteDeliveryStateStore(
+                delivery_state_path(settings.resolved_workspace_root())
+            )
+        except DeliveryStateError as exc:
+            raise ServerError("webhook delivery state could not be initialized") from exc
         uvicorn.run(
             create_app(
                 settings,
                 webhook_secret=webhook_secret,
                 dispatcher=dispatcher,
+                delivery_store=delivery_store,
             ),
             host=normalized_host,
             port=port,

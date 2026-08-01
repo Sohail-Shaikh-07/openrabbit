@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from api import GITHUB_WEBHOOK_PATH, HEALTH_PATH
+from api import (
+    GITHUB_WEBHOOK_PATH,
+    HEALTH_PATH,
+    DeliveryStateError,
+    SQLiteDeliveryStateStore,
+    delivery_state_path,
+)
 from cli.commands.server import ServerError, run_server
 from cli.main import app
 from configs import RepositorySettings, Settings, WebhookSettings
@@ -30,12 +37,15 @@ def _settings(*, enabled: bool = True) -> Settings:
 
 def test_run_server_launches_uvicorn_with_resolved_secret(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("TEST_WEBHOOK_SECRET", "test-secret")
     monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+    settings = _settings()
+    settings._workspace_root = tmp_path
 
     with patch("cli.commands.server.uvicorn.run") as uvicorn_run:
-        run_server(_settings(), host=" 127.0.0.1 ", port=8010)
+        run_server(settings, host=" 127.0.0.1 ", port=8010)
 
     uvicorn_run.assert_called_once()
     server_app = uvicorn_run.call_args.args[0]
@@ -57,6 +67,21 @@ def test_run_server_launches_uvicorn_with_resolved_secret(
     assert response.status_code == 202
     assert response.json()["reason"] == "ping"
     assert response.json()["dispatched"] is False
+    duplicate = client.post(
+        GITHUB_WEBHOOK_PATH,
+        content=payload,
+        headers={
+            "X-GitHub-Event": "ping",
+            "X-GitHub-Delivery": "ping-delivery",
+            "X-Hub-Signature-256": f"sha256={signature}",
+            "Content-Type": "application/json",
+        },
+    )
+    assert duplicate.status_code == 202
+    assert duplicate.json()["reason"] == "duplicate_ignored"
+    record = SQLiteDeliveryStateStore(delivery_state_path(tmp_path)).get("ping-delivery")
+    assert record is not None
+    assert record.status == "ignored"
 
 
 def test_run_server_rejects_disabled_webhook_mode() -> None:
@@ -83,6 +108,26 @@ def test_run_server_requires_target_repository(monkeypatch: pytest.MonkeyPatch) 
 
     with pytest.raises(ServerError, match=r"repository\.target"):
         run_server(settings, host="127.0.0.1", port=8000)
+
+
+def test_run_server_reports_delivery_state_startup_failure_and_closes_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TEST_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+    client = AsyncMock()
+
+    with (
+        patch("cli.commands.server.GitHubClient.from_settings", return_value=client),
+        patch(
+            "cli.commands.server.SQLiteDeliveryStateStore",
+            side_effect=DeliveryStateError("private path"),
+        ),
+        pytest.raises(ServerError, match="delivery state could not be initialized"),
+    ):
+        run_server(_settings(), host="127.0.0.1", port=8000)
+
+    client.aclose.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
