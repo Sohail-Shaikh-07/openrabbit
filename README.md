@@ -214,6 +214,12 @@ polling:
 github:
   token_env: GITHUB_TOKEN
 
+webhook:
+  enabled: false
+  secret_env: GITHUB_WEBHOOK_SECRET
+  allowed_events: [ping, pull_request, issue_comment]
+  max_payload_bytes: 1048576
+
 repository:
   target: owner/repo
 
@@ -261,6 +267,8 @@ knowledge:
       managed_comments: true
       max_items: 8
 ```
+
+Webhook configuration is disabled by default and does not start a server by itself. It provides the fail-closed security contract for the optional v1.10 server mode: secrets are read only from the environment variable named by `webhook.secret_env`, accepted event names are limited to `ping`, `pull_request`, and `issue_comment`, and payloads are bounded between 1 KiB and 10 MiB. Inline values such as `webhook.secret` and `OPENRABBIT_WEBHOOK__SECRET` are rejected without printing the value. Custom secret variable names cannot use the reserved `OPENRABBIT_` prefix because that namespace is used for configuration overrides. Keep using `openrabbit start` for polling until the separate `openrabbit server` entrypoint is available.
 
 For the official OpenAI API, use `provider: openai` and put the API model in `model_name`. You do not need `base_model` for API providers:
 

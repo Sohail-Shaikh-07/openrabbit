@@ -27,6 +27,7 @@ from configs.schema import (
     QualitySettings,
     RepositorySettings,
     ReviewSettings,
+    WebhookSettings,
 )
 
 CONFIG_SUBDIR = ".openrabbit"
@@ -39,6 +40,8 @@ _MODEL_SECRET_KEY_MARKERS = ("api_key", "secret", "token", "password", "credenti
 _MODEL_SECRET_SAFE_KEYS = {"api_key_env"}
 _CONNECTOR_SECRET_KEY_MARKERS = ("api_key", "secret", "token", "password", "credential")
 _CONNECTOR_SECRET_SAFE_KEYS = {"api_key_env", "token_env"}
+_WEBHOOK_SECRET_KEY_MARKERS = ("secret", "token", "password", "credential")
+_WEBHOOK_SECRET_SAFE_KEYS = {"secret_env"}
 
 
 class ConfigNotFoundError(FileNotFoundError):
@@ -54,6 +57,7 @@ class Settings(BaseModel):
     model: ModelSettings = ModelSettings()
     polling: PollingSettings = PollingSettings()
     github: GithubSettings = GithubSettings()
+    webhook: WebhookSettings = WebhookSettings()
     repository: RepositorySettings = RepositorySettings()
     memory: MemorySettings = MemorySettings()
     quality: QualitySettings = QualitySettings()
@@ -85,6 +89,14 @@ class Settings(BaseModel):
         if token:
             return token
         return _persistent_windows_env(self.model.api_key_env)
+
+    def resolved_webhook_secret(self, env: dict[str, str] | None = None) -> str | None:
+        """Return the webhook secret from its configured environment variable."""
+        source = env if env is not None else os.environ
+        secret = source.get(self.webhook.secret_env)
+        if secret:
+            return secret
+        return _persistent_windows_env(self.webhook.secret_env)
 
     def resolved_memory_path(self) -> Path:
         """Return the SQLite path used for local PR memory."""
@@ -181,6 +193,7 @@ def load_settings(
     overrides = _env_overrides(env_map)
     _reject_inline_model_secrets(overrides)
     _reject_inline_connector_secrets(overrides)
+    _reject_inline_webhook_secrets(overrides)
     merged = _deep_merge(raw, overrides)
     settings = Settings.model_validate(merged)
     if repo_config_path is not None:
@@ -209,6 +222,7 @@ def _read_optional_config(path: Path | None) -> dict[str, Any]:
     raw = _read_yaml(path)
     _reject_inline_model_secrets(raw)
     _reject_inline_connector_secrets(raw)
+    _reject_inline_webhook_secrets(raw)
     return raw
 
 
@@ -292,6 +306,22 @@ def _reject_inline_connector_secrets(config: dict[str, Any]) -> None:
     knowledge_config = config.get("knowledge")
     if isinstance(knowledge_config, dict):
         _reject_inline_secret_keys(knowledge_config, path=("knowledge",))
+
+
+def _reject_inline_webhook_secrets(config: dict[str, Any]) -> None:
+    webhook_config = config.get("webhook")
+    if not isinstance(webhook_config, dict):
+        return
+    for key in webhook_config:
+        key_text = str(key).strip()
+        normalized = key_text.lower()
+        if normalized in _WEBHOOK_SECRET_SAFE_KEYS:
+            continue
+        if any(marker in normalized for marker in _WEBHOOK_SECRET_KEY_MARKERS):
+            raise ValueError(
+                f"webhook.{key_text} is not supported. Store the webhook secret in an "
+                "environment variable and set webhook.secret_env to that variable name."
+            )
 
 
 def _reject_inline_secret_keys(config: dict[str, Any], *, path: tuple[str, ...]) -> None:

@@ -56,9 +56,16 @@ from github_.state import (
     SeenPullRequest,
     StateStore,
 )
+from github_.webhooks import (
+    GITHUB_SIGNATURE_PREFIX,
+    is_webhook_event_allowed,
+    is_webhook_payload_within_limit,
+    verify_github_webhook_signature,
+)
 
 __all__ = [
     "DEFAULT_BASE_URL",
+    "GITHUB_SIGNATURE_PREFIX",
     "Branch",
     "BranchCommit",
     "CommandKind",
@@ -106,6 +113,9 @@ __all__ = [
     "SeenPullRequest",
     "StateStore",
     "User",
+    "is_webhook_event_allowed",
+    "is_webhook_payload_within_limit",
     "parse_openrabbit_command",
     "parse_patch",
+    "verify_github_webhook_signature",
 ]

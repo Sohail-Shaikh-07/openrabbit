@@ -7,6 +7,7 @@ variables prefixed with ``OPENRABBIT_`` override individual fields using a
 
 from __future__ import annotations
 
+import re
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -182,6 +183,47 @@ class GithubSettings(BaseModel):
         if not value.strip():
             raise ValueError("token_env must be a non-empty environment variable name")
         return value
+
+
+DEFAULT_WEBHOOK_EVENTS = ("ping", "pull_request", "issue_comment")
+_SUPPORTED_WEBHOOK_EVENTS = frozenset(DEFAULT_WEBHOOK_EVENTS)
+_ENVIRONMENT_VARIABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class WebhookSettings(BaseModel):
+    """Security and intake limits for optional GitHub webhook mode."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    secret_env: str = "GITHUB_WEBHOOK_SECRET"
+    allowed_events: list[str] = Field(default_factory=lambda: list(DEFAULT_WEBHOOK_EVENTS))
+    max_payload_bytes: int = Field(default=1_048_576, ge=1_024, le=10_485_760)
+
+    @field_validator("secret_env")
+    @classmethod
+    def _validate_secret_env(cls, value: str) -> str:
+        stripped = value.strip()
+        if not _ENVIRONMENT_VARIABLE_RE.fullmatch(stripped):
+            raise ValueError("webhook.secret_env must be a valid environment variable name")
+        if stripped.startswith("OPENRABBIT_"):
+            raise ValueError("webhook.secret_env cannot use the reserved OPENRABBIT_ prefix")
+        return stripped
+
+    @field_validator("allowed_events")
+    @classmethod
+    def _validate_allowed_events(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.strip().lower() for value in values if value.strip()))
+        unsupported = sorted(set(normalized) - _SUPPORTED_WEBHOOK_EVENTS)
+        if unsupported:
+            raise ValueError(f"unsupported GitHub webhook events: {', '.join(unsupported)}")
+        return normalized
+
+    @model_validator(mode="after")
+    def _require_enabled_event(self) -> Self:
+        if self.enabled and not self.allowed_events:
+            raise ValueError("enabled webhook mode requires at least one allowed event")
+        return self
 
 
 class MemorySettings(BaseModel):
