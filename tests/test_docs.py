@@ -291,7 +291,8 @@ def test_v1_10_webhook_server_plan_documents_release_scope() -> None:
         "get /health",
         "post /webhooks/github",
         "x-hub-signature-256",
-        "dispatched: false",
+        "dispatched: true",
+        "persistent command state",
         "openrabbit start",
     ):
         assert claim in readme

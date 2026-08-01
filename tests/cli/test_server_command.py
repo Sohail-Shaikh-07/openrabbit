@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from api import HEALTH_PATH
+from api import GITHUB_WEBHOOK_PATH, HEALTH_PATH
 from cli.commands.server import ServerError, run_server
 from cli.main import app
-from configs import Settings, WebhookSettings
+from configs import RepositorySettings, Settings, WebhookSettings
 
 _RUNNER = CliRunner()
 
@@ -21,7 +23,8 @@ def _settings(*, enabled: bool = True) -> Settings:
         webhook=WebhookSettings(
             enabled=enabled,
             secret_env="TEST_WEBHOOK_SECRET",
-        )
+        ),
+        repository=RepositorySettings(target="o/r"),
     )
 
 
@@ -29,6 +32,7 @@ def test_run_server_launches_uvicorn_with_resolved_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TEST_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
 
     with patch("cli.commands.server.uvicorn.run") as uvicorn_run:
         run_server(_settings(), host=" 127.0.0.1 ", port=8010)
@@ -36,7 +40,23 @@ def test_run_server_launches_uvicorn_with_resolved_secret(
     uvicorn_run.assert_called_once()
     server_app = uvicorn_run.call_args.args[0]
     assert uvicorn_run.call_args.kwargs == {"host": "127.0.0.1", "port": 8010}
-    assert TestClient(server_app).get(HEALTH_PATH).status_code == 200
+    client = TestClient(server_app)
+    assert client.get(HEALTH_PATH).status_code == 200
+    payload = b'{"repository":{"full_name":"o/r"}}'
+    signature = hmac.new(b"test-secret", payload, hashlib.sha256).hexdigest()
+    response = client.post(
+        GITHUB_WEBHOOK_PATH,
+        content=payload,
+        headers={
+            "X-GitHub-Event": "ping",
+            "X-GitHub-Delivery": "ping-delivery",
+            "X-Hub-Signature-256": f"sha256={signature}",
+            "Content-Type": "application/json",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["reason"] == "ping"
+    assert response.json()["dispatched"] is False
 
 
 def test_run_server_rejects_disabled_webhook_mode() -> None:
@@ -50,6 +70,19 @@ def test_run_server_rejects_missing_secret(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(ServerError, match="TEST_WEBHOOK_SECRET"):
         run_server(_settings(), host="127.0.0.1", port=8000)
+
+
+def test_run_server_requires_target_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_WEBHOOK_SECRET", "test-secret")
+    settings = Settings(
+        webhook=WebhookSettings(
+            enabled=True,
+            secret_env="TEST_WEBHOOK_SECRET",
+        )
+    )
+
+    with pytest.raises(ServerError, match=r"repository\.target"):
+        run_server(settings, host="127.0.0.1", port=8000)
 
 
 @pytest.mark.parametrize(
