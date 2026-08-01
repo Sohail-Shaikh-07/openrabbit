@@ -6,12 +6,20 @@ import hashlib
 import hmac
 import json
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from api import GITHUB_WEBHOOK_PATH, HEALTH_PATH, WebhookEventDispatcher, create_app
+from api import (
+    GITHUB_WEBHOOK_PATH,
+    HEALTH_PATH,
+    DeliveryStateError,
+    SQLiteDeliveryStateStore,
+    WebhookEventDispatcher,
+    create_app,
+)
 from configs import Settings, WebhookSettings
 from github_ import RepositoryHandle
 
@@ -124,6 +132,198 @@ def test_github_webhook_schedules_actionable_shared_dispatch() -> None:
     assert response.json()["dispatched"] is True
     assert response.json()["reason"] == "scheduled"
     handler.assert_awaited_once()
+
+
+def test_delivery_state_suppresses_completed_actionable_duplicate(tmp_path: Path) -> None:
+    payload = json.dumps(_actionable_payload(), separators=(",", ":")).encode()
+    handler = AsyncMock()
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=handler,
+    )
+    store = SQLiteDeliveryStateStore(tmp_path / "deliveries.sqlite3")
+    client = TestClient(
+        create_app(
+            _settings(),
+            webhook_secret=_SECRET,
+            dispatcher=dispatcher,
+            delivery_store=store,
+        )
+    )
+
+    first = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=_headers(payload))
+    duplicate = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=_headers(payload))
+
+    assert first.status_code == 202
+    assert first.json()["dispatched"] is True
+    assert first.json()["reason"] == "scheduled"
+    assert duplicate.status_code == 202
+    assert duplicate.json()["dispatched"] is False
+    assert duplicate.json()["reason"] == "duplicate_succeeded"
+    handler.assert_awaited_once()
+    record = store.get("67a0b0f4-0b89-4c4f-8f75-d668c2574531")
+    assert record is not None
+    assert record.status == "succeeded"
+
+
+def test_failed_delivery_can_be_redelivered(tmp_path: Path) -> None:
+    payload = json.dumps(_actionable_payload(), separators=(",", ":")).encode()
+    handler = AsyncMock(side_effect=[RuntimeError("private detail"), None])
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=handler,
+    )
+    store = SQLiteDeliveryStateStore(tmp_path / "deliveries.sqlite3")
+    client = TestClient(
+        create_app(
+            _settings(),
+            webhook_secret=_SECRET,
+            dispatcher=dispatcher,
+            delivery_store=store,
+        )
+    )
+
+    failed = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=_headers(payload))
+    failed_record = store.get("67a0b0f4-0b89-4c4f-8f75-d668c2574531")
+    retried = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=_headers(payload))
+    completed_record = store.get("67a0b0f4-0b89-4c4f-8f75-d668c2574531")
+
+    assert failed.status_code == 202
+    assert failed_record is not None
+    assert failed_record.status == "failed"
+    assert failed_record.last_error_type == "RuntimeError"
+    assert "private detail" not in str(failed_record)
+    assert retried.status_code == 202
+    assert retried.json()["dispatched"] is True
+    assert retried.json()["reason"] == "retry_scheduled"
+    assert completed_record is not None
+    assert completed_record.status == "succeeded"
+    assert completed_record.attempts == 2
+    assert handler.await_count == 2
+
+
+def test_actionable_delivery_requires_id_when_state_is_enabled(tmp_path: Path) -> None:
+    payload = json.dumps(_actionable_payload(), separators=(",", ":")).encode()
+    headers = _headers(payload)
+    headers.pop("X-GitHub-Delivery")
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=AsyncMock(),
+    )
+    client = TestClient(
+        create_app(
+            _settings(),
+            webhook_secret=_SECRET,
+            dispatcher=dispatcher,
+            delivery_store=SQLiteDeliveryStateStore(tmp_path / "deliveries.sqlite3"),
+        )
+    )
+
+    response = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=headers)
+
+    assert response.status_code == 400
+    assert "delivery ID" in response.json()["detail"]
+
+
+def test_ignored_delivery_is_persisted_and_deduplicated(tmp_path: Path) -> None:
+    payload = b'{"repository":{"full_name":"o/r"}}'
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=AsyncMock(),
+    )
+    store = SQLiteDeliveryStateStore(tmp_path / "deliveries.sqlite3")
+    client = TestClient(
+        create_app(
+            _settings(),
+            webhook_secret=_SECRET,
+            dispatcher=dispatcher,
+            delivery_store=store,
+        )
+    )
+    headers = _headers(payload, event="ping", delivery_id="ping-delivery")
+
+    first = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=headers)
+    duplicate = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=headers)
+
+    assert first.status_code == 202
+    assert first.json()["reason"] == "ping"
+    assert duplicate.status_code == 202
+    assert duplicate.json()["reason"] == "duplicate_ignored"
+    record = store.get("ping-delivery")
+    assert record is not None
+    assert record.status == "ignored"
+
+
+def test_conflicting_delivery_reuse_returns_conflict(tmp_path: Path) -> None:
+    ping_payload = b'{"repository":{"full_name":"o/r"}}'
+    action_payload = json.dumps(_actionable_payload(), separators=(",", ":")).encode()
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=AsyncMock(),
+    )
+    client = TestClient(
+        create_app(
+            _settings(),
+            webhook_secret=_SECRET,
+            dispatcher=dispatcher,
+            delivery_store=SQLiteDeliveryStateStore(tmp_path / "deliveries.sqlite3"),
+        )
+    )
+    delivery_id = "reused-delivery"
+    first = client.post(
+        GITHUB_WEBHOOK_PATH,
+        content=ping_payload,
+        headers=_headers(ping_payload, event="ping", delivery_id=delivery_id),
+    )
+
+    conflict = client.post(
+        GITHUB_WEBHOOK_PATH,
+        content=action_payload,
+        headers=_headers(action_payload, delivery_id=delivery_id),
+    )
+
+    assert first.status_code == 202
+    assert conflict.status_code == 409
+    assert "conflicting" in conflict.json()["detail"]
+
+
+def test_unavailable_delivery_state_returns_safe_retryable_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = json.dumps(_actionable_payload(), separators=(",", ":")).encode()
+    handler = AsyncMock()
+    dispatcher = WebhookEventDispatcher(
+        expected_repository="o/r",
+        handle=AsyncMock(spec=RepositoryHandle),
+        handler=handler,
+    )
+    store = SQLiteDeliveryStateStore(tmp_path / "deliveries.sqlite3")
+
+    def fail_claim(**kwargs: object) -> None:
+        raise DeliveryStateError("private database path")
+
+    monkeypatch.setattr(store, "claim", fail_claim)
+    client = TestClient(
+        create_app(
+            _settings(),
+            webhook_secret=_SECRET,
+            dispatcher=dispatcher,
+            delivery_store=store,
+        )
+    )
+
+    response = client.post(GITHUB_WEBHOOK_PATH, content=payload, headers=_headers(payload))
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Webhook delivery state is unavailable."
+    assert "private database path" not in response.text
+    handler.assert_not_awaited()
 
 
 def test_github_webhook_rejects_repository_mismatch_before_dispatch() -> None:

@@ -57,6 +57,7 @@ def test_pull_request_actions_map_to_polling_events(action: str, event_kind: str
     )
 
     assert plan.reason == "scheduled"
+    assert plan.repository == "o/r"
     assert plan.request is not None
     assert plan.request.event_kind == event_kind
     assert plan.request.pr_number == 42

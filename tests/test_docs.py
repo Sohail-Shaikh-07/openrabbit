@@ -275,6 +275,7 @@ def test_v1_10_webhook_server_plan_documents_release_scope() -> None:
         "fastapi server entrypoint",
         "shared command dispatch",
         "delivery state and idempotency",
+        "workspace-local sqlite delivery ledger",
         "openrabbit server",
         "payload bounds",
         "polling compatibility",
@@ -293,6 +294,10 @@ def test_v1_10_webhook_server_plan_documents_release_scope() -> None:
         "x-hub-signature-256",
         "dispatched: true",
         "persistent command state",
+        ".openrabbit/webhook-deliveries.sqlite3",
+        "atomically claimed",
+        "failed or stale delivery",
+        "never stores webhook bodies",
         "openrabbit start",
     ):
         assert claim in readme

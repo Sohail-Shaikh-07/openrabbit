@@ -10,6 +10,12 @@ from typing import Literal
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 
+from api.delivery_state import (
+    DeliveryStateCapacityError,
+    DeliveryStateConflict,
+    DeliveryStateError,
+    SQLiteDeliveryStateStore,
+)
 from api.dispatch import (
     WebhookDispatchRequest,
     WebhookEventDispatcher,
@@ -53,6 +59,7 @@ def create_app(
     *,
     webhook_secret: str | bytes | None = None,
     dispatcher: WebhookEventDispatcher | None = None,
+    delivery_store: SQLiteDeliveryStateStore | None = None,
 ) -> FastAPI:
     """Create an application bound to validated OpenRabbit settings."""
     app = FastAPI(
@@ -129,21 +136,79 @@ def create_app(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=str(exc),
                 ) from exc
-        _LOGGER.info(
-            "Accepted GitHub webhook delivery event=%s delivery_id=%s",
-            event_name,
-            delivery_id or "missing",
-        )
         if dispatch_plan is None:
+            _log_accepted_delivery(event_name, delivery_id)
             return WebhookAcceptedResponse(
                 event=event_name,
                 delivery_id=delivery_id,
             )
+        delivery_claim = None
+        if delivery_store is not None and dispatch_plan.request is not None:
+            if delivery_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Actionable GitHub webhooks require a delivery ID.",
+                )
+            try:
+                delivery_claim = delivery_store.claim(
+                    delivery_id=delivery_id,
+                    event_name=event_name,
+                    repository=dispatch_plan.repository,
+                    pr_number=dispatch_plan.request.pr_number,
+                    operation=_delivery_operation(dispatch_plan.request),
+                )
+            except DeliveryStateConflict as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(exc),
+                ) from exc
+            except DeliveryStateCapacityError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=str(exc),
+                ) from exc
+            except DeliveryStateError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Webhook delivery state is unavailable.",
+                ) from exc
+        elif delivery_store is not None and delivery_id is not None:
+            try:
+                delivery_claim = delivery_store.record_ignored(
+                    delivery_id=delivery_id,
+                    event_name=event_name,
+                    repository=dispatch_plan.repository,
+                    pr_number=_optional_pr_number(parsed_payload),
+                    operation=dispatch_plan.reason,
+                    reason=dispatch_plan.reason,
+                )
+            except DeliveryStateConflict as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(exc),
+                ) from exc
+            except DeliveryStateCapacityError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=str(exc),
+                ) from exc
+            except DeliveryStateError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Webhook delivery state is unavailable.",
+                ) from exc
+        _log_accepted_delivery(event_name, delivery_id)
         if dispatch_plan.request is None:
             return WebhookAcceptedResponse(
                 event=event_name,
                 delivery_id=delivery_id,
-                reason=dispatch_plan.reason,
+                reason=(delivery_claim.reason if delivery_claim else dispatch_plan.reason),
+            )
+        if delivery_claim is not None and not delivery_claim.claimed:
+            return WebhookAcceptedResponse(
+                event=event_name,
+                delivery_id=delivery_id,
+                reason=delivery_claim.reason,
             )
         assert dispatcher is not None
         background_tasks.add_task(
@@ -151,12 +216,13 @@ def create_app(
             dispatcher,
             dispatch_plan.request,
             delivery_id,
+            delivery_store,
         )
         return WebhookAcceptedResponse(
             event=event_name,
             delivery_id=delivery_id,
             dispatched=True,
-            reason=dispatch_plan.reason,
+            reason=(delivery_claim.reason if delivery_claim else dispatch_plan.reason),
         )
 
     return app
@@ -246,10 +312,20 @@ async def _dispatch_safely(
     dispatcher: WebhookEventDispatcher,
     request: WebhookDispatchRequest,
     delivery_id: str | None,
+    delivery_store: SQLiteDeliveryStateStore | None = None,
 ) -> None:
     try:
         await dispatcher.dispatch(request)
     except Exception as exc:
+        if delivery_store is not None and delivery_id is not None:
+            try:
+                delivery_store.mark_failed(delivery_id, error_type=type(exc).__name__)
+            except DeliveryStateError as state_exc:
+                _log_delivery_state_failure(
+                    delivery_id=delivery_id,
+                    operation="mark_failed",
+                    error=state_exc,
+                )
         _LOGGER.error(
             "GitHub webhook dispatch failed event_repo=%s pr=%s delivery_id=%s error_type=%s",
             request.repository,
@@ -257,3 +333,54 @@ async def _dispatch_safely(
             delivery_id or "missing",
             type(exc).__name__,
         )
+    else:
+        if delivery_store is not None and delivery_id is not None:
+            try:
+                delivery_store.mark_succeeded(delivery_id)
+            except DeliveryStateError as exc:
+                _log_delivery_state_failure(
+                    delivery_id=delivery_id,
+                    operation="mark_succeeded",
+                    error=exc,
+                )
+
+
+def _delivery_operation(request: WebhookDispatchRequest) -> str:
+    if request.event_kind is not None:
+        return request.event_kind
+    if request.source_comment_id is not None:
+        return f"issue_comment:{request.source_comment_id}"
+    return "pull_request_updated"
+
+
+def _log_accepted_delivery(event_name: str, delivery_id: str | None) -> None:
+    _LOGGER.info(
+        "Accepted GitHub webhook delivery event=%s delivery_id=%s",
+        event_name,
+        delivery_id or "missing",
+    )
+
+
+def _optional_pr_number(payload: dict[str, object]) -> int | None:
+    for key in ("pull_request", "issue"):
+        value = payload.get(key)
+        if not isinstance(value, dict):
+            continue
+        number = value.get("number")
+        if isinstance(number, int) and not isinstance(number, bool) and number > 0:
+            return number
+    return None
+
+
+def _log_delivery_state_failure(
+    *,
+    delivery_id: str,
+    operation: str,
+    error: DeliveryStateError,
+) -> None:
+    _LOGGER.error(
+        "GitHub webhook delivery state update failed delivery_id=%s operation=%s error_type=%s",
+        delivery_id,
+        operation,
+        type(error).__name__,
+    )
