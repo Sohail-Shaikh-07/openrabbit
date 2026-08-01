@@ -159,7 +159,7 @@ When `openrabbit start` is running, OpenRabbit can react to explicit PR comments
 /openrabbit learn Prefer SQLAlchemy bind parameters for raw SQL.
 ```
 
-Comment commands are handled only by the polling daemon. `summary` creates or updates one OpenRabbit-managed PR summary comment with walkthrough, risk areas, context sources, review status, and follow-up commands. `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses command and automatic review work, and `ignore` suppresses the PR until `/openrabbit resume` clears the local state. Pause, ignore, and the last processed comment cursor are stored in `.openrabbit/commands.json`.
+Comment commands are handled only by the polling daemon. `summary` creates or updates one OpenRabbit-managed PR summary comment with walkthrough, risk areas, context sources, review status, and follow-up commands. `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses command and automatic review work, and `ignore` suppresses the PR until `/openrabbit resume` clears the local state. Pause, ignore, cursor progress, successful out-of-order commands, and bounded failure attempts are stored in `.openrabbit/commands.json`. Failed commands remain eligible for retry on later PR updates while newer successful commands remain idempotent. A command is logged and skipped after three failed attempts so it cannot block the queue indefinitely.
 
 ## GitHub Conversation Context
 

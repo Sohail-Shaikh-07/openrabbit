@@ -636,7 +636,7 @@ While `openrabbit start` is running, OpenRabbit also listens for new PR comments
 /openrabbit ignore
 ```
 
-Comment commands are only handled by the polling service. They are not active during one-off CLI commands. `summary` creates or updates the single OpenRabbit-managed PR summary comment, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses review activity, and `ignore` suppresses the PR until `/openrabbit resume` is received. Pause, ignore, and the last processed comment cursor are stored locally under `.openrabbit/commands.json`.
+Comment commands are only handled by the polling service. They are not active during one-off CLI commands. `summary` creates or updates the single OpenRabbit-managed PR summary comment, `configuration` posts a secret-safe runtime configuration snapshot, `pause` temporarily suppresses review activity, and `ignore` suppresses the PR until `/openrabbit resume` is received. Pause, ignore, the last contiguous comment cursor, successful out-of-order command IDs, and bounded failure attempts are stored locally under `.openrabbit/commands.json`. A failed command is retried on later PR updates without replaying newer commands that already succeeded. After three failed attempts, OpenRabbit logs and skips that command so later comments can continue.
 
 ### `openrabbit install-model`
 
